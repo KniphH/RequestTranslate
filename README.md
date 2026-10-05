@@ -69,7 +69,7 @@ Chrome 同理，地址换成 `chrome://extensions/`。
 想用自己的模型（质量更好、能控提示词）再往下走：
 
 1. 进设置页 → **变量** 标签 → 把 `apiKey` 的值填成你自己的 key
-2. 回 **配置** 标签，挑一条内置示例（OpenAI / DeepSeek / Ling / Ollama / Anthropic）改改
+2. 回 **配置** 标签，挑一条内置示例（OpenAI / DeepSeek / DeepL / Ling / Ollama / Anthropic）改改
 3. 点 **发送** 测试一下，能出结果就通了
 
 还有一条路是**翻译截图**：系统截完图，在网页上右键 →「翻译剪切板中的截图」。
@@ -217,8 +217,9 @@ content-type: application/json
 | `{{text}}` | 选中的文字（也可以用 `{{selection}}`）。截图直传时是空串 |
 | `{{image}}` | 截图翻译时那张图的 data URL；普通划词翻译时是空串。见下面「翻译截图（OCR）」 |
 | `{{imagePart}}` | 上面那张图对应的**一整段 content 元素**（含前导逗号）；没图时是空串。见下面「一段模板两用」 |
-| `{{target}}` | 设置里的目标语言，默认「简体中文」 |
-| `{{targetLang}}` | 同上 |
+| `{{target}}` | 设置里的目标语言，默认「简体中文」，**原样**搬进来（给聊天模型看） |
+| `{{targetCode}}` | 同一件事，但映射成接口要的大写代码：简体中文 → `ZH-HANS`、日语 → `JA`。给 DeepL 这类只认代码的接口用 |
+| `{{targetLang}}` | 同 `{{target}}` |
 | `{{url}}` / `{{title}}` | 所在页面的地址 / 标题 |
 | `{{date}}` | 今天的日期 |
 | `{{任意名字}}` | 你在 **变量** 标签里定义的值，比如 `{{apiKey}}` |
@@ -253,6 +254,7 @@ content[0].text                 Anthropic 非流式
 candidates[0].content.parts[0].text   Gemini
 message.content                 Ollama
 data.translations[0].translatedText   Google 翻译
+translations[0].text            DeepL 官方 API（自建 DLX 的 /v2/translate 也是这个壳）
 ```
 
 要是某个服务结构比较特别，手动填路径。语法是 `点号 + 下标`：
@@ -287,7 +289,7 @@ output.choices[0].text
 | --- | --- |
 | 选中文字后 | 显示小圆点 / 直接翻译 / 什么都不做（只用右键菜单） |
 | 右键菜单 | 两项独立开关：「翻译选中内容」和「翻译剪切板中的截图」。见下面「翻译截图（OCR）」 |
-| 目标语言 | `{{target}}` 和 `{{targetLang}}` 的值 |
+| 目标语言 | `{{target}}` / `{{targetLang}}` / `{{targetCode}}` 的值。输入框带下拉预设：中文名和 `ZH-HANS` / `JA` 这类接口代码都能挑 |
 | 单次最多发送字数 | 超过就截断 |
 | **结果面板宽度** | px，默认 460。单位是「网页 100% 缩放下的像素」，网页缩放不影响实际大小 |
 | **结果面板高度** | px，填 `0` 表示交给内容自适应 |
@@ -617,7 +619,7 @@ tools/
 ## 开发
 
 ```bash
-npm test              # 静态检查 + 单元 + 端到端 + 真实浏览器 UI（598 项）
+npm test              # 静态检查 + 单元 + 端到端 + 真实浏览器 UI（645 项）
 npm run check         # 只跑两项静态检查
 npm run test:lib      # 解析器 / 模板 / 提取
 npm run test:engine   # 本地 mock 服务器，验证各类响应格式
@@ -628,7 +630,7 @@ npm run icons         # 重新生成图标
 
 `npm run perf` 只跑指定档位可以快很多：`PERF_ONLY=heavy npm run perf`（可选档位 `normal` / `fewLong` / `manyShort` / `heavy`）。
 
-拆开看是 `test-lib` 355 项、`test-engine` 79 项、`e2e-ui` 162 项，另加两项静态检查。这几层各自补不同的盲区：
+拆开看是 `test-lib` 374 项、`test-engine` 79 项、`e2e-ui` 162 项，另加两项静态检查。这几层各自补不同的盲区：
 
 - **`check-globals`** — 语法检查看不出 `bindConfigList()` 这种「调用了但没写」，只有运行时才炸。它把注释、字符串、正则字面量剥掉之后逐个比对调用与声明。也可以指定文件：`node tools/check-globals.mjs lib/engine.js`
 - **`check-dom`** — 比对 JS 里的 `$('#id')` / `querySelector('.x')` / `closest('.x')`，和「HTML 里写死的**加上** JS 里拼出来的」类名，防的是「选择器指向不存在的元素，启动时炸在 null 上」。动态建节点用的类名（`row.className = 'cfg-row'`）在 HTML 里找不到，所以脚本里拼过的名字也算数。

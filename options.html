@@ -80,7 +80,8 @@
               <label for="f-request">请求模板</label>
               <div class="chips" id="chips">
                 <button type="button" class="chip" data-ins="{{text}}" title="选中/待翻译的文本">text</button>
-                <button type="button" class="chip" data-ins="{{target}}" title="设置里的目标语言">target</button>
+                <button type="button" class="chip" data-ins="{{target}}" title="设置里的目标语言，原样搬过来（给聊天模型看）">target</button>
+                <button type="button" class="chip" data-ins="{{targetCode}}" title="同一件事，但映射成接口要的大写代码 ZH-HANS / JA，给 DeepL 这类只认代码的接口用">targetCode</button>
                 <button type="button" class="chip" data-ins="{{image}}" title="截图翻译直传模式下的图片（data URL）；普通翻译时是空串">image</button>
                 <button type="button" class="chip" data-ins="{{imagePart}}" title="图片那一段（含前导逗号），写在 content 数组最后；没图时是空串。用它就能让一段模板同时翻文字和翻图">imagePart</button>
                 <button type="button" class="chip" data-ins="{{url}}" title="页面地址">url</button>
@@ -351,7 +352,63 @@
 
         <div class="setting">
           <label for="s-lang">目标语言（<code>{{target}}</code> 的值）</label>
-          <input id="s-lang" type="text" placeholder="简体中文" autocomplete="off">
+          <div class="stack">
+            <input id="s-lang" type="text" placeholder="简体中文" autocomplete="off" list="s-lang-presets">
+            <p class="hint">
+              随便填，也可以从下拉里挑一个。写「简体中文」这种名字聊天模型看得懂；
+              写 <code>ZH-HANS</code> / <code>JA</code> 这种代码，DeepL 那类只认代码的接口才认。
+            </p>
+          </div>
+          <datalist id="s-lang-presets">
+            <option value="简体中文"></option>
+            <option value="繁體中文"></option>
+            <option value="英语"></option>
+            <option value="日语"></option>
+            <option value="韩语"></option>
+            <option value="法语"></option>
+            <option value="德语"></option>
+            <option value="西班牙语"></option>
+            <option value="俄语"></option>
+            <option value="葡萄牙语"></option>
+            <option value="意大利语"></option>
+            <option value="阿拉伯语"></option>
+            <option value="泰语"></option>
+            <option value="越南语"></option>
+            <option value="印尼语"></option>
+            <option value="土耳其语"></option>
+            <option value="荷兰语"></option>
+            <option value="波兰语"></option>
+            <option value="ZH-HANS"></option>
+            <option value="ZH-HANT"></option>
+            <option value="EN"></option>
+            <option value="EN-US"></option>
+            <option value="EN-GB"></option>
+            <option value="JA"></option>
+            <option value="KO"></option>
+            <option value="FR"></option>
+            <option value="DE"></option>
+            <option value="ES"></option>
+            <option value="IT"></option>
+            <option value="PT-BR"></option>
+            <option value="PT-PT"></option>
+            <option value="RU"></option>
+            <option value="UK"></option>
+            <option value="NL"></option>
+            <option value="PL"></option>
+            <option value="TR"></option>
+            <option value="AR"></option>
+            <option value="TH"></option>
+            <option value="VI"></option>
+            <option value="ID"></option>
+            <option value="CS"></option>
+            <option value="DA"></option>
+            <option value="FI"></option>
+            <option value="EL"></option>
+            <option value="HU"></option>
+            <option value="NO"></option>
+            <option value="RO"></option>
+            <option value="SV"></option>
+          </datalist>
         </div>
 
         <div class="setting">

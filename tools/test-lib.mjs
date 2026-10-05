@@ -17,7 +17,7 @@ globalThis.chrome = {
 };
 
 const { tokenize, parseRequest, parseCurl, parseRawHttp, repairJsonBody } = await import('../lib/request-parser.js');
-const { renderTemplate, escapeJsonString, imageContentPart } = await import('../lib/template.js');
+const { renderTemplate, escapeJsonString, imageContentPart, targetCodeOf } = await import('../lib/template.js');
 const { parsePath, getByPath, extractContent, describeShape } = await import('../lib/extract.js');
 const {
   DEFAULT_CONFIGS, DEFAULT_SETTINGS, wantDirect, moveItem, dropIndex, buildVars,
@@ -207,6 +207,11 @@ section('5. 响应提取');
   const google = { data: { translations: [{ translatedText: '早安' }] } };
   eq('Google 翻译', extractContent(google, '').text, '早安');
 
+  // DeepL 官方 API 的壳，自建 DLX 的 /v2/translate 也是这个形状
+  const deepl = { translations: [{ detected_source_language: 'EN', text: '你好' }] };
+  eq('DeepL 官方 API', extractContent(deepl, '').text, '你好');
+  eq('DeepL —— 走预设里写死的路径', extractContent(deepl, 'translations[0].text').text, '你好');
+
   eq('自定义路径', extractContent({ a: { b: [{ c: '深' }] } }, 'a.b[0].c').text, '深');
   eq('路径不存在返回 null', extractContent({ a: 1 }, 'x.y').text, null);
 
@@ -234,6 +239,7 @@ section('6. 内置配置全部可解析');
       text: 'Hello',
       target: '简体中文',
       targetLang: '简体中文',
+      targetCode: 'ZH-HANS',
       apiKey: 'sk-test'
     });
 
@@ -256,8 +262,11 @@ section('6. 内置配置全部可解析');
         );
         check(`[${cfg.name}] 提示词里的 {{text}} 已被替换`,
           !body.includes('{{') && !body.includes('}}'), body.match(/\{\{[^}]*\}\}/g));
-        check(`[${cfg.name}] {{target}} 已被替换为简体中文`,
-          text ? text.includes('简体中文') : true);
+        // 只有真的用了 {{target}} 的配置才要求请求体里出现「简体中文」。
+        // DeepL 那种「目标语言必须是代码」的接口把语言写死在模板里（ZH-HANS），不该被这条卡住。
+        const usesTarget = /\{\{\s*target(Lang)?\s*\}\}/.test(cfg.request);
+        check(`[${cfg.name}] ${usesTarget ? '{{target}} 已被替换为简体中文' : '目标语言走映射，不要求请求体里出现「简体中文」'}`,
+          !usesTarget || (text || '').includes('简体中文'));
       }
     }
   }
@@ -272,6 +281,7 @@ section('7. 提示词渲染后的实际样子');
     text: 'Good morning, world!',
     target: '简体中文',
     targetLang: '简体中文',
+    targetCode: 'ZH-HANS',
     apiKey: 'sk-test'
   });
   const body = JSON.parse(info.request.body);
@@ -333,18 +343,38 @@ section('8. 边界情况');
 
 section('9. 内置适配器：语言代码映射');
 {
-  eq('简体中文 → zh-Hans', toBingLang('简体中文'), 'zh-Hans');
-  eq('繁體中文 → zh-Hant', toBingLang('繁體中文'), 'zh-Hant');
-  eq('英文 → en', toBingLang('英文'), 'en');
-  eq('日语 → ja', toBingLang('日语'), 'ja');
-  eq('韩文 → ko', toBingLang('韩文'), 'ko');
-  eq('大写英文名也认', toBingLang('English'), 'en');
-  eq('本来就是代码就原样用', toBingLang('zh-Hant'), 'zh-Hant');
-  eq('两字母代码也原样用', toBingLang('de'), 'de');
+  /* Bing 的接口不挑代码大小写 —— 真机实测（2026-10-05）：
+     zh-Hans / ZH-HANS / ZH-hans / zh-hans 四种写法都是 HTTP 200，
+     译文一模一样；ZH-Hant 也正常给出繁体。所以这里统一给大写形式就够，
+     不为它单独写一层「变形回 zh-Hans」的代码。 */
+  eq('简体中文 → ZH-HANS', toBingLang('简体中文'), 'ZH-HANS');
+  eq('繁體中文 → ZH-HANT', toBingLang('繁體中文'), 'ZH-HANT');
+  eq('英文 → EN', toBingLang('英文'), 'EN');
+  eq('日语 → JA', toBingLang('日语'), 'JA');
+  eq('韩文 → KO', toBingLang('韩文'), 'KO');
+  eq('大写英文名也认', toBingLang('English'), 'EN');
+  eq('本来就是代码就原样用', toBingLang('zh-Hant'), 'ZH-HANT');
+  eq('两字母代码也认', toBingLang('de'), 'DE');
+  eq('小写代码也不挑', toBingLang('zh-hans'), 'ZH-HANS');
+  eq('区域代码照样过', toBingLang('EN-US'), 'EN-US');
   eq('空值走默认兜底', toBingLang(''), 'zh-Hans');
   eq('认不出的走默认兜底', toBingLang('克林贡语'), 'zh-Hans');
   eq('兜底值可以指定', toBingLang('', 'en'), 'en');
   eq('null 也不会炸', toBingLang(null), 'zh-Hans');
+
+  /* ---- 同一张表还给模板用：{{targetCode}} ---- */
+  eq('中文 → ZH-HANS', targetCodeOf('中文'), 'ZH-HANS');
+  eq('繁體中文 → ZH-HANT', targetCodeOf('繁體中文'), 'ZH-HANT');
+  eq('日语 → JA', targetCodeOf('日语'), 'JA');
+  eq('小写代码自动大写', targetCodeOf('pt-br'), 'PT-BR');
+  eq('认不出的回退成简体中文', targetCodeOf('克林贡语'), 'ZH-HANS');
+  eq('要「不兜底」就传空 fallback（Bing 靠这个判断该不该回退）',
+    targetCodeOf('克林贡语', ''), '');
+  eq('空值也走兜底', targetCodeOf(''), 'ZH-HANS');
+
+  const picked = buildVars({ settings: { targetLang: '日语' }, vars: [] }, 'Hello');
+  eq('{{target}} 原样搬：日语', picked.target, '日语');
+  eq('{{targetCode}} 映射成接口代码：JA', picked.targetCode, 'JA');
 
   check('bing 适配器已注册', hasAdapter('bing'));
   check('没注册的适配器返回 false', !hasAdapter('not-there'));
@@ -464,7 +494,8 @@ section('14. 老存档迁移：v2 里那个「开着的」开关会被归位成�
   eq('版本号升到最新', v2.version, STORAGE_VERSION);
   eq('临时直连被归位成关', v2.settings.directAdapter, false);
   eq('顺手改了的东西不会丢', v2.settings.theme, 'dark');
-  eq('配置不会被迁移动到', v2.configs.length, 1);
+  eq('已有的配置不会被迁移动到，新预设只是追加在后面', v2.configs.length, 2);
+  eq('追加进来的正好是 DeepL 预设', v2.configs[1].id, 'builtin-deepl');
   check('迁移结果落了盘', !!written && written.settings.directAdapter === false);
 
   /* v1 存档：字段全靠默认值补，还得自动补上内置 Bing 通道 */
@@ -477,8 +508,39 @@ section('14. 老存档迁移：v2 里那个「开着的」开关会被归位成�
   });
   eq('v1 也升到最新版本号', v1.version, STORAGE_VERSION);
   eq('补上了内置 Bing 通道', v1.configs[0].id, 'builtin-bing');
-  eq('补完之后原有的配置还在', v1.configs.length, 2);
+  eq('v1 一路补到最新：原有 1 条 + Bing + DeepL', v1.configs.length, 3);
+  eq('也补上了 DeepL 预设', v1.configs[2].id, 'builtin-deepl');
   eq('缺席的开关按默认关算', v1.settings.directAdapter, false);
+
+  /* v3 存档：DeepL 预设要插在内置 DeepSeek 后面，用户自己排的顺序和设置一点都不能动 */
+  const v3 = await load({
+    version: 3,
+    configs: [
+      { id: 'builtin-bing', name: 'Bing', adapter: 'bing' },
+      { id: 'builtin-deepseek', name: 'DeepSeek' },
+      { id: 'cfg-mine', name: '我自己的接口' }
+    ],
+    activeConfigId: 'cfg-mine',
+    vars: [],
+    settings: { ...DEFAULT_SETTINGS, directAdapter: true, theme: 'dark' }
+  });
+  eq('v3 升到最新', v3.version, STORAGE_VERSION);
+  eq('DeepL 插在 DeepSeek 后面', v3.configs[2].id, 'builtin-deepl');
+  eq('整张列表的顺序没被打乱', v3.configs.map((c) => c.id).join(','),
+    'builtin-bing,builtin-deepseek,builtin-deepl,cfg-mine');
+  eq('选中的还是用户自己那条', v3.activeConfigId, 'cfg-mine');
+  eq('v3 里用户自己开的临时直连没被这段迁移碰掉', v3.settings.directAdapter, true);
+  eq('顺手改了的东西也不会丢', v3.settings.theme, 'dark');
+
+  /* 已经是最新版本的存档：不会再插一次 */
+  const v4 = await load({
+    version: STORAGE_VERSION,
+    configs: [{ id: 'builtin-deepl', name: 'DeepL' }],
+    activeConfigId: 'builtin-deepl',
+    vars: [],
+    settings: { ...DEFAULT_SETTINGS }
+  });
+  eq('最新版本的存档不会被重复插入', v4.configs.length, 1);
 
   globalThis.chrome.storage.local = original;
 }
@@ -1031,6 +1093,56 @@ section('21. 模板转义：占位符落在几层引号里，就逐层转义');
   const broken = previewRequest("curl -d '{\"content\": \"\"\"\"}\"' https://x/y", {});
   check('坏 JSON 的提示里带「大概是这里」',
     broken.notes.some((n) => /大概是这里/.test(n)), broken.notes.join(' / '));
+}
+
+/* ------------------------------------------------------------------ */
+
+section('22. 目标语言：设置页那个输入框能选预设（DeepL 这类接口只认代码）');
+{
+  const html = readFileSync(new URL('../options.html', import.meta.url), 'utf8');
+
+  const tag = (html.match(/<input[^>]*id="s-lang"[^>]*>/) || [])[0];
+  check('目标语言那个输入框还在', !!tag, tag);
+
+  const listId = tag && (tag.match(/list="([^"]+)"/) || [])[1];
+  check('输入框挂上了预设列表（datalist）', !!listId, tag);
+
+  const dl = listId
+    ? (html.match(new RegExp(`<datalist id="${listId}"[\\s\\S]*?</datalist>`)) || [])[0]
+    : null;
+  check('对应 id 的 datalist 真的存在', !!dl, listId);
+
+  const values = dl
+    ? [...dl.matchAll(/<option value="([^"]*)"><\/option>/g)].map((m) => m[1])
+    : [];
+  check('列表不是空的', values.length > 0, values.length);
+  check('够挑（至少 20 个）', values.length >= 20, values.length);
+  check('有「名字」那种：简体中文', values.includes('简体中文'), values.slice(0, 6).join(','));
+  check('有「代码」那种：ZH-HANS（DeepL 认的就是它）', values.includes('ZH-HANS'),
+    values.filter((v) => /^[A-Z][A-Z-]*$/.test(v)).join(','));
+  check('ZH-HANT / JA 这些常用的也在',
+    values.includes('ZH-HANT') && values.includes('JA'));
+  check('没有空值', values.every((v) => v.trim() !== ''));
+  eq('没有重复项', new Set(values).size, values.length);
+
+  /* 从下拉里选了代码之后，{{target}} 得真的变成那个代码 —— 这是这个下拉存在的全部意义 */
+  const picked = buildVars({ settings: { targetLang: 'ZH-HANS' }, vars: [] }, 'Hello');
+  eq('选 ZH-HANS 之后 {{target}} 就是 ZH-HANS', picked.target, 'ZH-HANS');
+  eq('{{targetLang}} 跟着一起变', picked.targetLang, 'ZH-HANS');
+  eq('{{targetCode}} 也照收（本来就是代码）', picked.targetCode, 'ZH-HANS');
+
+  /* DeepL 那条预设必须靠映射，不能把语言写死在模板里 */
+  const deeplCfg = DEFAULT_CONFIGS.find((c) => c.id === 'builtin-deepl');
+  check('DeepL 预设用的是 {{targetCode}}',
+    /\{\{\s*targetCode\s*\}\}/.test(deeplCfg.request), deeplCfg.request.slice(0, 70));
+  check('没有把语言写死在 target_lang 里',
+    !/"target_lang":\s*"[A-Z][A-Z-]*"/.test(deeplCfg.request));
+  /* 换成日语时，DeepL 拿到的应该是 JA 而不是「日语」 */
+  const jp = previewRequest(deeplCfg.request, buildVars(
+    { settings: { targetLang: '日语' }, vars: [{ name: 'apiKey', value: 'k:fx' }] }, 'Hello'
+  ));
+  eq('设置成日语后，DeepL 收到的是 JA', JSON.parse(jp.request.body).target_lang, 'JA');
+  eq('DeepL 那条一次警告都不该有', jp.notes.length, 0);
 }
 
 /* ------------------------------------------------------------------ */

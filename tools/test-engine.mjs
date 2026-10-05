@@ -406,7 +406,7 @@ console.log('\n15. 内置适配器（Bing 免费通道）');
   const form = new URLSearchParams(calls[1].body);
   eq('用的是 form-urlencoded', calls[1].headers['content-type'], 'application/x-www-form-urlencoded');
   eq('fromLang=auto-detect', form.get('fromLang'), 'auto-detect');
-  eq('简体中文映射成 zh-Hans', form.get('to'), 'zh-Hans');
+  eq('简体中文映射成 ZH-HANS（Bing 不挑大小写，实测过）', form.get('to'), 'ZH-HANS');
   eq('带上了 token', form.get('token'), 'tokentokentoken');
   eq('带上了 key', form.get('key'), '1700000000000');
   eq('原文进了 text', form.get('text'), 'Hello adapter');
@@ -419,7 +419,7 @@ console.log('\n15. 内置适配器（Bing 免费通道）');
   const calls = received.slice(before);
   eq('复用了 token，只发一次请求', calls.length, 1);
   eq('直接打翻译接口', calls[0].path, '/ttranslatev3');
-  eq('英文目标语言映射成 en', new URLSearchParams(calls[0].body).get('to'), 'en');
+  eq('英文目标语言映射成 EN', new URLSearchParams(calls[0].body).get('to'), 'EN');
 }
 {
   // 空响应 → 自动重抓 token 再试
@@ -434,8 +434,8 @@ console.log('\n15. 内置适配器（Bing 免费通道）');
   // 目标语言的映射
   resetBingSession();
   await runRequest({ adapter: 'bing', vars: { text: 'A', targetLang: '日语' } });
-  eq('「日语」映射成 ja',
-    new URLSearchParams(received[received.length - 1].body).get('to'), 'ja');
+  eq('「日语」映射成 JA',
+    new URLSearchParams(received[received.length - 1].body).get('to'), 'JA');
 
   resetBingSession();
   await runRequest({ adapter: 'bing', vars: { text: 'B', targetLang: '日本語' } });
