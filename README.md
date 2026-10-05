@@ -30,7 +30,8 @@ curl https://api.ant-ling.com/v1/chat/completions \
   "messages": [
     {"role": "user", "content": "请写一首关于春天的诗"}
   ],
-  "stream": true
+  "stream": true,
+  "reasoning_effort": "none"
 }'
 ````
 
