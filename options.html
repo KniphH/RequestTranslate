@@ -355,60 +355,13 @@
           <div class="stack">
             <input id="s-lang" type="text" placeholder="简体中文" autocomplete="off" list="s-lang-presets">
             <p class="hint">
-              随便填，也可以从下拉里挑一个。写「简体中文」这种名字聊天模型看得懂；
-              写 <code>ZH-HANS</code> / <code>JA</code> 这种代码，DeepL 那类只认代码的接口才认。
+              填语言名就行（比如「简体中文」）—— 只认代码的接口会自动转成 <code>ZH-HANS</code>。
+              要指定地区变体（英式英语、巴西葡语）才需要直接填代码。
             </p>
           </div>
-          <datalist id="s-lang-presets">
-            <option value="简体中文"></option>
-            <option value="繁體中文"></option>
-            <option value="英语"></option>
-            <option value="日语"></option>
-            <option value="韩语"></option>
-            <option value="法语"></option>
-            <option value="德语"></option>
-            <option value="西班牙语"></option>
-            <option value="俄语"></option>
-            <option value="葡萄牙语"></option>
-            <option value="意大利语"></option>
-            <option value="阿拉伯语"></option>
-            <option value="泰语"></option>
-            <option value="越南语"></option>
-            <option value="印尼语"></option>
-            <option value="土耳其语"></option>
-            <option value="荷兰语"></option>
-            <option value="波兰语"></option>
-            <option value="ZH-HANS"></option>
-            <option value="ZH-HANT"></option>
-            <option value="EN"></option>
-            <option value="EN-US"></option>
-            <option value="EN-GB"></option>
-            <option value="JA"></option>
-            <option value="KO"></option>
-            <option value="FR"></option>
-            <option value="DE"></option>
-            <option value="ES"></option>
-            <option value="IT"></option>
-            <option value="PT-BR"></option>
-            <option value="PT-PT"></option>
-            <option value="RU"></option>
-            <option value="UK"></option>
-            <option value="NL"></option>
-            <option value="PL"></option>
-            <option value="TR"></option>
-            <option value="AR"></option>
-            <option value="TH"></option>
-            <option value="VI"></option>
-            <option value="ID"></option>
-            <option value="CS"></option>
-            <option value="DA"></option>
-            <option value="FI"></option>
-            <option value="EL"></option>
-            <option value="HU"></option>
-            <option value="NO"></option>
-            <option value="RO"></option>
-            <option value="SV"></option>
-          </datalist>
+          <!-- 候选列表由 options.js 从 lib/template.js 的 TARGET_PRESETS 填，
+               别在这儿手抄一份（加语言只改 lib/template.js，两处同步由 test-lib 第 22 节盯着） -->
+          <datalist id="s-lang-presets"></datalist>
         </div>
 
         <div class="setting">

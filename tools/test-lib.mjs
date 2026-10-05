@@ -17,7 +17,7 @@ globalThis.chrome = {
 };
 
 const { tokenize, parseRequest, parseCurl, parseRawHttp, repairJsonBody } = await import('../lib/request-parser.js');
-const { renderTemplate, escapeJsonString, imageContentPart, targetCodeOf } = await import('../lib/template.js');
+const { renderTemplate, escapeJsonString, imageContentPart, targetCodeOf, TARGET_PRESETS } = await import('../lib/template.js');
 const { parsePath, getByPath, extractContent, describeShape } = await import('../lib/extract.js');
 const {
   DEFAULT_CONFIGS, DEFAULT_SETTINGS, wantDirect, moveItem, dropIndex, buildVars,
@@ -1097,9 +1097,10 @@ section('21. 模板转义：占位符落在几层引号里，就逐层转义');
 
 /* ------------------------------------------------------------------ */
 
-section('22. 目标语言：设置页那个输入框能选预设（DeepL 这类接口只认代码）');
+section('22. 目标语言：下拉给语言名，接口要的代码自动转');
 {
   const html = readFileSync(new URL('../options.html', import.meta.url), 'utf8');
+  const js = readFileSync(new URL('../options.js', import.meta.url), 'utf8');
 
   const tag = (html.match(/<input[^>]*id="s-lang"[^>]*>/) || [])[0];
   check('目标语言那个输入框还在', !!tag, tag);
@@ -1112,24 +1113,35 @@ section('22. 目标语言：设置页那个输入框能选预设（DeepL 这类�
     : null;
   check('对应 id 的 datalist 真的存在', !!dl, listId);
 
-  const values = dl
-    ? [...dl.matchAll(/<option value="([^"]*)"><\/option>/g)].map((m) => m[1])
-    : [];
+  /* 候选只有一处真相源：HTML 里是空容器，列表由设置页脚本从 TARGET_PRESETS 填。
+     以前这两份是分开手写的，结果「荷兰语 / 波兰语」挑得到却映射不出来。 */
+  check('HTML 里那个 datalist 是空容器（不手抄第二份）',
+    !!dl && !/<option/i.test(dl), dl);
+  check('设置页脚本确实把它填上了',
+    js.includes('TARGET_PRESETS') && js.includes('s-lang-presets'));
+
+  const values = TARGET_PRESETS;
   check('列表不是空的', values.length > 0, values.length);
   check('够挑（至少 20 个）', values.length >= 20, values.length);
   check('有「名字」那种：简体中文', values.includes('简体中文'), values.slice(0, 6).join(','));
-  check('有「代码」那种：ZH-HANS（DeepL 认的就是它）', values.includes('ZH-HANS'),
-    values.filter((v) => /^[A-Z][A-Z-]*$/.test(v)).join(','));
-  check('ZH-HANT / JA 这些常用的也在',
-    values.includes('ZH-HANT') && values.includes('JA'));
+  check('常用语言都在：英语 / 日语', values.includes('英语') && values.includes('日语'));
+  check('映射不了的地区变体才留代码：EN-GB / PT-BR',
+    values.includes('EN-GB') && values.includes('PT-BR'));
   check('没有空值', values.every((v) => v.trim() !== ''));
   eq('没有重复项', new Set(values).size, values.length);
 
-  /* 从下拉里选了代码之后，{{target}} 得真的变成那个代码 —— 这是这个下拉存在的全部意义 */
-  const picked = buildVars({ settings: { targetLang: 'ZH-HANS' }, vars: [] }, 'Hello');
-  eq('选 ZH-HANS 之后 {{target}} 就是 ZH-HANS', picked.target, 'ZH-HANS');
-  eq('{{targetLang}} 跟着一起变', picked.targetLang, 'ZH-HANS');
-  eq('{{targetCode}} 也照收（本来就是代码）', picked.targetCode, 'ZH-HANS');
+  /* 列表和映射表必须同步 —— 挑得到却转不出代码，等于骗人 */
+  const unmapped = values.filter((v) => !targetCodeOf(v, ''));
+  check('候选里每个都能映射出代码', unmapped.length === 0, unmapped.join(','));
+  eq('以前挑「荷兰语」会静默回退成 ZH-HANS，现在给 NL', targetCodeOf('荷兰语'), 'NL');
+  eq('挪威语给的是 DeepL 认的 NB（不是通用 ISO 的 NO）', targetCodeOf('挪威语'), 'NB');
+
+  /* 挑了语言名之后：{{target}} 原样喂聊天模型，{{targetCode}} 喂只认代码的接口 */
+  const picked = buildVars({ settings: { targetLang: '英语' }, vars: [] }, 'Hello');
+  eq('{{target}} 原样是「英语」', picked.target, '英语');
+  eq('{{targetCode}} 自动是 EN', picked.targetCode, 'EN');
+  const direct = buildVars({ settings: { targetLang: 'ZH-HANS' }, vars: [] }, 'Hello');
+  eq('直接填代码也认（原样大写）', direct.targetCode, 'ZH-HANS');
 
   /* DeepL 那条预设必须靠映射，不能把语言写死在模板里 */
   const deeplCfg = DEFAULT_CONFIGS.find((c) => c.id === 'builtin-deepl');

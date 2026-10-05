@@ -16,7 +16,7 @@ import {
 import { runRequest, previewRequest } from './lib/engine.js';
 import { acquireDirect, isDirectActive } from './lib/network.js';
 import { ADAPTERS } from './lib/adapters.js';
-import { BUILTIN_VAR_HINTS } from './lib/template.js';
+import { BUILTIN_VAR_HINTS, TARGET_PRESETS } from './lib/template.js';
 import {
   toDataUrl,
   pickImageMime,
@@ -1442,6 +1442,22 @@ function flashSaved() {
   setSaveStatus(`已保存 ${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`, true);
   clearTimeout(savedTimer);
   savedTimer = setTimeout(() => setSaveStatus(''), 2500);
+}
+
+/* ------------------------------------------------------------------ */
+/* 目标语言下拉：候选只有一处真相源（lib/template.js 的 TARGET_PRESETS）  */
+/* HTML 里那个 datalist 是空容器，列表在这儿填 —— 别再去 HTML 手抄一份   */
+/* ------------------------------------------------------------------ */
+
+{
+  const list = $('#s-lang-presets');
+  if (list) {
+    for (const name of TARGET_PRESETS) {
+      const opt = document.createElement('option');
+      opt.value = name;
+      list.appendChild(opt);
+    }
+  }
 }
 
 window.addEventListener('beforeunload', () => {
