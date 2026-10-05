@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""打包：出 zip（传商店 / 挂 Release）和 crx（拖进 edge://extensions/ 直接装）。
+"""打包：出 zip（传商店 / 挂 Release）。
 
 用法：
-    python tools/pack.py            # 只出 dist/request-translate-<版本>.zip
-    python tools/pack.py --crx      # zip + crx 都出
+    python tools/pack.py            # 出 dist/request-translate-<版本>.zip
+    python tools/pack.py --crx      # 自用：顺便出一个 crx（**不随 Release 发布**）
 
 只收「运行时」文件：manifest 引用的那些 + lib/ + icons/ + _locales/ + 两个说明文件。
 tools/ docs/ .git/ 这些开发用的东西一个都不进包。
 
-关于 crx：
+关于 --crx（备用分支，对外不发）：
+  对外只发 zip，装法在 README 里只写「商店 + 加载解压文件夹」—— 跟大多数扩展一样。
+  crx 这条路 Edge 是认的（拖进 edge://extensions/ 就能装，实测过），但发出去会多出一个
+  和商店版**不同 ID** 的扩展（两个图标、两份配置），对用户是负担，所以不发布。
+  留着这段是为了「自己想临时装一个」的场景。
   * 用系统的 Edge 打包（`msedge --pack-extension=…`），不依赖任何第三方工具。
-  * 签名用的私钥存在 dist/key.pem。**这个文件别删、别丢** —— 扩展 ID 是公钥的指纹，
-    换一把钥匙就等于换一个扩展：老用户那边会变成「装了第二个 RequestTranslate」，
-    设置也不会继承。
-  * crx 版的 ID 和商店版**必然不一样**（商店的私钥在微软手里）。
-    所以两条路选一条走，别同时装 —— 会冒出两个图标、两份配置。
+  * 签名私钥在 dist/key.pem（gitignore 里，不进仓库）。换一把钥匙 = 换一个扩展 ID。
 
 为什么不用 tar：Git Bash 自带的 tar 不认 .zip，`tar -a -cf x.zip` 产出的是换了
 扩展名的 tar（魔数 mani 而不是 PK），商店会直接拒。所以老老实实用 zipfile 写。

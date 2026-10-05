@@ -42,25 +42,16 @@ curl https://api.ant-ling.com/v1/chat/completions \
 
 ## 安装
 
-三种装法，**挑一种就行**。它们会变成**三个不同的扩展**（不同 ID、各存一份配置、各占一个图标）——
-换装法之前先把旧的卸掉。
+### 一、从商店装（能自动更新，推荐）
 
-### 一、拖 crx（Edge，最省事）
+- **Edge**：[RequestTranslate - Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/9EGCXX0CGMWT7)
+  —— 已提交，**审核中**，通过之前这个链接打不开
+- **Chrome**：还没提交
 
-1. 到 [Releases](https://github.com/KniphH/RequestTranslate/releases) 下载
-   `request-translate-x.y.z.crx`
-2. 打开 `edge://extensions/`，把这个文件**拖进去**，弹确认框时点「添加」
+### 二、手动装（不依赖商店，Edge / Chrome 都行）
 
-装完 crx 文件就能删了（扩展已经复制进浏览器里）。Edge 会给它标一个非商店来源的提示，
-以后升级要手动下新 crx 再拖一次。**Chrome 不支持这么装**，Chrome 用户走第三种。
-
-### 二、从商店装（能自动更新）
-
-- Edge：已提交，**审核中** —— 上架后这里补链接
-
-### 三、加载解压的文件夹（Edge / Chrome 都行）
-
-1. 下载 `request-translate-x.y.z.zip`，解压到一个**以后不会挪动的文件夹**
+1. 到 [Releases](https://github.com/KniphH/RequestTranslate/releases) 下载最新的
+   `request-translate-x.y.z.zip`，解压到一个**以后不会挪动的文件夹**
    （扩展是照这个路径加载的，挪了得重新加载一次）
 2. 打开 `edge://extensions/`（Chrome 是 `chrome://extensions/`）
 3. 左下角打开 **开发人员模式**
@@ -68,9 +59,8 @@ curl https://api.ant-ling.com/v1/chat/completions \
 
 自己开发时不用打包，第 4 步直接选这个仓库的根目录就行。
 
-> **为什么装出来 ID 不一样**：扩展 ID 就是签名公钥的指纹。商店版的私钥在微软手里，
-> 我这边发 crx 用的是自己生成的一把（`dist/key.pem`），解压加载又是按文件夹路径算的。
-> 三个 ID 各是各的，**别混着装**。
+> 商店版和手动加载版的**扩展 ID 不一样**（一个是商店的签名，一个是本地路径算的），
+> 各存一份配置、各占一个图标 —— 换装法之前先把旧的卸掉。
 
 装好后在工具栏找到紫色的双箭头图标，右键 → 「扩展选项」进设置页。
 
@@ -629,7 +619,7 @@ lib/
   store.js             配置存储、内置示例、导入导出、版本迁移
 tools/
   make-icons.py        纯标准库生成图标
-  pack.py              打包 dist/*.zip（传商店 / 挂 Release）与 *.crx（拖进浏览器装）
+  pack.py              打包 dist/*.zip（传商店 / 挂 Release）
   check-globals.mjs    静态检查：找出「调用了但没定义」的函数
   check-dom.mjs        静态检查：JS 里引用的 id / class 是否真实存在
   test-lib.mjs         解析/转义/提取/适配器/OCR 的单元测试
@@ -651,12 +641,11 @@ npm run test:ui       # 开真实 Edge 加载扩展，量 DOM 实际尺寸
 npm run perf          # 量性能：主线程任务时间 + 进程 CPU，四档流式负载对照
 npm run icons         # 重新生成图标
 npm run pack          # 出 dist/request-translate-<版本>.zip（传商店 / 挂 Release 用）
-npm run pack:crx      # 顺便出一个 .crx（拖进 edge://extensions/ 就能装）
 ```
 
 `npm run perf` 只跑指定档位可以快很多：`PERF_ONLY=heavy npm run perf`（可选档位 `normal` / `fewLong` / `manyShort` / `heavy`）。
 
-拆开看是 `test-lib` 374 项、`test-engine` 79 项、`e2e-ui` 162 项，另加两项静态检查。这几层各自补不同的盲区：
+拆开看是 `test-lib` 410 项、`test-engine` 79 项、`e2e-ui` 170 项，另加两项静态检查。这几层各自补不同的盲区：
 
 - **`check-globals`** — 语法检查看不出 `bindConfigList()` 这种「调用了但没写」，只有运行时才炸。它把注释、字符串、正则字面量剥掉之后逐个比对调用与声明。也可以指定文件：`node tools/check-globals.mjs lib/engine.js`
 - **`check-dom`** — 比对 JS 里的 `$('#id')` / `querySelector('.x')` / `closest('.x')`，和「HTML 里写死的**加上** JS 里拼出来的」类名，防的是「选择器指向不存在的元素，启动时炸在 null 上」。动态建节点用的类名（`row.className = 'cfg-row'`）在 HTML 里找不到，所以脚本里拼过的名字也算数。
