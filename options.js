@@ -33,12 +33,12 @@ import {
 } from './lib/trigger-styles.js';
 import {
   OCR_PROVIDERS,
-  OCR_PROMPTS,
   BUILTIN_OCR_IDS,
   DEFAULT_OCR_PROMPT,
   normalizeOcrProvider,
   normalizeOcrState,
   normalizeMaxTokens,
+  previewOcrRequest,
   runOcr,
   endpointHost
 } from './lib/ocr.js';
@@ -102,7 +102,7 @@ const els = {
   oMaxTokens: $('#o-maxtokens'),
   oKey: $('#o-key'),
   oPrompt: $('#o-prompt'),
-  oPrompts: $('#o-prompts'),
+  oPreview: $('#o-preview'),
   oDirect: $('#o-direct'),
   oNote: $('#o-note'),
   oDisabled: $('#o-disabled'),
@@ -904,14 +904,68 @@ function renderOcrEditor() {
   // 换了一条供应商，上一次的测试结果就不是这条的了 —— 收起来，免得看岔
   els.ocrTestResult.hidden = true;
 
-  els.oPrompts.innerHTML = OCR_PROMPTS.map(
-    (x) =>
-      '<button type="button" class="chip" data-prompt="' + escapeHtml(x.text) +
-      '" title="' + escapeHtml(x.hint) + '">' + escapeHtml(x.text) + '</button>'
-  ).join('');
+  // 提示词故意**不给预设按钮**：各家格式互不相通（DeepSeek-OCR 认 `Free OCR.`、
+  // PaddleOCR-VL 认 `OCR:`），摆一排只对某一家有效的按钮反而误导。说明写在 HTML 里。
+
+  renderOcrPreview();
 
   // 只剩一条时不让删：删空了功能就没了（内置那条就算删了下次启动也会被补回来）
   els.btnOcrDelete.disabled = state.ocr.providers.length <= 1;
+}
+
+/* ------------------------------------------------------------------ */
+/* OCR 的「完整请求」预览                                              */
+/* ------------------------------------------------------------------ */
+/* 和配置栏那个「渲染预览」一个意思：**别让人猜扩展到底发了什么**。
+   OCR 这条路虽然不开放手写模板（形状是固定的，见 lib/ocr.js 顶部注释），
+   但接口地址 / 模型 / 提示词 / max_tokens 都是用户填的 —— 摊出来才看得清。
+   图片位置塞一张**假的**小图：真截图是几十万字符的 data URL，摊出来没法读。 */
+
+const OCR_SAMPLE_IMAGE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
+
+function renderOcrPreview() {
+  const p = currentOcrProvider();
+  if (!p) return;
+
+  // 组装和真发出去的是同一个函数（lib/ocr.js 的 previewOcrRequest）
+  const req = previewOcrRequest(p, OCR_SAMPLE_IMAGE);
+
+  const missing = [];
+  if (!String(p.endpoint || '').trim()) missing.push('接口地址');
+  if (!String(p.model || '').trim()) missing.push('模型');
+  if (!String(p.apiKey || '').trim()) missing.push('API Key');
+
+  const lines = [];
+  lines.push('方法：' + req.method);
+  lines.push('地址：' + (req.url || '(还没填)'));
+  lines.push('请求头：');
+  for (const [k, v] of Object.entries(req.headers)) lines.push('  ' + k + ': ' + v);
+  lines.push('');
+  lines.push('—— 实际会发出的请求体 ——');
+  lines.push('');
+  try {
+    // 从**同一份** body 反序列化再缩进，保证屏幕上这段就是真发出去的那段
+    lines.push(JSON.stringify(JSON.parse(req.body), null, 2));
+  } catch {
+    lines.push(req.body);
+  }
+  lines.push('');
+  lines.push('（上面 image_url 里是一张假的示例图，真截图换成一整段 data URL；');
+  lines.push('  「测试」跑完后的「原始请求」里是那一份真的，Key 同样打码）');
+  if (!String(p.prompt || '').trim()) {
+    lines.push('');
+    lines.push('提示词留空 → 会发默认的那句：' + DEFAULT_OCR_PROMPT);
+  }
+  const mt = normalizeMaxTokens(p.maxTokens);
+  if (mt > 0) {
+    lines.push('');
+    lines.push('「最大输出长度」填了 ' + mt + ' → 这次会带上 max_tokens（注意它和提示词一起占上下文）');
+  }
+  if (missing.length) {
+    lines.push('');
+    lines.push('还差：' + missing.join(' / ') + ' —— 补齐之前发出去会失败');
+  }
+  els.oPreview.textContent = lines.join('\n');
 }
 
 /** 把编辑框里的东西写回当前那条供应商。切走之前必须调一次 */
@@ -957,6 +1011,8 @@ function bindOcr() {
       else p[key] = el.value;
       // 名称 / 地址 / 模型都会出现在列表那行小字里，改了就顺手刷一下
       if (key === 'name' || key === 'endpoint' || key === 'model') renderOcrList();
+      // 除了名称，其它几个都会进请求体（地址 / 模型 / key / 提示词 / max_tokens）
+      if (key !== 'name') renderOcrPreview();
       scheduleSave();
     });
   }
@@ -965,13 +1021,6 @@ function bindOcr() {
     state.ocr.disabled = els.oDisabled.checked;
     renderOcrDisabled();
     scheduleSave();
-  });
-
-  els.oPrompts.addEventListener('click', (e) => {
-    const chip = e.target.closest('.chip');
-    if (!chip) return;
-    els.oPrompt.value = chip.dataset.prompt || '';
-    els.oPrompt.dispatchEvent(new Event('input', { bubbles: true }));
   });
 
   els.btnOcrNew.addEventListener('click', () => {

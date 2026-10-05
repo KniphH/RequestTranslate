@@ -342,13 +342,19 @@ output.choices[0].text
 
 要的是一套 **OpenAI 兼容的 `chat/completions`**：截图以 data URL 塞进
 `messages[0].content` 的 `image_url`，文字从 `choices[0].message.content` 取。
-提示词里给了几个可以点的预设（`Free OCR.` / `<|grounding|>Convert the document to
-markdown.` / `Parse the figure.` …），这些是 DeepSeek-OCR 训练时用的固定写法，
-**照着点就行、别自己改**。想让识别结果直接进翻译，用默认的 `Free OCR.` ——
-带 `<|grounding|>` 的那几个会往结果里夹 `|ref|` / `|det|` 位置标记。
+OCR 这条路虽然不让你手写模板（形状是固定的），但**整条请求在设置页里摊开给你看** ——
+「这次会发出去的请求」里方法 / 地址 / 请求头 / 请求体都在（Key 打码，
+图片位置用一张示例图，不然真截图那几十万字符没法读），改哪个字段它就跟着变。
 
-> 提示词和模型是绑在一起的：换回 PaddleOCR-VL（`PaddlePaddle/PaddleOCR-VL-1.5`）得把它那套
-> `OCR:` / `Table Recognition:` 短指令填回去，DeepSeek-OCR 的预设它不认。
+**提示词按模型填 —— 插件不给预设。** 各家的提示词格式互不相通（DeepSeek-OCR 认
+`Free OCR.`、PaddleOCR-VL 认 `OCR:`），在设置页摆一排只对某一家有效的按钮反而误导，
+所以填它文档里给的那句、或者照抄官方示例就行。这类接口对不认识的提示词大多是
+**不认也不报错**，只表现为认出来的东西不对 —— 换模型时记得连提示词一起换。
+
+举例：DeepSeek-OCR 的提示词是 `Free OCR.`（默认值，只提文字、不带版式，喂给翻译最干净）；
+它还有几个带 `<|grounding|>` 的写法（如 `<|grounding|>Convert the document to markdown.`），
+那些会往结果里夹 `|ref|` / `|det|` 位置标记。换回 PaddleOCR-VL
+（`PaddlePaddle/PaddleOCR-VL-1.5`）就得把它那套 `OCR:` / `Table Recognition:` 填回去。
 
 **「最大输出长度」（`max_tokens`）建议留空。** 留空就是不发送这个字段，由服务端按模型
 自己的上限定。这是踩过坑才这么定的：这个上限是「提示词 + `max_tokens`」**加在一起**算的，
@@ -646,7 +652,7 @@ tools/
 ## 开发
 
 ```bash
-npm test              # 静态检查 + 单元 + 端到端 + 真实浏览器 UI（707 项）
+npm test              # 静态检查 + 单元 + 端到端 + 真实浏览器 UI（720 项）
 npm run check         # 只跑两项静态检查
 npm run test:lib      # 解析器 / 模板 / 提取
 npm run test:engine   # 本地 mock 服务器，验证各类响应格式
@@ -658,7 +664,7 @@ npm run pack          # 出 dist/request-translate-<版本>.zip（传商店 / �
 
 `npm run perf` 只跑指定档位可以快很多：`PERF_ONLY=heavy npm run perf`（可选档位 `normal` / `fewLong` / `manyShort` / `heavy`）。
 
-拆开看是 `test-lib` 426 项、`test-engine` 79 项、`e2e-ui` 200 项，另加两项静态检查。这几层各自补不同的盲区：
+拆开看是 `test-lib` 432 项、`test-engine` 79 项、`e2e-ui` 207 项，另加两项静态检查。这几层各自补不同的盲区：
 
 - **`check-globals`** — 语法检查看不出 `bindConfigList()` 这种「调用了但没写」，只有运行时才炸。它把注释、字符串、正则字面量剥掉之后逐个比对调用与声明。也可以指定文件：`node tools/check-globals.mjs lib/engine.js`
 - **`check-dom`** — 比对 JS 里的 `$('#id')` / `querySelector('.x')` / `closest('.x')`，和「HTML 里写死的**加上** JS 里拼出来的」类名，防的是「选择器指向不存在的元素，启动时炸在 null 上」。动态建节点用的类名（`row.className = 'cfg-row'`）在 HTML 里找不到，所以脚本里拼过的名字也算数。

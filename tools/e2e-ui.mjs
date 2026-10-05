@@ -1407,7 +1407,9 @@ try {
   const ocrShape = await opt.evaluate(() => ({
     rows: [...document.querySelectorAll('#ocr-list .cfg-item')].map((b) => b.dataset.id),
     active: (document.querySelector('#ocr-list .cfg-item.is-active') || { dataset: {} }).dataset.id || '',
-    prompts: document.querySelectorAll('#o-prompts .chip').length,
+    promptChips: document.querySelectorAll('#o-prompts').length,
+    promptHint: (document.querySelector('#o-prompt').closest('.field').querySelector('.hint') || {}).textContent || '',
+    preview: (document.querySelector('#o-preview') || {}).textContent || '',
     endpoint: document.querySelector('#o-endpoint').value,
     model: document.querySelector('#o-model').value,
     hasMaxTokensField: !!document.querySelector('#o-maxtokens'),
@@ -1421,7 +1423,56 @@ try {
       ocrShape.model === 'deepseek-ai/DeepSeek-OCR',
     `${ocrShape.endpoint} / ${ocrShape.model}`
   );
-  check('提示词给了可以点的短指令', ocrShape.prompts >= 1, String(ocrShape.prompts));
+  /* 提示词不再做成「点一下就填」的预设 —— 各家格式互不相通，摆一排只对某一家有效的
+     按钮会误导。改成说明里写清「不同模型不一样」并举 DeepSeek-OCR 那套当例子。 */
+  check(
+    '不再摆提示词预设，改成说明里举例子',
+    ocrShape.promptChips === 0 &&
+      /不同模型的提示词不一样/.test(ocrShape.promptHint) &&
+      /Free OCR\./.test(ocrShape.promptHint) &&
+      /grounding/.test(ocrShape.promptHint) &&
+      /PaddleOCR/.test(ocrShape.promptHint),
+    `chips=${ocrShape.promptChips}｜${ocrShape.promptHint.slice(0, 80)}`
+  );
+  /* OCR 栏也要贯彻那条理念：**整条请求摊开给用户看**，别让他猜扩展发了什么。
+     OCR 这条路形状固定（不开放手写模板），但地址 / 模型 / 提示词都是用户填的。 */
+  check(
+    'OCR 栏把整条请求摊开（方法 / 地址 / 请求头 / 请求体）',
+    /方法：POST/.test(ocrShape.preview) &&
+      ocrShape.preview.includes('https://api.siliconflow.cn/v1/chat/completions') &&
+      /请求头：[\s\S]*Authorization:/.test(ocrShape.preview) &&
+      /实际会发出的请求体/.test(ocrShape.preview) &&
+      /"image_url"/.test(ocrShape.preview) &&
+      /"text"/.test(ocrShape.preview),
+    ocrShape.preview.slice(0, 100)
+  );
+  check(
+    '预览里的图是一张示例图（真截图是几十万字符的 data URL，摊出来没法看）',
+    ocrShape.preview.includes('data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=='),
+    ocrShape.preview.slice(0, 120)
+  );
+  check(
+    '还没填 key 时预览直说还差什么（不用等他点了测试才知道）',
+    /还差：[\s\S]*API Key/.test(ocrShape.preview),
+    ocrShape.preview.split('\n').slice(-3).join(' ｜ ')
+  );
+  /* 编辑器是一列 flex：预览块曾经被当成**可压缩项**，被压成几十像素高、
+     再被 .preview 的 overflow:hidden 剪掉大半 —— 屏幕上只剩「方法 / 地址」两行，
+     看着像没渲染出来。量一下框高必须装得下 summary + pre。 */
+  const pvBox = await opt.evaluate(() => {
+    const pre = document.querySelector('#o-preview');
+    const d = pre.closest('details');
+    const sum = d.querySelector('summary');
+    return {
+      box: Math.round(d.getBoundingClientRect().height),
+      need: Math.round(pre.getBoundingClientRect().height + sum.getBoundingClientRect().height)
+    };
+  });
+  check(
+    '预览块没被 flex 压扁（框比内容矮 = 被剪掉了）',
+    pvBox.box >= pvBox.need - 2,
+    `框 ${pvBox.box} / 需要 ${pvBox.need}`
+  );
   check(
     '「最大输出长度」默认显示为空 = 不发送（写死一个数会在上下文窄的模型上 400）',
     ocrShape.hasMaxTokensField && ocrShape.maxTokens === '',
@@ -1474,6 +1525,20 @@ try {
       ocrSaved.key === 'sk-e2e' && ocrSaved.prompt === 'Free OCR.',
     JSON.stringify(ocrSaved)
   );
+
+  /* 预览是跟着输入框实时刷的 —— 改了模型/地址就该当场看到新的那条请求 */
+  const ocrPreview2 = await opt.evaluate(() => document.querySelector('#o-preview').textContent);
+  check(
+    '改了字段预览跟着变（模型名和接口地址都是刚填的那份）',
+    ocrPreview2.includes('e2e-ocr-model') && ocrPreview2.includes(`127.0.0.1:${port}/ocr`),
+    ocrPreview2.slice(0, 100)
+  );
+  check(
+    '预览里头的 key 是打码的（短的 → Bearer ***，别把整把 key 印在屏幕上）',
+    !ocrPreview2.includes('sk-e2e') && /Authorization: Bearer \*+/.test(ocrPreview2),
+    (ocrPreview2.match(/Authorization: .*/) || [''])[0]
+  );
+  check('填齐之后就不再提「还差」', !/还差：/.test(ocrPreview2), ocrPreview2.split('\n').slice(-2).join(' ｜ '));
 
   /* ---- 最大输出长度：填了才发，清空就不发 ---- */
   await opt.evaluate(async () => {

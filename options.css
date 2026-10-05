@@ -377,6 +377,11 @@ select option { background: var(--panel-2); }
   border-radius: 9px;
   background: var(--panel);
   overflow: hidden;
+  /* 编辑器是一列 flex：预览块必须**不参与压缩**。
+     它的孩子（pre）带 overflow:auto，自动最小尺寸算 0，于是内容一长就被压成
+     几十像素高，再被这里的 overflow:hidden 剪掉大半 —— 屏幕上只剩两行
+     「方法 / 地址」，看着像没渲染出来（踩过）。 */
+  flex: none;
 }
 .preview summary {
   padding: 9px 13px;

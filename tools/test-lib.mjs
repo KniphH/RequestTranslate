@@ -28,11 +28,11 @@ const { toBingLang, hasAdapter, adapterDirectHosts } = await import('../lib/adap
 const { pacFallback, buildPac, canControlProxy, acquireDirect, isDirectActive } =
   await import('../lib/network.js');
 const {
-  OCR_MENU_ID, OCR_MENU_TITLE, OCR_PROVIDERS, OCR_PROMPTS, BUILTIN_OCR_IDS,
+  OCR_MENU_ID, OCR_MENU_TITLE, OCR_PROVIDERS, BUILTIN_OCR_IDS,
   DEFAULT_OCR_PROMPT,
   normalizeOcrProvider, normalizeOcrState, defaultOcrState, activeOcrProvider,
   endpointHost, buildOcrBody, pickOcrText, describeOcrError, ocrErrorHint,
-  normalizeMaxTokens, runOcr
+  normalizeMaxTokens, previewOcrRequest, runOcr
 } = await import('../lib/ocr.js');
 const {
   isImageMime, pickImageMime, sniffImageMime, bytesToBase64, toDataUrl, NO_IMAGE_MESSAGE
@@ -848,6 +848,34 @@ section('19. 截图 OCR：供应商状态 / 请求体 / 取文字');
   eq('提示词留空时退回默认',
     buildOcrBody({ model: 'm', prompt: '   ' }, 'data:x').messages[0].content[1].text, 'Free OCR.');
 
+  /* ---- 设置页那个「这次会发出去的请求」预览 ---- */
+  /* OCR 栏不开放手写模板（形状固定），但接口地址 / 模型 / 提示词都是用户填的 ——
+     所以设置页要把**整条请求**摊出来。预览和真正 fetch 的是同一个函数：
+     runOcr 直接拿 previewOcrRequest 的产物当 body 发（下面那条「一模一样」就是证据）。 */
+  const pv = previewOcrRequest(
+    {
+      endpoint: 'https://api.siliconflow.cn/v1/chat/completions',
+      model: 'deepseek-ai/DeepSeek-OCR',
+      apiKey: 'sk-abcdefghijklmn',
+      prompt: ''
+    },
+    'data:image/png;base64,SAMPLE'
+  );
+  eq('预览：方法是 POST', pv.method, 'POST');
+  eq('预览：地址就是填的接口地址', pv.url, 'https://api.siliconflow.cn/v1/chat/completions');
+  eq('预览：Content-Type', pv.headers['Content-Type'], 'application/json');
+  check('预览：Authorization 打码了（设置页截图不至于泄 key）',
+    !pv.headers.Authorization.includes('sk-abcdefghijklmn') &&
+      pv.headers.Authorization.startsWith('Bearer sk-abc'),
+    pv.headers.Authorization);
+  const pvBody = JSON.parse(pv.body);
+  eq('预览：body 里就是那张图',
+    pvBody.messages[0].content[0].image_url.url, 'data:image/png;base64,SAMPLE');
+  eq('预览：提示词留空 → 发默认那句（和真发出去的一致）',
+    pvBody.messages[0].content[1].text, DEFAULT_OCR_PROMPT);
+  eq('预览：接口地址没填时 url 是空串（设置页据此写「还没填」）',
+    previewOcrRequest({ model: 'm' }, 'data:x').url, '');
+
   /* ---- max_tokens：默认**不发**这个字段 ---- */
   /* 写死一个数会在上下文窄的模型上直接 400：
      DeepSeek-OCR 的 max_seq_len 只有 8192，而「提示词 + max_tokens」是加在一起算的
@@ -919,7 +947,7 @@ section('19. 截图 OCR：供应商状态 / 请求体 / 取文字');
     eq('带上 HTTP 状态', okRes.status, 200);
     check('带上耗时', typeof okRes.ms === 'number');
     eq('request.url 就是填的接口地址', okRes.request.url, 'https://x/y');
-    eq('request.body 和真正发出去的一模一样',
+    eq('request.body 和真正发出去的一模一样（设置页预览 = 真发的那份）',
       okRes.request.body, sent.init.body);
     eq('真发出去的那份 header 用真 key',
       sent.init.headers.Authorization, 'Bearer sk-1234567890');
@@ -957,17 +985,17 @@ section('19. 截图 OCR：供应商状态 / 请求体 / 取文字');
   check('右键菜单开关默认开', DEFAULT_SETTINGS.ocrMenu === true);
   check('内置那条默认是硅基流动的 DeepSeek-OCR',
     OCR_PROVIDERS[0].model === 'deepseek-ai/DeepSeek-OCR', OCR_PROVIDERS[0].model);
-  check('默认提示词是 DeepSeek-OCR 的预设（不是 PaddleOCR-VL 的 OCR:）',
+  check('默认提示词是 DeepSeek-OCR 认的那句（不是 PaddleOCR-VL 的 OCR:）',
     DEFAULT_OCR_PROMPT === 'Free OCR.', DEFAULT_OCR_PROMPT);
-  check('提示词预设全是 DeepSeek-OCR 认的那一套',
-    OCR_PROMPTS.some((p) => p.text === 'Free OCR.') &&
-      OCR_PROMPTS.some((p) => p.text.includes('|grounding|')),
-    OCR_PROMPTS.map((p) => p.text));
-  check('预设里不再混 PaddleOCR-VL 的写法',
-    !OCR_PROMPTS.some((p) => /^(OCR|Table Recognition|Formula Recognition|Seal Recognition):$/.test(p.text)),
-    OCR_PROMPTS.map((p) => p.text));
-  check('每个预设都带用途说明（鼠标停上去有用）',
-    OCR_PROMPTS.every((p) => p.text.trim() && p.hint.trim()));
+  /* 提示词**不内置成预设**：各家格式互不相通（DeepSeek-OCR 认 `Free OCR.`、
+     PaddleOCR-VL 认 `OCR:`），设置页摆一排只对某一家有效的按钮就是误导。
+     内置那条供应商只兜一个默认值，换模型时用户自己去文档里抄。
+     设置页里那句说明由 e2e 第 10 节盯着（它得写清「不同模型不一样 + 举个例子」）。 */
+  check('内置那条用的就是默认提示词',
+    normalizeOcrProvider(OCR_PROVIDERS[0]).prompt === DEFAULT_OCR_PROMPT,
+    normalizeOcrProvider(OCR_PROVIDERS[0]).prompt);
+  eq('用户自己填的提示词原样发出去（不被默认值盖掉）',
+    buildOcrBody({ model: 'm', prompt: 'OCR:' }, 'data:x').messages[0].content[1].text, 'OCR:');
 }
 
 section('19b. 禁用外置 OCR：勾上后图片直传模型');

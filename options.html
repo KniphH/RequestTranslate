@@ -251,13 +251,17 @@
         <div class="field">
           <label for="o-prompt">提示词</label>
           <input id="o-prompt" type="text" spellcheck="false" autocomplete="off" placeholder="Free OCR.">
-          <div class="chips" id="o-prompts"></div>
           <p class="hint">
-            和图片一起发过去的那句话。DeepSeek-OCR 认的是上面这几个<b>固定预设</b>（点一下就填），
-            别自己改写写法 —— 带 <code>&lt;|grounding|&gt;</code> 的那几个会在结果里夹带
-            <code>&lt;|ref|&gt;</code> 之类的<b>位置标记</b>，只想要干净文字就用 <code>Free OCR.</code>。
-            别的视觉模型（PaddleOCR-VL 那种认 <code>OCR:</code>）直接写一句
-            「请原样输出图片里的文字」也行。
+            和图片一起发过去的那句话。<b>不同模型的提示词不一样</b> —— 填它文档里给的那句，
+            或者照抄官方示例；换了模型就把这里一起换掉（这类接口对提示词大多是
+            <b>不认也不报错</b>，只表现为认出来的东西不对）。
+            <br>
+            例：DeepSeek-OCR 的提示词是 <code>Free OCR.</code>（即上面的默认值，
+            只提文字、不带版式，喂给翻译最干净）；它还有几个带
+            <code>&lt;|grounding|&gt;</code> 的写法（如
+            <code>&lt;|grounding|&gt;Convert the document to markdown.</code>），
+            那些会在结果里夹带 <code>&lt;|ref|&gt;</code> 之类的<b>位置标记</b>。
+            换成别的模型（PaddleOCR-VL 认 <code>OCR:</code>）就填它自己那一套。
           </p>
         </div>
 
@@ -271,6 +275,11 @@
             注意代理是 TUN / 虚拟网卡模式时没用。
           </p>
         </div>
+
+        <details class="preview" open>
+          <summary>这次会发出去的请求（请求头里的 Key 已打码）</summary>
+          <pre id="o-preview"></pre>
+        </details>
 
         <div class="field">
           <label for="ocr-test-img">测试</label>
