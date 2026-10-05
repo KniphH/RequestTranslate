@@ -12,6 +12,7 @@
     "test:engine": "node tools/test-engine.mjs",
     "test:ui": "node tools/e2e-ui.mjs",
     "perf": "node tools/perf-probe.mjs",
-    "icons": "python tools/make-icons.py"
+    "icons": "python tools/make-icons.py",
+    "pack": "python tools/pack.py"
   }
 }
