@@ -640,7 +640,7 @@ section('14. 老存档迁移：开关归位 / 补预设 / OCR 供应商换模型
   });
   eq('最新版本的存档不会被重复插入', vNow.configs.length, 1);
 
-  /* 1.0.4 去掉了「笔尖」这个预设：老存档里留着 nib 的话要写正成默认那个。
+  /* 1.1.0 去掉了「笔尖」这个预设：老存档里留着 nib 的话要写正成默认那个。
      注意这不吃版本号 —— 没有新增字段、没改默认值，只是把认不出的值归一化，
      所以一个 version 已经是最新的存档同样要过这一关。 */
   const vNib = await load({
@@ -700,7 +700,7 @@ section('15. 翻译按钮：样式预设与尺寸');
     custom.svg === TRIGGER_SVG_SAMPLE);
   check('只有「自定义」不给底座', TRIGGER_STYLES.filter((s) => s.bare).length === 1);
 
-  // 1.0.4 把「笔尖」换成了「自定义」。老存档里的 nib 认不出来 → 回退到第一个预设
+  // 1.1.0 把「笔尖」换成了「自定义」。老存档里的 nib 认不出来 → 回退到第一个预设
   eq('删掉的「笔尖」认不出来，回退到默认', getTriggerStyle('nib').id, 'badge');
 
   eq('认不出的 id 回退到第一个', getTriggerStyle('nope').id, 'badge');
