@@ -193,8 +193,12 @@ const server = http.createServer(async (req, res) => {
     req.on('end', () => {
       lastTextRequest = body;
       textHits += 1;
+      // 默认回「本地假译文」；带 ?tag=xxx 时缀一个标记 ——
+      // 「换配置不重发」那一节靠它认「切回来看到的是这个配置自己的译文」，
+      // 而不是上一个配置留在界面上的东西。
+      const tag = new URL(req.url, 'http://x').searchParams.get('tag');
       res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end('本地假译文');
+      res.end('本地假译文' + (tag ? '【' + tag + '】' : ''));
     });
     return;
   }
@@ -2143,6 +2147,163 @@ try {
     `after = ${probeB.after.mode}/${probeB.after.control}`
   );
   check('收尾后回到系统设置', probeB.cleaned.mode === 'system', probeB.cleaned.mode);
+
+  /* ------------------------------------------------------------------ */
+  /* 12. 换配置不重发请求：每个配置各自留着自己的结果                     */
+  /* ------------------------------------------------------------------ */
+  /* kniph 报的：切到 A 翻完 → 切到 B → 切回 A 又发了一次请求。
+     换配置只该「换显示」，重发由 ↻ 负责（重试按钮本来就是干这个的）。
+     所以每个配置的结果都留一份：切回来就放回去，没翻过的才空着等 ↻。 */
+
+  console.log('\n12. 换配置：不重发请求，各自的译文留着');
+
+  await opt.evaluate(async (u) => {
+    const read = async () => (await chrome.storage.local.get('state')).state || null;
+    const mk = (id, name, tag) => ({
+      id,
+      name,
+      note: '',
+      adapter: '',
+      request: `curl ${u}?tag=${tag}`,
+      path: '',
+      responseMode: 'text',
+      direct: false
+    });
+    for (let i = 0; i < 30; i++) {
+      const st = await read();
+      st.configs = [mk('e2e-pick-a', '假接口 A', 'alpha'), mk('e2e-pick-b', '假接口 B', 'beta')];
+      st.activeConfigId = 'e2e-pick-a';
+      await chrome.storage.local.set({ state: st });
+      const back = await read();
+      if (back.configs.length === 2 && back.activeConfigId === 'e2e-pick-a') return;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    throw new Error('两个假配置没写进去');
+  }, `http://127.0.0.1:${port}/text`);
+
+  await page.waitForTimeout(700); // 等内容脚本把新配置吃进顶栏下拉
+
+  const readPanel = () =>
+    page.evaluate(() => {
+      const root = document.getElementById('request-translate-host').shadowRoot;
+      return {
+        cfg: root.querySelector('.rt-cfg').value,
+        out: root.querySelector('.rt-out').textContent,
+        msg: root.querySelector('.rt-msg').textContent,
+        dot: root.querySelector('.rt-dot').className
+      };
+    });
+
+  /** 像用户那样拨一下顶栏的下拉（监听的就是 change 这个口子） */
+  const pickConfig = (id) =>
+    page.evaluate((v) => {
+      const sel = document
+        .getElementById('request-translate-host')
+        .shadowRoot.querySelector('.rt-cfg');
+      sel.value = v;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    }, id);
+
+  await selectText();
+  await page.waitForTimeout(250);
+  await page.click('.rt-trigger', { force: true });
+  await settle();
+
+  const p0 = await readPanel();
+  check(
+    '（脚手架）顶栏选中 A，翻出来的是 A 的译文',
+    p0.cfg === 'e2e-pick-a' && p0.out.includes('本地假译文【alpha】'),
+    `${p0.cfg}｜${p0.msg}｜${p0.out}`
+  );
+
+  const reqA = textHits;
+
+  /* 切到还没翻过的 B：不发请求，面板清干净等着点 ↻ */
+  await pickConfig('e2e-pick-b');
+  await page.waitForTimeout(700); // 给够时间 —— 万一它偷偷发请求，这里就能抓到
+  const p1 = await readPanel();
+  check('切到没翻过的配置：一个请求都没发', textHits === reqA, `textHits ${reqA} → ${textHits}`);
+  check('切过去后面板清空（不拿上一个配置的译文冒充）', p1.out === '', p1.out.slice(0, 40));
+  check('底栏提示点 ↻ 翻译', p1.msg.includes('点 ↻'), p1.msg);
+  check(
+    '灯灭掉（这个配置还没发过请求，不该亮）',
+    !/(^|\s)(on|ok|err)(\s|$)/.test(p1.dot),
+    p1.dot
+  );
+
+  /* ↻ 才是发请求的入口 */
+  await page.click('.rt-btn[data-act="retry"]', { force: true });
+  await settle();
+  const p2 = await readPanel();
+  check('点 ↻ 才用 B 发了请求', textHits === reqA + 1, `textHits ${reqA} → ${textHits}`);
+  check('B 的译文出来了', p2.out.includes('本地假译文【beta】'), `${p2.msg}｜${p2.out}`);
+  check('B 也拿到绿灯', /(^|\s)ok(\s|$)/.test(p2.dot), p2.dot);
+
+  const reqB = textHits;
+
+  /* 切回 A：直接把 A 上次的结果放回来 */
+  await pickConfig('e2e-pick-a');
+  await page.waitForTimeout(700);
+  const p3 = await readPanel();
+  check('切回翻过的配置：也没发请求', textHits === reqB, `textHits ${reqB} → ${textHits}`);
+  check(
+    '立刻看到 A 自己的译文（不是 B 留在界面上的）',
+    p3.out.includes('本地假译文【alpha】'),
+    `${p3.msg}｜${p3.out}`
+  );
+  check('灯恢复成绿灯', /(^|\s)ok(\s|$)/.test(p3.dot), p3.dot);
+
+  /* 再切到 B：同样放回来 */
+  await pickConfig('e2e-pick-b');
+  await page.waitForTimeout(700);
+  const p4 = await readPanel();
+  check('再切到 B：一样是放回缓存', textHits === reqB, `textHits ${reqB} → ${textHits}`);
+  check('B 的译文也还留着', p4.out.includes('本地假译文【beta】'), `${p4.msg}｜${p4.out}`);
+
+  /* 换一段原文 → 所有配置的旧结果都得作废：
+     不然切配置会把上一段文字的译文端出来，冒充这一次的结果 */
+  const selectOtherText = () =>
+    page.evaluate(() => {
+      const t0 = document.getElementById('t').childNodes[0];
+      const range = document.createRange();
+      range.setStart(t0, 0);
+      range.setEnd(t0, Math.min(3, t0.textContent.length));
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(range);
+      const segs = Array.from(range.getClientRects()).filter((r) => r.width > 0 || r.height > 0);
+      const tail = segs[segs.length - 1];
+      document.dispatchEvent(
+        new MouseEvent('mouseup', {
+          bubbles: true,
+          composed: true,
+          clientX: tail.right - 2,
+          clientY: tail.top + tail.height / 2
+        })
+      );
+    });
+
+  await selectOtherText();
+  await page.waitForTimeout(250);
+  await page.click('.rt-trigger', { force: true });
+  await settle();
+  const p5 = await readPanel();
+  check(
+    '换了原文：当前选中的配置（B）照常翻译',
+    p5.out.includes('本地假译文【beta】'),
+    `${p5.msg}｜${p5.out}`
+  );
+
+  const reqOther = textHits;
+  await pickConfig('e2e-pick-a');
+  await page.waitForTimeout(700);
+  const p6 = await readPanel();
+  check(
+    '新原文下 A 是没翻过的 → 提示点 ↻（旧译文不作数）',
+    p6.msg.includes('点 ↻') && p6.out === '',
+    `${p6.msg}｜${p6.out.slice(0, 40)}`
+  );
+  check('也没有偷偷拿新原文去发请求', textHits === reqOther, `textHits ${reqOther} → ${textHits}`);
 
   await opt.close();
 

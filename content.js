@@ -35,6 +35,17 @@
   let busy = false;
   let lastAuto = { text: '', at: 0 };
 
+  /* 每个配置各自留一份结果快照 —— 顶栏那个下拉只负责「换配置」，不重新发请求：
+     切回切过的配置就把上次的结果原样放回来，想用这个配置重新翻要点 ↻。
+     （kniph：切来切去对比接口时，每次切回都重发一遍太亏，重试按钮本来就是干这个的。）
+
+     只对**同一段原文**有效：原文一变（新划词 / 右键 / 换一张截图）整批作废。
+     判据是下面的 cacheKey —— 数据驱动，不指望每个调用点都记得来清。 */
+  const resultCache = new Map();   // configId → { r, ocr, action, fatal }
+  let cacheKey = null;
+  /** 发出去的那条请求用的是哪个配置 —— 结果回来时按它归档（用户可能已经切走了） */
+  let pendingConfigId = '';
+
   /** 当前标签页的缩放比（1 = 100%）。面板与按钮要按这个值反向补偿，才不会被网页缩放带着一起变大变小 */
   let zoom = 1;
   /** 面板最近一次的定位锚点，缩放变化时用来重算位置 */
@@ -907,6 +918,71 @@ ${TRIGGER_CSS}
     else deltaTimer = setTimeout(applyDelta, RENDER_INTERVAL - gap);
   }
 
+  /* ------------------------------------------------------------------ */
+  /* 结果铺到界面上 / 按配置归档                                          */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * 把一次请求的结果铺到界面上。
+   *
+   * `done`、`fatal` 两条消息和「切回有缓存的配置」共用这一段 —— 三处各写一套的话，
+   * 迟早有一套长歪（状态栏三段、灯、诊断都得跟着一起改）。
+   * 所以这里连 busy / 重试按钮 也一并收口，调用方不用自己管。
+   */
+  function renderResult(r, ocr, action, fatal) {
+    cancelPendingDelta();
+    busy = false;
+    retryBtn.disabled = false;
+    // 截图那条路的上下文跟着结果一起换：状态栏的「截图 OCR」和诊断里的图片信息都读它
+    lastOcr = ocr || null;
+    if (action) lastAction = action;
+
+    if (r && r.text) {
+      outBox.classList.remove('empty');
+      outBox.textContent = r.text;
+      // 状态栏只留「HTTP · 耗时 · 路径」三段，其余都收进「…」
+      const bits = [];
+      if (lastOcr) bits.push(lastOcr.direct ? '截图直传' : '截图 OCR');
+      if (r.status) bits.push('HTTP ' + r.status);
+      if (typeof r.ms === 'number') bits.push((r.ms / 1000).toFixed(1) + 's');
+      if (r.usedPath) bits.push(r.usedPath);
+      const noisy = (r.warnings && r.warnings.length > 0) ||
+        (r.missingVars && r.missingVars.length > 0);
+      setStatus(bits.join(' · '), noisy ? 'warn' : '');
+      setDot('ok');
+      showDiag(buildDiag(r));
+      return;
+    }
+
+    outBox.classList.remove('empty');
+    outBox.textContent = '';
+    outBox.dataset.placeholder = fatal ? '出错了' : '没有返回内容';
+    const why = (r && r.error) || (fatal ? '出错了' : '没有拿到译文');
+    setStatus(why, 'err');
+    setDot('err');
+    showDiag(fatal ? [{ k: '错误', v: why, err: true }] : buildDiag(r || {}));
+  }
+
+  /** 这次的结果按配置归档 —— 同一段原文内，切回来就靠它 */
+  function rememberResult(configId, r, ocr, action, fatal) {
+    if (!configId) return;
+    resultCache.set(configId, { r, ocr, action, fatal: !!fatal });
+  }
+
+  /** 切到一个还没翻过的配置：面板清干净、灯灭掉，等用户点 ↻ 用这个配置翻 */
+  function showNoCachedResult(configId) {
+    const hit = configs.find((c) => c.id === configId);
+    cancelPendingDelta();
+    busy = false;
+    retryBtn.disabled = false;
+    resetDiag();
+    outBox.classList.remove('empty');
+    outBox.textContent = '';
+    outBox.dataset.placeholder = '点 ↻ 翻译';
+    setDot('');
+    setStatus(hit ? `已切到「${hit.name}」，点 ↻ 翻译` : '点 ↻ 翻译');
+  }
+
   function onPortMessage(msg) {
     if (!msg) return;
 
@@ -984,47 +1060,34 @@ ${TRIGGER_CSS}
     }
 
     if (msg.type === 'done') {
-      // 必须先取消挂起的这一帧：done 往往在最后一个 delta 之后立刻到达，
-      // 如果让那个 rAF 稍后执行，它会用更旧的文本把最终结果覆盖掉。
-      cancelPendingDelta();
-      busy = false;
-      retryBtn.disabled = false;
       const r = msg.result || {};
-      if (r.text) {
-        outBox.classList.remove('empty');
-        outBox.textContent = r.text;
-        // 状态栏只留「HTTP · 耗时 · 路径」三段，其余都收进「…」
-        const bits = [];
-        if (lastOcr) bits.push(lastOcr.direct ? '截图直传' : '截图 OCR');
-        if (r.status) bits.push('HTTP ' + r.status);
-        if (typeof r.ms === 'number') bits.push((r.ms / 1000).toFixed(1) + 's');
-        if (r.usedPath) bits.push(r.usedPath);
-        const noisy = (r.warnings && r.warnings.length > 0) ||
-          (r.missingVars && r.missingVars.length > 0);
-        setStatus(bits.join(' · '), noisy ? 'warn' : '');
-        setDot('ok');
-        showDiag(buildDiag(r));
+      // 按「发出这条请求时选中的配置」归档，不是当前选中的那个 ——
+      // 请求在飞的时候用户可能已经换配置了（换配置不重发，见 cfgSelect 的 change）
+      rememberResult(pendingConfigId, r, lastOcr, lastAction, false);
+      if (pendingConfigId === currentConfigId) {
+        // 必须先取消挂起的这一帧：done 往往在最后一个 delta 之后立刻到达，
+        // 如果让那个 rAF 稍后执行，它会用更旧的文本把最终结果覆盖掉。
+        renderResult(r, lastOcr, lastAction, false);
       } else {
-        outBox.classList.remove('empty');
-        outBox.textContent = '';
-        outBox.dataset.placeholder = '没有返回内容';
-        setStatus(r.error || '没有拿到译文', 'err');
-        setDot('err');
-        showDiag(buildDiag(r));
+        // 这次结果归另一个配置，只进缓存，别去动眼前这个配置的界面
+        cancelPendingDelta();
+        busy = false;
+        retryBtn.disabled = false;
+        if (!resultCache.has(currentConfigId)) showNoCachedResult(currentConfigId);
       }
       return;
     }
 
     if (msg.type === 'fatal') {
-      cancelPendingDelta();
-      busy = false;
-      retryBtn.disabled = false;
-      outBox.classList.remove('empty');
-      outBox.textContent = '';
-      outBox.dataset.placeholder = '出错了';
-      setStatus(msg.message || '出错了', 'err');
-      setDot('err');
-      showDiag([{ k: '错误', v: msg.message || '出错了', err: true }]);
+      const r = { error: msg.message || '出错了' };
+      rememberResult(pendingConfigId, r, lastOcr, lastAction, true);
+      if (pendingConfigId === currentConfigId) {
+        renderResult(r, lastOcr, lastAction, true);
+      } else {
+        cancelPendingDelta();
+        busy = false;
+        retryBtn.disabled = false;
+      }
     }
   }
 
@@ -1074,6 +1137,17 @@ ${TRIGGER_CSS}
     lastAction = ocr ? 'ocr' : 'translate';
     currentText = payload;
     currentConfigId = configId || cfgSelect.value || activeConfigId;
+    pendingConfigId = currentConfigId;
+
+    // 原文一变，所有配置的结果都快照过期了 —— 数据驱动地作废，不指望每个调用点记得清。
+    // 直传（截图）模式没有文字原文，就拿图片的「长度 + 尾巴」当指纹。
+    const key = hasImage
+      ? '\u0001img|' + (ocr.image || '').length + '|' + (ocr.image || '').slice(-64)
+      : payload;
+    if (key !== cacheKey) {
+      cacheKey = key;
+      resultCache.clear();
+    }
 
     busy = true;
     retryBtn.disabled = true;
@@ -1375,7 +1449,12 @@ ${TRIGGER_CSS}
 
   cfgSelect.addEventListener('change', () => {
     currentConfigId = cfgSelect.value;
-    if (currentText) translate(currentText, currentConfigId);
+    // 换配置**不重新发请求**：每个配置各自留了一份结果，切回来直接放回去；
+    // 没翻过的配置就清空面板等用户点 ↻。重发请求本来就该由「重试」按钮负责 ——
+    // 切来切去对比接口时每次都重发一遍太亏（kniph）。
+    const hit = resultCache.get(currentConfigId);
+    if (hit) renderResult(hit.r, hit.ocr, hit.action, hit.fatal);
+    else showNoCachedResult(currentConfigId);
   });
 
   // 拖动
