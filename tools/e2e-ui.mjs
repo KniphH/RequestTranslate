@@ -755,6 +755,14 @@ try {
   await opt.evaluate(() => document.querySelector('.tab[data-tab="settings"]')?.click());
   await opt.waitForTimeout(200);
 
+  // 卡片上画的是「你实际会用的图标」，所以得从「没填图标」的状态开始量
+  await opt.evaluate(() => {
+    const el = document.getElementById('s-trigsvg');
+    el.value = '';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await opt.waitForTimeout(200);
+
   const cards = await opt.evaluate(() =>
     [...document.querySelectorAll('#trig-styles .trig-card')].map((b) => ({
       id: b.dataset.style,
@@ -772,7 +780,10 @@ try {
   );
   check('没有「笔尖」那张卡了', !cards.some((c) => c.id === 'nib'));
   check('默认选中「译字方块」', !!(cards[0] && cards[0].on && cards[0].id === 'badge'));
-  check('地球 / 自定义的卡上画了 SVG', cards.filter((c) => c.hasSvg).length === 2);
+  const cardById = Object.fromEntries(cards.map((c) => [c.id, c]));
+  check('地球那张卡画着自己的图标', !!(cardById.globe && cardById.globe.hasSvg));
+  check('「自定义」那张卡没填图标时是空的（不拿示例图标冒充）',
+    !!(cardById.custom && !cardById.custom.hasSvg));
   check('只有「自定义」那张卡不带底座（虚线框示意）',
     cards.filter((c) => c.bare).map((c) => c.id).join() === 'custom');
 
@@ -844,6 +855,15 @@ try {
     afterSvg.msgHidden === false && /ok/.test(afterSvg.msgCls) && afterSvg.msgText.includes('用上了'),
     `${afterSvg.msgCls}｜${afterSvg.msgText}`
   );
+
+  // 左边那张「自定义」卡画的应该就是你填的这个图标（跟预览同源）
+  const cardFilled = await opt.evaluate(() => {
+    const c = document.querySelector('#trig-styles .trig-card[data-style="custom"]');
+    const p = c && c.querySelector('.trig-prev svg path');
+    return { hasSvg: !!(c && c.querySelector('svg')), pathD: p ? p.getAttribute('d') : '' };
+  });
+  check('卡片跟着显示自己填的图标（和预览一致）',
+    cardFilled.pathD === 'M4 12h16', cardFilled.pathD);
 
   // 换一段会被拦下来的（带 onload）：不能生效，而且要说明为什么
   await setTriggerSvg('<svg onload="alert(1)"></svg>');
@@ -935,6 +955,12 @@ try {
     `${customEmpty.noteCls}｜${customEmpty.note}`
   );
   check('样式没变，只是图标换成了占位的', /s-custom/.test(customEmpty.cls), customEmpty.cls);
+
+  const cardCleared = await opt.evaluate(() => {
+    const c = document.querySelector('#trig-styles .trig-card[data-style="custom"]');
+    return { hasSvg: !!(c && c.querySelector('svg')) };
+  });
+  check('清空图标后卡片也空了（不留示例图标在那儿）', cardCleared.hasSvg === false);
 
   await setTriggerSvg(CUSTOM_SVG);
   await page.keyboard.press('Escape');

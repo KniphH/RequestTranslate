@@ -1256,8 +1256,11 @@ function renderTriggerStyles() {
   // 用 getTriggerStyle 归一过一次：存档里留着已经删掉的预设（比如原来的「笔尖」）时，
   // 直接比 id 会一张卡都点不亮
   const cur = getTriggerStyle(state.settings.triggerStyle).id;
+  // 「自定义」那张卡上画的是**你实际会用到的图标** —— 填了就是你的，没填就空着。
+  // 别拿示例图标冒充：那样看着像「这个预设就长三条线加箭头」。
+  const customSvg = parseTriggerSvg(state.settings.triggerSvg).svg;
   els.trigStyles.innerHTML = TRIGGER_STYLES.map((s) => {
-    const icon = s.svg || escapeHtml(s.text || '');
+    const icon = s.id === 'custom' ? customSvg : (s.svg || escapeHtml(s.text || ''));
     return (
       '<button type="button" class="trig-card' + (s.id === cur ? ' on' : '') +
       '" data-style="' + s.id + '" title="' + escapeHtml(s.hint) + '">' +
@@ -1281,7 +1284,8 @@ function updateTriggerSvgMsg() {
       els.trigSvgMsg.hidden = false;
       els.trigSvgMsg.className = 'trig-svg-msg warn';
       els.trigSvgMsg.textContent =
-        '「自定义」还没填图标 —— 现在按钮上顶的是示例图标，粘一段自己的 SVG 进来就会换掉。';
+        '「自定义」还没填图标 —— 上面的卡片先空着，页面上的按钮用一个示例图标占位；' +
+        '粘一段自己的 SVG 进来，两边都会换成它。';
     } else {
       els.trigSvgMsg.hidden = true;
       els.trigSvgMsg.textContent = '';
@@ -1325,9 +1329,12 @@ function renderPreview() {
   el.style.setProperty('--rt-tr-size', size + 'px');
   el.style.setProperty('--rt-tr-radius', s.round ? (size * 0.29).toFixed(2) + 'px' : '50%');
   el.style.setProperty('--rt-tr-font', (size * 0.47).toFixed(2) + 'px');
-  // 和 content.js 一样：自己填的 SVG 优先，底座仍按选中的预设
+  // 和 content.js 一样：自己填的 SVG 优先，底座仍按选中的预设。
+  // 「自定义」没填图标时页面按钮顶的是示例图标（content.js 那份），预览得跟它一致 ——
+  // 预览的意义就是「页面上按钮长什么样」，它不能空着。
   const custom = parseTriggerSvg(state.settings.triggerSvg).svg;
-  root.querySelector('.rt-ico').innerHTML = custom || s.svg || escapeHtml(s.text || '');
+  const fallback = s.id === 'custom' ? TRIGGER_SVG_SAMPLE : escapeHtml(s.text || '');
+  root.querySelector('.rt-ico').innerHTML = custom || s.svg || fallback;
 }
 
 /** 设置页自己也跟着主题走（划词面板由 content.js 单独处理） */
@@ -1361,6 +1368,7 @@ function bindSettings() {
       if (key === 'triggerSvg') {
         updateTriggerSvgMsg();
         renderPreview();
+        renderTriggerStyles(); // 「自定义」那张卡上的图标也跟着换 / 跟着空
       }
     });
   }

@@ -608,9 +608,10 @@ section('11. 翻译按钮：样式预设与尺寸');
   check('地球画了经纬线', globe.svg.includes('<ellipse') && globe.svg.includes('<path d="M3.6 9.1'));
 
   const custom = getTriggerStyle('custom');
-  check('自定义 = 无底座 + SVG', custom.round === false && custom.bare === true && /^<svg /.test(custom.svg || ''));
-  check('自定义的占位图标就是示例图标（没填图标时按钮不会空着）',
-    custom.svg === TRIGGER_SVG_SAMPLE);
+  check('自定义 = 无底座', custom.round === false && custom.bare === true);
+  // 设置页那张卡上画的是「你实际会用的图标」，没填就该空着 —— 塞个示例图标进去
+  // 会让人以为这个预设就长三条线加箭头的样子（kniph 提的）
+  check('自定义不带占位图标（卡片留空，等用户自己填）', !custom.svg, String(custom.svg));
   check('只有「自定义」不给底座', TRIGGER_STYLES.filter((s) => s.bare).length === 1);
 
   // 1.1.0 把「笔尖」换成了「自定义」。老存档里的 nib 认不出来 → 回退到第一个预设
@@ -696,8 +697,8 @@ section('13. 按钮样式：content.js 里的副本必须和 lib 一致');
 
   check('预设名都对得上（badge/globe/custom）',
     ['badge', 'globe', 'custom'].every((id) => squash(src).includes(id + ':{')));
-  // 「自定义」的占位图标也得抄过去，否则页面上选到自定义而没填图标时按钮是空的
-  check('自定义的占位图标也在 content.js 里',
+  // 「自定义」的占位图标也得抄过去 —— 设置页卡片可以不画，页面按钮不能空。
+  check('页面按钮的占位图标（示例图标）在 content.js 里',
     squash(src).includes(squash(TRIGGER_SVG_SAMPLE)));
   check('content.js 里也没留下笔尖', !src.includes('s-nib') && !src.includes('M8.3 3.1h7.4'));
 
