@@ -24,8 +24,8 @@
     </nav>
 
     <div class="head-actions">
-      <button id="btn-import" class="ghost">导入</button>
-      <button id="btn-export" class="ghost">导出</button>
+      <button id="btn-import" class="ghost" title="从导出的 JSON 文件恢复配置（会替换当前的全部配置）">导入</button>
+      <button id="btn-export" class="ghost" title="把全部配置 / 变量 / 设置 / OCR 导出成一个 JSON 文件（里面有明文 API Key，分享前先清掉）">导出</button>
       <input type="file" id="file-import" accept="application/json,.json" hidden>
     </div>
   </header>
@@ -412,8 +412,9 @@
             </div>
             <p class="hint">
               划词后出现在选区旁边那个小按钮长什么样。只影响按钮本身，不动结果面板。
-              地球和笔尖用的是线性图标，颜色跟着上面的<b>主题</b>走。
-              下面「自定义图标」里填了 SVG 的话，预览显示的就是它。
+              地球是线性图标，颜色跟着上面的<b>主题</b>走；<b>自定义</b>不给底座 ——
+              整块就是你粘进下面「自定义图标」的那段 SVG（想要圆盘 / 方块，自己在 SVG 里画一个）。
+              下面那块填了 SVG 的话，预览显示的就是它。
             </p>
           </div>
         </div>
@@ -430,7 +431,8 @@
             <p class="trig-svg-msg" id="s-trigsvg-msg" hidden></p>
             <p class="hint">
               粘一段 <code>&lt;svg&gt;…&lt;/svg&gt;</code> 进来，它会替换掉预设里的图标 /「译」字；
-              <b>底座（底色、圆角、大小）还是用上面选的那个预设</b>。
+              <b>底座（底色、圆角、大小）还是用上面选的那个预设</b> ——
+              想连底座也自己说了算，样式就选<b>「自定义」</b>（那个预设没有底座）。
               颜色写 <code>currentColor</code> 就跟着主题走（暗色浅紫 / 亮色深紫），写死颜色也行。
               <br>
               这段代码会被插进页面，所以要求以 <code>&lt;svg</code> 开头、<code>&lt;/svg&gt;</code> 结尾，

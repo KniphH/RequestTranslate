@@ -89,7 +89,7 @@
   pointer-events: auto;
   user-select: none;
   transition: transform .12s ease;
-  /* 线性图标样式（地球 / 笔尖）用的底色与描边，跟面板主题一起变 */
+  /* 线性图标样式（地球 / 自定义）用的底色与描边，跟面板主题一起变 */
   --rt-tr-bg: #1c1c22;
   --rt-tr-fg: #c084fc;
   --rt-tr-bd: #3d3d49;
@@ -113,16 +113,26 @@
   box-shadow: 0 6px 18px rgba(109, 92, 240, .45);
 }
 
-/* 预设二、三：正圆底 + 线性图标 */
-.rt-trigger:where(.s-globe),
-.rt-trigger:where(.s-nib) {
+/* 预设二：正圆底 + 线性图标 */
+.rt-trigger:where(.s-globe) {
   background: var(--rt-tr-bg);
   color: var(--rt-tr-fg);
   border: 1px solid var(--rt-tr-bd);
   box-shadow: 0 4px 14px rgba(0, 0, 0, .3);
 }
-.rt-trigger:where(.s-globe) .rt-ico,
-.rt-trigger:where(.s-nib) .rt-ico { padding: 21%; }
+.rt-trigger:where(.s-globe) .rt-ico { padding: 21%; }
+
+/* 预设三：自定义 —— 不给任何底座，整块就是用户那段 SVG 本身
+   （想要圆盘 / 方块，自己在 SVG 里画一个）。
+   background / border / box-shadow 显式清零而不是「不写」：基础样式将来要是加了底色，
+   这一条照样压得住，不用回来补。 */
+.rt-trigger:where(.s-custom) {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  color: var(--rt-tr-fg);
+}
+.rt-trigger:where(.s-custom) .rt-ico { padding: 0; }
 `;
 
   /* 用户粘进来的自定义 SVG 要过的几道关。⚠️ 同样与 lib/trigger-styles.js 的
@@ -156,9 +166,16 @@
       round: false,
       html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.6"/><ellipse cx="12" cy="12" rx="3.9" ry="8.6"/><path d="M3.6 9.1h16.8M3.6 14.9h16.8"/></svg>'
     },
-    nib: {
+    // 自定义：没有底座（CSS 里 .s-custom 全是 none / 0），html 是「还没填图标」时的占位。
+    // ⚠️ 写成模板字符串（真换行）而不是 '\n'：test-lib 是拿**文件原文**去比对这份 SVG 的，
+    //    单引号写法在原文里是「反斜杠 + n」两个字符，squash 掉空白也对不上。
+    custom: {
       round: false,
-      html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8.3 3.1h7.4l1.7 8.3-5.4 9.5-5.4-9.5z"/><path d="M12 12.4v8.5"/><circle cx="12" cy="9.4" r="1.5"/></svg>'
+      html: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M3.5 7.5h11M3.5 12h7.5M3.5 16.5h9"/>
+  <path d="M14.5 9.5 18 13l-3.5 3.5"/>
+  <path d="M18 13h-6.5"/>
+</svg>`
     }
   };
 

@@ -1277,26 +1277,39 @@ function renderSettings() {
 /* ---- 翻译按钮：样式卡 / 自定义 SVG / 实时预览 ---------------------- */
 
 function renderTriggerStyles() {
-  const cur = state.settings.triggerStyle || 'badge';
+  // 用 getTriggerStyle 归一过一次：存档里留着已经删掉的预设（比如原来的「笔尖」）时，
+  // 直接比 id 会一张卡都点不亮
+  const cur = getTriggerStyle(state.settings.triggerStyle).id;
   els.trigStyles.innerHTML = TRIGGER_STYLES.map((s) => {
     const icon = s.svg || escapeHtml(s.text || '');
     return (
       '<button type="button" class="trig-card' + (s.id === cur ? ' on' : '') +
       '" data-style="' + s.id + '" title="' + escapeHtml(s.hint) + '">' +
-      '<span class="trig-prev' + (s.round ? ' round' : '') + '">' + icon + '</span>' +
+      '<span class="trig-prev' + (s.round ? ' round' : '') + (s.bare ? ' bare' : '') + '">' +
+      icon + '</span>' +
       '<span class="trig-name">' + escapeHtml(s.name) + '</span>' +
       '</button>'
     );
   }).join('');
 }
 
-/** 自定义 SVG 的检查结果：不通过时直接告诉用户卡在哪一条 */
+/** 自定义 SVG 的检查结果 + 「选了自定义却没填图标」的提醒，都写在这一行里 */
 function updateTriggerSvgMsg() {
   if (!els.trigSvgMsg) return;
   const raw = els.trigSvg.value.trim();
+  const style = getTriggerStyle(state.settings.triggerStyle);
   if (!raw) {
-    els.trigSvgMsg.hidden = true;
-    els.trigSvgMsg.textContent = '';
+    // 没填图标本身没什么好说的 —— 除非现在选的是「自定义」，那按钮上顶着的
+    // 是个占位图标，得说一声（不做静默回退）
+    if (style.id === 'custom') {
+      els.trigSvgMsg.hidden = false;
+      els.trigSvgMsg.className = 'trig-svg-msg warn';
+      els.trigSvgMsg.textContent =
+        '「自定义」还没填图标 —— 现在按钮上顶的是示例图标，粘一段自己的 SVG 进来就会换掉。';
+    } else {
+      els.trigSvgMsg.hidden = true;
+      els.trigSvgMsg.textContent = '';
+    }
     return;
   }
   const { svg, reason } = parseTriggerSvg(raw);
@@ -1381,6 +1394,8 @@ function bindSettings() {
     if (!card) return;
     state.settings.triggerStyle = card.dataset.style;
     renderTriggerStyles();
+    // 切到「自定义」而图标栏是空的 → 那一行要跳出来提醒（切回去就得消失）
+    updateTriggerSvgMsg();
     renderPreview();
     scheduleSave();
   });
@@ -1414,15 +1429,24 @@ function bindSettings() {
 /* ------------------------------------------------------------------ */
 
 function bindImportExport() {
+  /** 2026-10-05 —— 带日期，多台设备来回导出不至于互相覆盖下载 */
+  function stamp() {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+
   $('#btn-export').addEventListener('click', () => {
+    // 正在编辑器里改的那条先收进 state，免得导出的还是上一版
     collectEditor();
     const blob = new Blob([exportState(state)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'request-translate-config.json';
+    a.download = `request-translate-config-${stamp()}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setSaveStatus('已导出 ' + state.configs.length + ' 条配置');
   });
 
   $('#btn-import').addEventListener('click', () => els.fileImport.click());
@@ -1434,8 +1458,13 @@ function bindImportExport() {
 
     try {
       const text = await file.text();
-      const parsed = importState(text);
-      if (!confirm(`导入 ${parsed.configs.length} 条配置？当前的配置会被替换。`)) return;
+      // exportedAt 只用来写确认框 —— 别让它跟着进 state（否则下次导出会顶着旧日期）
+      const { exportedAt, ...parsed } = importState(text);
+      const when = exportedAt ? `（导出于 ${exportedAt.slice(0, 16).replace('T', ' ')}）` : '';
+      if (!confirm(
+        `导入 ${parsed.configs.length} 条配置${when}？\n` +
+        `当前的 ${state.configs.length} 条配置、变量、设置和 OCR 都会被替换掉。`
+      )) return;
 
       state = { ...state, ...parsed };
       editingId = state.activeConfigId = state.configs[0].id;
@@ -1449,7 +1478,7 @@ function bindImportExport() {
       renderVars();
       renderSettings();
       await persist();
-      setSaveStatus('导入完成');
+      setSaveStatus(`导入完成（${state.configs.length} 条配置）`);
     } catch (err) {
       alert('导入失败：' + (err && err.message));
     }

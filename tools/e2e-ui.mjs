@@ -794,13 +794,23 @@ try {
   const cards = await opt.evaluate(() =>
     [...document.querySelectorAll('#trig-styles .trig-card')].map((b) => ({
       id: b.dataset.style,
+      name: (b.querySelector('.trig-name') || {}).textContent || '',
       on: b.classList.contains('on'),
-      hasSvg: !!b.querySelector('svg')
+      hasSvg: !!b.querySelector('svg'),
+      bare: !!b.querySelector('.trig-prev.bare')
     }))
   );
   check('三个样式卡都渲染出来了', cards.length === 3, cards.map((c) => c.id).join(','));
+  check(
+    '卡片是 方块 / 地球 / 自定义（笔尖已经换掉了）',
+    cards.map((c) => c.id).join() === 'badge,globe,custom',
+    cards.map((c) => c.id).join()
+  );
+  check('没有「笔尖」那张卡了', !cards.some((c) => c.id === 'nib'));
   check('默认选中「译字方块」', !!(cards[0] && cards[0].on && cards[0].id === 'badge'));
-  check('地球 / 笔尖的卡上画了 SVG', cards.filter((c) => c.hasSvg).length === 2);
+  check('地球 / 自定义的卡上画了 SVG', cards.filter((c) => c.hasSvg).length === 2);
+  check('只有「自定义」那张卡不带底座（虚线框示意）',
+    cards.filter((c) => c.bare).map((c) => c.id).join() === 'custom');
 
   await opt.evaluate(() => {
     document.querySelector('#trig-styles .trig-card[data-style="globe"]')?.click();
@@ -901,6 +911,81 @@ try {
   console.log(
     `     ${mBtn.triggerCls}｜${fmt(mBtn.trigger.w)}px｜图标 path=${mBtn.triggerPathD}`
   );
+
+  /* 「自定义」预设：不给底座，整块就是自己那段 SVG。
+     两个分支都要走 —— 填了图标 / 没填图标（没填时用示例图标顶着，不能是个空按钮）。 */
+  await opt.evaluate(() => {
+    document.querySelector('#trig-styles .trig-card[data-style="custom"]')?.click();
+  });
+  await opt.waitForTimeout(1300);
+
+  const customOn = await opt.evaluate(async () => {
+    const root = document.getElementById('trig-preview').shadowRoot;
+    const el = root && root.querySelector('.rt-trigger');
+    const p = root.querySelector('.rt-trigger .rt-ico svg path');
+    const cs = el ? getComputedStyle(el) : null;
+    const msg = document.getElementById('s-trigsvg-msg');
+    const { state } = await chrome.storage.local.get('state');
+    return {
+      style: state.settings.triggerStyle,
+      cls: el ? el.className : '',
+      bg: cs ? cs.backgroundColor : '',
+      border: cs ? cs.borderTopWidth : '',
+      shadow: cs ? cs.boxShadow : '',
+      pathD: p ? p.getAttribute('d') : '',
+      note: (msg.textContent || '').trim()
+    };
+  });
+  check('切到「自定义」后写进了存储', customOn.style === 'custom', customOn.style);
+  check(
+    '预览上真的没有底座（底色透明 / 无描边 / 无阴影）',
+    customOn.bg === 'rgba(0, 0, 0, 0)' && customOn.border === '0px' && customOn.shadow === 'none',
+    `${customOn.bg}｜${customOn.border}｜${customOn.shadow}`
+  );
+  check('图标还是自己填的那个', customOn.pathD === 'M4 12h16', customOn.pathD);
+  check('填了图标就没有「还没填」的提醒', !customOn.note.includes('还没填图标'), customOn.note);
+
+  await setTriggerSvg('');
+  const customEmpty = await opt.evaluate(() => {
+    const root = document.getElementById('trig-preview').shadowRoot;
+    const el = root && root.querySelector('.rt-trigger');
+    const p = root.querySelector('.rt-trigger .rt-ico svg path');
+    const msg = document.getElementById('s-trigsvg-msg');
+    return {
+      cls: el ? el.className : '',
+      pathD: p ? p.getAttribute('d') : '',
+      noteHidden: msg.hidden,
+      noteCls: msg.className,
+      note: msg.textContent.trim()
+    };
+  });
+  check(
+    '清空图标后按钮不会变空 —— 用示例图标顶着',
+    customEmpty.pathD === 'M3.5 7.5h11M3.5 12h7.5M3.5 16.5h9',
+    customEmpty.pathD
+  );
+  check(
+    '而且会直说「还没填图标」（不做静默回退）',
+    customEmpty.noteHidden === false && /warn/.test(customEmpty.noteCls) &&
+      customEmpty.note.includes('还没填图标'),
+    `${customEmpty.noteCls}｜${customEmpty.note}`
+  );
+  check('样式没变，只是图标换成了占位的', /s-custom/.test(customEmpty.cls), customEmpty.cls);
+
+  await setTriggerSvg(CUSTOM_SVG);
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => window.getSelection()?.removeAllRanges());
+  await page.waitForTimeout(200);
+  await selectText();
+  await page.waitForTimeout(400);
+  const mCustom = await measure();
+  check('页面上的按钮也换成了自定义', /s-custom/.test(mCustom.triggerCls), mCustom.triggerCls);
+  check(
+    '页面上同样没有底色（不是只有预览干净）',
+    !!mCustom.trigger && mCustom.trigger.bg === 'rgba(0, 0, 0, 0)',
+    mCustom.trigger && mCustom.trigger.bg
+  );
+  check('页面上用的是自己填的图标', mCustom.triggerPathD === 'M4 12h16', mCustom.triggerPathD);
 
   /* ------------------------------------------------------------------ */
   /* 7. 配置列表：上下移 / 拖动排序                                       */
@@ -1318,7 +1403,18 @@ try {
   await selectText();
   await page.waitForTimeout(400);
   const mFresh = await measure();
-  check('刷新后第一次划词就是存下来的样式', /s-globe/.test(mFresh.triggerCls), mFresh.triggerCls);
+  // 断言「按钮用的是存档里那个样式」而不是写死某个预设名 —— 上面的用例换过预设，
+  // 写死就得跟着改，而且那样测的也不是这条要管的事了。
+  // 注意得从**设置页**读 storage：网页那边是主世界，根本没有 chrome.storage。
+  const storedStyle = await opt.evaluate(async () => {
+    const { state } = await chrome.storage.local.get('state');
+    return state.settings.triggerStyle;
+  });
+  check(
+    '刷新后第一次划词就是存下来的样式',
+    new RegExp('(^|\\s)s-' + storedStyle + '(\\s|$)').test(mFresh.triggerCls),
+    `${storedStyle}｜${mFresh.triggerCls}`
+  );
   near('刷新后大小也是存下来的 60px', mFresh.trigger.w, 60, 1.5, 'px');
   check('刷新后自定义图标也在', mFresh.triggerPathD === 'M4 12h16', mFresh.triggerPathD);
 
@@ -2587,6 +2683,170 @@ try {
     });
     check('自绘滑块规则也还在（写在 auto 旁边的那半）', /rt-scroll/.test(thumb || ''), thumb);
   }
+
+  /* ------------------------------------------------------------------ */
+  /* 14. 导出 / 导入                                                     */
+  /* ------------------------------------------------------------------ */
+  /* 多设备搬家的唯一一条路：导出成 JSON，在新设备上导入。整份存档都会被换掉，
+     所以「导出的是不是当下这一份」和「点了取消会不会照样覆盖」都得真的走一遍。 */
+
+  console.log('\n14. 导出 / 导入：换台设备能把配置原样搬过去');
+
+  // 第 12 节结束时把设置页关了，这里另开一个（顺便盯住导入导出过程中没报错）
+  const opt2 = await ctx.newPage();
+  const ioErrors = [];
+  opt2.on('console', (m) => {
+    if (m.type() === 'error') ioErrors.push(m.text());
+  });
+  opt2.on('pageerror', (e) => ioErrors.push(String((e && e.message) || e)));
+  await opt2.goto(`chrome-extension://${extId}/options.html`, { waitUntil: 'load' });
+  await opt2.waitForSelector('#cfg-list .cfg-item', { timeout: 8000 });
+  await opt2.waitForTimeout(300);
+
+  await opt2.evaluate(() => document.querySelector('.tab[data-tab="settings"]')?.click());
+  await opt2.waitForTimeout(200);
+
+  // 先改一处一眼能认出来的东西（面板字号），证明导出的确实是**当前**状态
+  await opt2.evaluate(() => {
+    const el = document.getElementById('s-font');
+    el.value = '27';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await opt2.waitForTimeout(1300);
+
+  const dl = await Promise.all([opt2.waitForEvent('download', { timeout: 15000 }), opt2.click('#btn-export')]).then(
+    ([d]) => d
+  );
+  const dlPath = await dl.path();
+  const jsonText = fs.readFileSync(dlPath, 'utf8');
+  const exported = JSON.parse(jsonText); // 解析不了就直接抛，等于一条硬断言
+  check(
+    '导出的文件名带日期（多设备来回导出不会互相盖）',
+    /^request-translate-config-\d{4}-\d{2}-\d{2}\.json$/.test(dl.suggestedFilename()),
+    dl.suggestedFilename()
+  );
+  check('文件是合法 JSON，且带我们的 kind', exported.kind === 'request-translate', String(exported.kind));
+  check(
+    '导出的是刚刚那一刻的状态（面板字号 27 跟着走了）',
+    exported.settings && exported.settings.fontSize === 27,
+    JSON.stringify(exported.settings && exported.settings.fontSize)
+  );
+  check(
+    '四条主线数据一条不少',
+    ['configs', 'vars', 'settings', 'ocr'].every((k) => k in exported),
+    Object.keys(exported).join(',')
+  );
+  const statusAfterExport = await opt2.evaluate(() => document.getElementById('save-status').textContent);
+  check('状态栏说了导出了几条', /已导出\s*\d+\s*条/.test(statusAfterExport), statusAfterExport);
+
+  /* 造一份「别的设备导出的」文件：第一条改个名、字号改 31、只留两条 */
+  const incoming = JSON.parse(jsonText);
+  incoming.configs = incoming.configs.slice(0, 2).map((c, i) =>
+    i === 0 ? { ...c, name: '从别的设备搬来的' } : c
+  );
+  incoming.settings.fontSize = 31;
+  const incomingFile = path.join(profile, 'incoming.json');
+  fs.writeFileSync(incomingFile, JSON.stringify(incoming, null, 2), 'utf8');
+
+  /** 接管这次导入弹出的 confirm / alert */
+  const dialogs = [];
+  let dialogAction = 'accept';
+  const onDialog = async (d) => {
+    dialogs.push({ type: d.type(), message: d.message() });
+    if (dialogAction === 'accept') await d.accept();
+    else await d.dismiss();
+  };
+  opt2.on('dialog', onDialog);
+
+  const stateNow = () =>
+    opt2.evaluate(async () => {
+      const { state } = await chrome.storage.local.get('state');
+      return {
+        count: state.configs.length,
+        firstName: state.configs[0] ? state.configs[0].name : '',
+        fontSize: state.settings.fontSize,
+        status: document.getElementById('save-status').textContent
+      };
+    });
+
+  const beforeImport = await stateNow();
+
+  // —— 先点取消：一个字都不该动
+  dialogAction = 'dismiss';
+  await opt2.setInputFiles('#file-import', incomingFile);
+  await opt2.waitForTimeout(700);
+  const afterCancel = await stateNow();
+  check(
+    '导入框里点了取消 → 什么都没动',
+    afterCancel.count === beforeImport.count && afterCancel.firstName === beforeImport.firstName &&
+      afterCancel.fontSize === beforeImport.fontSize,
+    JSON.stringify(afterCancel)
+  );
+
+  // —— 正经导入
+  dialogAction = 'accept';
+  await opt2.setInputFiles('#file-import', incomingFile);
+  await opt2.waitForTimeout(1500);
+  const afterImport = await stateNow();
+  check(
+    '导入后配置换成了文件里那两条',
+    afterImport.count === 2 && afterImport.firstName === '从别的设备搬来的',
+    JSON.stringify(afterImport)
+  );
+  check('设置也一起搬过来了（字号 31）', afterImport.fontSize === 31, String(afterImport.fontSize));
+  check('状态栏报了声「导入完成」', /导入完成/.test(afterImport.status), afterImport.status);
+
+  const confirmMsg = dialogs.map((d) => d.message).join(' ｜ ');
+  check(
+    '确认框说了会替换掉几条（不是干巴巴一句「确定吗」）',
+    /替换/.test(confirmMsg) && /2\s*条/.test(confirmMsg),
+    confirmMsg.slice(0, 120)
+  );
+
+  // —— 列表 / 编辑器也得跟着重画，不能只有存档变了
+  await opt2.evaluate(() => document.querySelector('.tab[data-tab="configs"]')?.click());
+  await opt2.waitForTimeout(200);
+  const redrawn = await opt2.evaluate(() => ({
+    rows: document.querySelectorAll('#cfg-list .cfg-row').length,
+    firstName: (document.querySelector('#cfg-list .cfg-item .name') || {}).textContent || '',
+    editorName: (document.getElementById('f-name') || {}).value || ''
+  }));
+  check(
+    '列表和编辑器都按新存档重画了',
+    redrawn.rows === 2 && redrawn.firstName.includes('从别的设备搬来的') &&
+      redrawn.editorName.includes('从别的设备搬来的'),
+    JSON.stringify(redrawn)
+  );
+
+  // —— 坏文件：要拦住，而且要明说为什么，别把存档搞坏
+  const badFile = path.join(profile, 'bad.json');
+  fs.writeFileSync(badFile, '{ 这不是 json', 'utf8');
+  dialogs.length = 0;
+  await opt2.setInputFiles('#file-import', badFile);
+  await opt2.waitForTimeout(700);
+  const afterBad = await stateNow();
+  check(
+    '坏文件被挡在门外，存档原样',
+    dialogs.some((d) => d.type === 'alert' && /导入失败/.test(d.message) && /JSON/.test(d.message)) &&
+      afterBad.count === 2,
+    JSON.stringify({ dialogs, count: afterBad.count })
+  );
+
+  // —— 别人家的 JSON（kind 对不上）：同样拦住
+  const foreignFile = path.join(profile, 'foreign.json');
+  fs.writeFileSync(foreignFile, JSON.stringify({ kind: 'some-other-app', configs: [{ id: 'a' }] }), 'utf8');
+  dialogs.length = 0;
+  await opt2.setInputFiles('#file-import', foreignFile);
+  await opt2.waitForTimeout(700);
+  check(
+    '别的软件导出的文件也会被拒（并说清原因）',
+    dialogs.some((d) => d.type === 'alert' && /kind/.test(d.message)),
+    JSON.stringify(dialogs)
+  );
+
+  opt2.off('dialog', onDialog);
+  check('导出导入全程没报错', ioErrors.length === 0, ioErrors.join(' | '));
+  await opt2.close();
 
   /* ------------------------------------------------------------------ */
 

@@ -658,6 +658,13 @@ button.block { width: 100%; }
   font-weight: 600;
   font-size: 16px;
 }
+/* 「自定义」没有底座 —— 卡片上用一个虚线框示意「这里是内容，框本身不是样式」 */
+.trig-prev.bare {
+  border-radius: 10px;
+  border-style: dashed;
+  background: transparent;
+  color: var(--fg-dim);
+}
 
 .trig-row { display: flex; gap: 14px; align-items: flex-start; }
 .trig-row .trig-styles { flex: 1; min-width: 0; }
@@ -669,10 +676,11 @@ button.block { width: 100%; }
   resize: vertical;
 }
 
-/* 自定义 SVG 的检查结果 */
+/* 自定义 SVG 的检查结果（bad = 被拦下，warn = 选了自定义但还没填图标） */
 .trig-svg-msg { margin: 0; font-size: 11.5px; line-height: 1.6; }
 .trig-svg-msg.ok { color: var(--ok); }
-.trig-svg-msg.bad { color: var(--warn); }
+.trig-svg-msg.bad,
+.trig-svg-msg.warn { color: var(--warn); }
 
 .trig-preview-box {
   flex: none; width: 84px;

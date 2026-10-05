@@ -21,7 +21,7 @@ const { renderTemplate, escapeJsonString, imageContentPart, targetCodeOf, TARGET
 const { parsePath, getByPath, extractContent, describeShape } = await import('../lib/extract.js');
 const {
   DEFAULT_CONFIGS, DEFAULT_SETTINGS, wantDirect, moveItem, dropIndex, buildVars,
-  requestTemplateFor, freshConfigs, loadState
+  requestTemplateFor, freshConfigs, loadState, exportState, importState
 } = await import('../lib/store.js');
 const { previewRequest } = await import('../lib/engine.js');
 const { toBingLang, hasAdapter, adapterDirectHosts } = await import('../lib/adapters.js');
@@ -640,6 +640,30 @@ section('14. 老存档迁移：开关归位 / 补预设 / OCR 供应商换模型
   });
   eq('最新版本的存档不会被重复插入', vNow.configs.length, 1);
 
+  /* 1.0.4 去掉了「笔尖」这个预设：老存档里留着 nib 的话要写正成默认那个。
+     注意这不吃版本号 —— 没有新增字段、没改默认值，只是把认不出的值归一化，
+     所以一个 version 已经是最新的存档同样要过这一关。 */
+  const vNib = await load({
+    version: STORAGE_VERSION,
+    configs: [{ id: 'builtin-deepl', name: 'DeepL' }],
+    activeConfigId: 'builtin-deepl',
+    vars: [],
+    settings: { ...DEFAULT_SETTINGS, triggerStyle: 'nib', triggerSize: 60 }
+  });
+  eq('删掉的「笔尖」被写正成默认预设', vNib.settings.triggerStyle, 'badge');
+  eq('同一块里别的按钮设置一点都不动', vNib.settings.triggerSize, 60);
+  check('归一化的结果落了盘', !!written && written.settings.triggerStyle === 'badge');
+
+  const vGood = await load({
+    version: STORAGE_VERSION,
+    configs: [{ id: 'builtin-deepl', name: 'DeepL' }],
+    activeConfigId: 'builtin-deepl',
+    vars: [],
+    settings: { ...DEFAULT_SETTINGS, triggerStyle: 'globe' }
+  });
+  eq('认得出的预设原样留着', vGood.settings.triggerStyle, 'globe');
+  check('没改东西就不写盘', written === null);
+
   globalThis.chrome.storage.local = original;
 }
 
@@ -660,6 +684,7 @@ section('15. 翻译按钮：样式预设与尺寸');
   eq('三个预设', TRIGGER_STYLES.length, 3);
   eq('默认是「译字方块」', DEFAULT_TRIGGER_STYLE, 'badge');
   eq('id 不重复', new Set(TRIGGER_STYLES.map((s) => s.id)).size, TRIGGER_STYLES.length);
+  eq('预设清单是 方块 / 地球 / 自定义', TRIGGER_STYLES.map((s) => s.id).join(), 'badge,globe,custom');
   check('每个预设都有名字和说明', TRIGGER_STYLES.every((s) => s.name && s.hint));
 
   const badge = getTriggerStyle('badge');
@@ -669,8 +694,14 @@ section('15. 翻译按钮：样式预设与尺寸');
   check('地球 = 正圆 + SVG', globe.round === false && /^<svg /.test(globe.svg || ''));
   check('地球画了经纬线', globe.svg.includes('<ellipse') && globe.svg.includes('<path d="M3.6 9.1'));
 
-  const nib = getTriggerStyle('nib');
-  check('笔尖 = 正圆 + SVG', nib.round === false && /^<svg /.test(nib.svg || ''));
+  const custom = getTriggerStyle('custom');
+  check('自定义 = 无底座 + SVG', custom.round === false && custom.bare === true && /^<svg /.test(custom.svg || ''));
+  check('自定义的占位图标就是示例图标（没填图标时按钮不会空着）',
+    custom.svg === TRIGGER_SVG_SAMPLE);
+  check('只有「自定义」不给底座', TRIGGER_STYLES.filter((s) => s.bare).length === 1);
+
+  // 1.0.4 把「笔尖」换成了「自定义」。老存档里的 nib 认不出来 → 回退到第一个预设
+  eq('删掉的「笔尖」认不出来，回退到默认', getTriggerStyle('nib').id, 'badge');
 
   eq('认不出的 id 回退到第一个', getTriggerStyle('nope').id, 'badge');
   eq('undefined 也回退', getTriggerStyle(undefined).id, 'badge');
@@ -687,6 +718,15 @@ section('15. 翻译按钮：样式预设与尺寸');
   check('预设规则用 :where() 压低了优先级',
     TRIGGER_CSS.includes('.rt-trigger:where(.s-badge)'), TRIGGER_CSS.slice(0, 60));
   check('尺寸走 CSS 变量而不是写死', TRIGGER_CSS.includes('var(--rt-tr-size'));
+
+  // 「自定义」那条必须把底座显式清零 —— 不写的话以后基础样式一加底色就漏出来了
+  const customRule = TRIGGER_CSS.slice(TRIGGER_CSS.indexOf('.rt-trigger:where(.s-custom)'));
+  check('自定义把底色 / 描边 / 阴影都清零了',
+    /background:\s*none/.test(customRule) && /border:\s*0/.test(customRule) &&
+      /box-shadow:\s*none/.test(customRule), customRule.split('}')[0]);
+  check('自定义不留内边距（图标撑满整块）',
+    TRIGGER_CSS.replace(/\s+/g, '').includes('.s-custom).rt-ico{padding:0;}'));
+  check('笔尖那套规则已经删干净', !TRIGGER_CSS.includes('s-nib'));
 }
 
 section('16. 自定义 SVG：该放行的放行，该拦的拦住');
@@ -741,8 +781,12 @@ section('17. 按钮样式：content.js 里的副本必须和 lib 一致');
     check(`预设「${s.name}」的 SVG 逐字一致`, squash(src).includes(squash(s.svg)));
   }
 
-  check('预设名都对得上（badge/globe/nib）',
-    ['badge', 'globe', 'nib'].every((id) => squash(src).includes(id + ':{')));
+  check('预设名都对得上（badge/globe/custom）',
+    ['badge', 'globe', 'custom'].every((id) => squash(src).includes(id + ':{')));
+  // 「自定义」的占位图标也得抄过去，否则页面上选到自定义而没填图标时按钮是空的
+  check('自定义的占位图标也在 content.js 里',
+    squash(src).includes(squash(TRIGGER_SVG_SAMPLE)));
+  check('content.js 里也没留下笔尖', !src.includes('s-nib') && !src.includes('M8.3 3.1h7.4'));
 
   for (const g of SVG_GUARDS) {
     check(`安全检查带过去了：${g.re}`, squash(src).includes(squash(g.re.toString())));
@@ -1297,6 +1341,75 @@ section('22. 目标语言：下拉挑语言，接口要的代码自动转');
   ));
   eq('设置成日语后，DeepL 收到的是 JA', JSON.parse(jp.request.body).target_lang, 'JA');
   eq('DeepL 那条一次警告都不该有', jp.notes.length, 0);
+}
+
+/* ------------------------------------------------------------------ */
+
+section('23. 导出 / 导入：换台设备能把配置原样搬过去');
+{
+  /* 导的是整份存档（配置 + 顺序 + 变量 + 设置 + OCR），导入是整体替换。
+     换设备就靠这条路，所以往返一次必须一模一样 —— 顺序也得原样。 */
+  const state = {
+    version: 5,
+    configs: [
+      { id: 'cfg-b', name: '第二条', note: '', adapter: '', request: 'curl https://b', imageRequest: '', path: '', responseMode: 'auto', direct: false },
+      { id: 'cfg-a', name: '第一条', note: '说明', request: 'POST https://a\nx-k: {{apiKey}}\n\n{}', responseMode: 'json' }
+    ],
+    activeConfigId: 'cfg-a',
+    vars: [{ name: 'apiKey', value: 'sk-秘密' }],
+    settings: { ...DEFAULT_SETTINGS, triggerStyle: 'globe', theme: 'light', panelWidth: 700 },
+    ocr: { activeId: 'builtin-siliconflow', providers: [{ id: 'builtin-siliconflow', apiKey: 'sk-ocr' }] }
+  };
+
+  const text = exportState(state);
+  const parsed = JSON.parse(text);
+  eq('导出的是合法 JSON', typeof parsed, 'object');
+  eq('带一个认得出的 kind', parsed.kind, 'request-translate');
+  eq('带导出时间（人类可读）', typeof parsed.exportedAt, 'string');
+  check('导出时间长得像 ISO', /^\d{4}-\d{2}-\d{2}T/.test(parsed.exportedAt), parsed.exportedAt);
+  eq('四条主线数据一样不少',
+    ['configs', 'vars', 'settings', 'ocr'].filter((k) => k in parsed), ['configs', 'vars', 'settings', 'ocr']);
+  check('缩进过的（人要看/手改得动）', text.includes('\n  "configs"'));
+  // 明文 key 会被带走 —— 设置页写了这句提醒，这里钉住这个事实（没打算「贴心」地删掉）
+  check('API Key 照原样在文件里（文档明说了）', text.includes('sk-秘密') && text.includes('sk-ocr'));
+
+  const back = importState(text);
+  eq('导入回来的配置条数一致', back.configs.length, 2);
+  eq('顺序也是导出的那个顺序', back.configs.map((c) => c.id), ['cfg-b', 'cfg-a']);
+  eq('配置内容原样', back.configs[1].request, state.configs[1].request);
+  eq('变量里的 key 也回来了', back.vars[0].value, 'sk-秘密');
+  eq('设置跟着回来了', back.settings.panelWidth, 700);
+  eq('主题这种「看起来像界面状态」的也一起走', back.settings.theme, 'light');
+  eq('导出时间单独拎出来（给确认框用）', back.exportedAt, parsed.exportedAt);
+  check('OCR 供应商补齐了内置条目',
+    back.ocr.providers.some((p) => p.id === 'builtin-siliconflow'));
+
+  /* 二次导出：不能让导进来的旧 exportedAt 顶掉新的（那会让「导出于」一直是老日期） */
+  const second = JSON.parse(exportState({ ...state, exportedAt: '2000-01-01T00:00:00.000Z' }));
+  check('再次导出会写成当下的时间，不吃上次那个', second.exportedAt !== '2000-01-01T00:00:00.000Z');
+
+  /* 缺字段的老文件 / 手写的文件：该补的补，该拒的拒 */
+  const minimal = importState(JSON.stringify({ configs: [{ id: 'x', name: 'X', request: 'GET https://x' }] }));
+  eq('只有 configs 也能导', minimal.configs.length, 1);
+  eq('缺席的字段按默认值补（imageRequest）', minimal.configs[0].imageRequest, '');
+  eq('缺席的设置按默认值补', minimal.settings.fontSize, DEFAULT_SETTINGS.fontSize);
+  eq('没有 exportedAt 就是空串', minimal.exportedAt, '');
+
+  const boom = (name, input, re) => {
+    let msg = '';
+    try { importState(input); } catch (e) { msg = String(e && e.message); }
+    check(`拦下：${name}`, !!msg && (!re || re.test(msg)), msg || '(没报错)');
+  };
+  boom('不是 JSON', '{ 这不是 json');
+  boom('JSON 但不是对象', '"hello"');
+  boom('没有 configs', JSON.stringify({ settings: {} }), /configs/);
+  boom('configs 是空数组', JSON.stringify({ configs: [] }), /configs/);
+  boom('别的软件导出的文件（kind 对不上）',
+    JSON.stringify({ kind: 'some-other-app', configs: [{ id: 'a' }] }), /kind/);
+
+  /* 老版本（1.0.0 起其实就带 kind）和手写文件可能没有 kind —— 不能因为这个就拒 */
+  const noKind = importState(JSON.stringify({ configs: [{ id: 'a', name: 'A' }] }));
+  eq('没有 kind 也放行（手写的文件）', noKind.configs.length, 1);
 }
 
 /* ------------------------------------------------------------------ */
