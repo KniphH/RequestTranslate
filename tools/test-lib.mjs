@@ -1322,6 +1322,26 @@ section('22. 目标语言：下拉挑语言，接口要的代码自动转');
   eq('以前挑「荷兰语」会静默回退成 ZH-HANS，现在给 NL', targetCodeOf('荷兰语'), 'NL');
   eq('挪威语给的是 DeepL 认的 NB（不是通用 ISO 的 NO）', targetCodeOf('挪威语'), 'NB');
 
+  /* 划词面板顶栏也有一个一样的选择框（想临时换语言不用回设置页）。
+     content script import 不了模块，候选只能由后台随 ready 捎过去 ——
+     这两件事缺哪一件，那个下拉都是空的或者错的。 */
+  const bgJs = readFileSync(new URL('../background.js', import.meta.url), 'utf8');
+  const panelJs = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
+  check('后台把语言候选随 ready 一起发给页面',
+    /import\s*\{[^}]*\bTARGET_PRESETS\b[^}]*\}\s*from\s*'\.\/lib\/template\.js'/.test(bgJs) &&
+      /targetLangs:\s*TARGET_PRESETS/.test(bgJs));
+  check('面板顶栏有一个目标语言下拉',
+    /class="rt-lang"/.test(panelJs) && panelJs.includes("querySelector('.rt-lang')"));
+  check('面板的候选来自后台，没在 content.js 里手抄一份',
+    !panelJs.includes('TARGET_PRESETS'));
+  check('面板换语言后会把各配置的旧译文作废（那是上一门语言的）',
+    /langSelect\.addEventListener\('change'/.test(panelJs) &&
+      /resultCache\.clear\(\)/.test(panelJs));
+  /* 流式输出不自动跟随滚动：有些模型吐字快，视口被一路拉着往下跑就没法读了。
+     文本是往后接的，视口原地不动就能从头读（要跟尾巴自己拖滚动条）。 */
+  check('流式输出不把滚动条带着跑（没有对 scrollTop 的赋值）',
+    !/outBox\.scrollTop\s*=\s*[^=]/.test(panelJs));
+
   /* 挑了语言名之后：{{target}} 原样喂聊天模型，{{targetCode}} 喂只认代码的接口 */
   const picked = buildVars({ settings: { targetLang: '英语' }, vars: [] }, 'Hello');
   eq('{{target}} 原样是「英语」', picked.target, '英语');

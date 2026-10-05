@@ -26,6 +26,8 @@
     fontSize: 20,
     theme: 'auto',
     showOriginal: true,
+    // 顶栏那个「目标语言」下拉也改它（{{target}} / {{targetCode}} 都读这里）
+    targetLang: '简体中文',
     maxChars: 8000
   };
   let configs = [];
@@ -297,9 +299,10 @@ ${TRIGGER_CSS}
 .rt-dot.ok { background: #22c55e; box-shadow: 0 0 .4em rgba(34, 197, 94, .65); }
 .rt-dot.err { background: #ef4444; box-shadow: 0 0 .4em rgba(239, 68, 68, .6); }
 
-.rt-cfg {
-  flex: 1;
-  min-width: 0;
+/* 顶栏两个下拉（翻译接口 / 目标语言）共用一套外观 —— 多了一个控件，
+   面板的样子不该跟着变。宽度分配不同：接口那条吃掉剩下的空间，
+   语言那条按内容定长（语言名最长四个字，别去跟接口抢地方）。 */
+.rt-cfg, .rt-lang {
   appearance: none;
   background: var(--rt-bg);
   color: var(--rt-text);
@@ -312,8 +315,10 @@ ${TRIGGER_CSS}
   cursor: pointer;
   outline: none;
 }
-.rt-cfg:hover { border-color: var(--rt-accent); }
-.rt-cfg option { background: var(--rt-bg-head); color: var(--rt-text); }
+.rt-cfg { flex: 1 1 auto; min-width: 0; }
+.rt-lang { flex: 0 1 auto; min-width: 5.4em; max-width: 6.6em; }
+.rt-cfg:hover, .rt-lang:hover { border-color: var(--rt-accent); }
+.rt-cfg option, .rt-lang option { background: var(--rt-bg-head); color: var(--rt-text); }
 
 .rt-actions { display: flex; gap: .1em; flex: none; }
 
@@ -453,7 +458,8 @@ ${TRIGGER_CSS}
   panel.innerHTML = `
     <div class="rt-head" data-drag>
       <span class="rt-dot"></span>
-      <select class="rt-cfg"></select>
+      <select class="rt-cfg" title="翻译接口"></select>
+      <select class="rt-lang" title="目标语言"></select>
       <div class="rt-actions">
         <button class="rt-btn" data-act="src" title="显示 / 隐藏原文">
           <svg viewBox="0 0 20 20" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1.6 10S4.9 4.6 10 4.6 18.4 10 18.4 10 15.1 15.4 10 15.4 1.6 10 1.6 10Z"/><circle cx="10" cy="10" r="2.3"/></svg>
@@ -479,6 +485,7 @@ ${TRIGGER_CSS}
 
   const dot = panel.querySelector('.rt-dot');
   const cfgSelect = panel.querySelector('.rt-cfg');
+  const langSelect = panel.querySelector('.rt-lang');
   const srcBox = panel.querySelector('.rt-src');
   const outBox = panel.querySelector('.rt-out');
   const msgBox = panel.querySelector('.rt-msg');
@@ -932,10 +939,10 @@ ${TRIGGER_CSS}
     pendingDelta = null;
 
     outBox.classList.remove('empty');
-    // 读一次 scrollHeight 判断是否停在底部（会触发强制布局），写完不再读
-    const atBottom = outBox.scrollHeight - outBox.scrollTop - outBox.clientHeight < 40;
+    // 不自动跟随到底部（kniph 定的）：有些模型吐字很快，视口被一路拉着往下跑就
+    // 根本读不了。文本是一段段往**后**接的，视口原地不动就能从头安静读完；
+    // 想追尾巴自己拖滚动条。（顺带省掉一次强制布局 —— 以前那行要读 scrollHeight。）
     outBox.textContent = text;
-    if (atBottom) outBox.scrollTop = outBox.scrollHeight;
     // 译文一段段变长，面板也跟着长高，底部可能顶出视口 —— 拉回来
     keepPanelInView();
   }
@@ -1019,9 +1026,11 @@ ${TRIGGER_CSS}
 
     if (msg.type === 'ready') {
       configs = msg.configs || [];
+      if (Array.isArray(msg.targetLangs)) targetLangs = msg.targetLangs;
       activeConfigId = msg.activeConfigId || (configs[0] && configs[0].id) || '';
       if (msg.settings) prefs = { ...prefs, ...msg.settings };
       renderConfigOptions();
+      renderLangOptions();
       return;
     }
 
@@ -1137,6 +1146,7 @@ ${TRIGGER_CSS}
       o.textContent = '（没有配置）';
       o.value = '';
       cfgSelect.appendChild(o);
+      cfgSelect.title = '翻译接口';
       return;
     }
     for (const c of configs) {
@@ -1152,6 +1162,29 @@ ${TRIGGER_CSS}
         : configs[0].id;
     }
     cfgSelect.value = currentConfigId;
+    // 顶栏现在挤了两个下拉，长名字会被截掉 —— 鼠标停上去给全名
+    const cur = configs.find((c) => c.id === currentConfigId);
+    cfgSelect.title = cur ? '翻译接口：' + cur.name : '翻译接口';
+  }
+
+  /* 顶栏那个「目标语言」下拉的候选，由后台随 ready 一起发过来
+     （content script 不能 import，别在这儿手抄一份 —— 加了语言就对不上了）。 */
+  let targetLangs = [];
+
+  function renderLangOptions() {
+    const cur = String(prefs.targetLang || '简体中文');
+    // 存档里的值不在候选里（手填的代码、老存档）：临时补一条顶上，**别**让下拉
+    // 显示成别的语言 —— 那才是真的误导。用户挑走别的之后它自然就没了。
+    const list = targetLangs.includes(cur) ? targetLangs.slice() : [cur].concat(targetLangs);
+    langSelect.innerHTML = '';
+    for (const name of list) {
+      const o = document.createElement('option');
+      o.value = name;
+      o.textContent = name;
+      langSelect.appendChild(o);
+    }
+    langSelect.value = cur;
+    langSelect.title = '目标语言：' + cur;
   }
 
   /* ------------------------------------------------------------------ */
@@ -1503,6 +1536,27 @@ ${TRIGGER_CSS}
     showNoCachedResult(currentConfigId);
   });
 
+  /* 顶栏换目标语言。语言是藏在请求模板里的（{{target}} / {{targetCode}}），
+     换了它等于换了整条请求 —— 所以和「换配置」一个规矩：手上有原文就当场重翻，
+     别让用户自己再点一次 ↻。 */
+  langSelect.addEventListener('change', async () => {
+    const v = langSelect.value;
+    if (v === prefs.targetLang) return;
+    prefs.targetLang = v;
+    langSelect.title = '目标语言：' + v;
+    // 缓存里每一条都是上一门语言的译文，全作废
+    resultCache.clear();
+    // **必须等写下去再发请求**：后台是从存档里读目标语言来渲染 <{{target}}> 的
+    // （loadState 每次都现读），写没落盘就发，这一条会带着上一门语言出去。
+    // 真踩过 —— e2e 里「换成英语但请求还是 ZH-HANS」抓到的就是这个。
+    await saveSetting('targetLang', v);
+    if (currentText || (lastOcr && lastOcr.image)) {
+      translate(currentText, currentConfigId, lastOcr || undefined);
+      return;
+    }
+    setStatus('目标语言：' + v);
+  });
+
   // 拖动
   (() => {
     let dragging = false;
@@ -1513,7 +1567,8 @@ ${TRIGGER_CSS}
 
     const head = panel.querySelector('[data-drag]');
     head.addEventListener('mousedown', (e) => {
-      if (e.target.closest('.rt-btn') || e.target.closest('.rt-cfg')) return;
+      if (e.target.closest('.rt-btn') || e.target.closest('.rt-cfg') ||
+          e.target.closest('.rt-lang')) return;
       dragging = true;
       sx = e.clientX;
       sy = e.clientY;
@@ -1574,9 +1629,14 @@ ${TRIGGER_CSS}
     if (!state) return;
     if (Array.isArray(state.configs)) configs = state.configs.map((c) => ({ id: c.id, name: c.name }));
     if (state.activeConfigId) activeConfigId = state.activeConfigId;
+    const prevLang = prefs.targetLang;
     if (state.settings) prefs = { ...prefs, ...state.settings };
+    // 目标语言变了（顶栏改的，或者设置页改的）：缓存里全是**上一门语言**的译文，
+    // 和换原文一样当场作废 —— 否则切配置会把旧语言的译文端出来冒充当次的
+    if (prevLang !== prefs.targetLang) resultCache.clear();
     if (!currentConfigId) currentConfigId = activeConfigId;
     renderConfigOptions();
+    renderLangOptions();
     syncSrcBtn();
     applyAppearance();
     // 字号 / 面板尺寸变了，面板高度跟着变，可能就顶出视口了

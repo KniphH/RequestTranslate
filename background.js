@@ -9,7 +9,7 @@
  *               { type:'ocr' }
  *               { type:'abort' }
  *               { type:'hello' }
- *   bg → page : { type:'ready', state }
+ *   bg → page : { type:'ready', configs, activeConfigId, settings, targetLangs }
  *               { type:'start', configName }
  *               { type:'delta', text }
  *               { type:'done', result }
@@ -31,6 +31,9 @@ import {
   runOcr
 } from './lib/ocr.js';
 import { NO_IMAGE_MESSAGE, CLIPBOARD_UNAVAILABLE_MESSAGE } from './lib/clipboard.js';
+// 顶栏那个「目标语言」下拉的候选。页面那边 import 不了模块，只能这样捎过去，
+// 免得在 content.js 里手抄一份 —— 加了语言两处就对不上了。
+import { TARGET_PRESETS } from './lib/template.js';
 
 const PORT_NAME = 'rt-translate';
 const MENU_ID = 'rt-translate-selection';
@@ -230,7 +233,8 @@ chrome.runtime.onConnect.addListener((port) => {
         type: 'ready',
         configs: state.configs.map((c) => ({ id: c.id, name: c.name })),
         activeConfigId: state.activeConfigId,
-        settings: state.settings
+        settings: state.settings,
+        targetLangs: TARGET_PRESETS
       });
       return;
     }

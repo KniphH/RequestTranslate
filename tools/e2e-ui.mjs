@@ -149,12 +149,49 @@ let lastPath = '';
 const STREAM_CHUNKS = 3;
 const STREAM_GAP_MS = 400;
 
+/** 长流式接口：分段多得足够把面板撑出滚动条，专供「输出不许甩着滚动条跑」那一节。
+    **每一片都要不一样**：引擎的累加器有一条「重复帧忽略」规则（防的是把「整段累计
+    文本」当增量发的那种接口），发同一句 24 遍的话从第 2 片起会被整批丢掉（真踩过）。 */
+const LONG_CHUNKS = 24;
+const LONG_GAP_MS = 60;
+const LONG_CHUNK_TEXT = '这一段用来把面板撑出滚动条的假译文故意写得很长，重复很多遍也不会变短。';
+
 const server = http.createServer(async (req, res) => {
   lastPath = req.url || '';
   if (req.url && req.url.startsWith('/slow')) {
     await new Promise((r) => setTimeout(r, SLOW_MS));
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('慢速响应');
+    return;
+  }
+  // 长流式接口：分段多、间隔短，专门把面板撑出滚动条。
+  // **必须排在 /stream 前面** —— 它自己就以 /stream 开头，不然会被下面那条吃掉。
+  if (req.url && req.url.startsWith('/streamlong')) {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      lastTextRequest = body;
+      textHits += 1;
+      res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8' });
+      let i = 0;
+      const timer = setInterval(() => {
+        if (res.writableEnded) {
+          clearInterval(timer);
+          return;
+        }
+        i += 1;
+        res.write(
+          'data: ' +
+            JSON.stringify({ choices: [{ delta: { content: `第${i}段：${LONG_CHUNK_TEXT}` } }] }) +
+            '\n\n'
+        );
+        if (i >= LONG_CHUNKS) {
+          clearInterval(timer);
+          res.end('data: [DONE]\n\n');
+        }
+      }, LONG_GAP_MS);
+      res.on('close', () => clearInterval(timer));
+    });
     return;
   }
   // SSE 假接口：引擎是看 Content-Type 里的 event-stream 认流式的，
@@ -2847,6 +2884,169 @@ try {
   opt2.off('dialog', onDialog);
   check('导出导入全程没报错', ioErrors.length === 0, ioErrors.join(' | '));
   await opt2.close();
+
+  /* ------------------------------------------------------------------ */
+  /* 15. 顶栏换目标语言；流式输出不甩着滚动条跑                          */
+  /* ------------------------------------------------------------------ */
+  /* kniph 提的两条：①想换门语言翻，不该还得开设置页 —— 顶栏「翻译接口」
+     旁边再加一个「目标语言」选择框；②流式输出吐得快的时候滚动条被文字牵着跑
+     就看不了了 —— 视口原地不动，要追尾巴自己拖。 */
+
+  console.log('\n15. 顶栏直接换目标语言；流式输出时滚动条不跟着跑');
+
+  await page.bringToFront();
+
+  /* 网页那边是主世界，`chrome.storage` 在那儿是 undefined —— 改存档只能用
+     扩展自己的页面（关掉 opt / opt2 之后另开一个）。 */
+  const opt3 = await ctx.newPage();
+  await opt3.goto(`chrome-extension://${extId}/options.html`, { waitUntil: 'load' });
+  await opt3.waitForTimeout(400);
+
+  /* 14 节把配置换成了导入进来那两条、字号还留着 31 —— 这一节重架一条自己的配置，
+     顺手把字号 / 面板宽度**归位**：小节之间互相污染过，别让上一节的决定影响这一节的度量。
+     请求模板里带 {{targetCode}} 并把它当 ?tag= —— 「到底换没换成英语」看
+     假接口收到的路径就知道（后台每次发请求都重读一遍设置，所以这也顺带验了落盘）。 */
+  await opt3.evaluate(async (u) => {
+    const read = async () => (await chrome.storage.local.get('state')).state || null;
+    for (let i = 0; i < 30; i++) {
+      const st = await read();
+      st.configs = [{
+        id: 'e2e-lang',
+        name: '假语言接口',
+        note: '',
+        adapter: '',
+        request: `curl ${u}?tag={{targetCode}}`,
+        path: '',
+        responseMode: 'text',
+        direct: false
+      }];
+      st.activeConfigId = 'e2e-lang';
+      st.settings.targetLang = '简体中文';
+      st.settings.fontSize = 20;
+      st.settings.panelWidth = 460;
+      await chrome.storage.local.set({ state: st });
+      const back = await read();
+      if (back.configs.length === 1 && back.configs[0].id === 'e2e-lang') return;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    throw new Error('假语言接口没写进去');
+  }, `http://127.0.0.1:${port}/text`);
+  await page.waitForTimeout(700);
+
+  // 12 节留下的面板可能还开着（它压着选区，小圆点点不到）
+  await page.evaluate(() =>
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  );
+  await page.waitForTimeout(200);
+
+  const langPanel = () =>
+    page.evaluate(() => {
+      const root = document.getElementById('request-translate-host').shadowRoot;
+      const sel = root.querySelector('.rt-lang');
+      const head = root.querySelector('.rt-head');
+      const out = root.querySelector('.rt-out');
+      return {
+        value: sel ? sel.value : null,
+        options: sel ? Array.from(sel.options).map((o) => o.value) : [],
+        cfgW: root.querySelector('.rt-cfg').getBoundingClientRect().width,
+        langW: sel ? sel.getBoundingClientRect().width : 0,
+        headOverflow: head.scrollWidth - head.clientWidth,
+        out: out.textContent,
+        scrollTop: out.scrollTop,
+        scrollH: out.scrollHeight,
+        clientH: out.clientHeight,
+        msg: root.querySelector('.rt-msg').textContent,
+        dot: root.querySelector('.rt-dot').className
+      };
+    });
+
+  /** 像用户那样拨一下顶栏的语言下拉（监听的就是 change 这个口子） */
+  const pickLang = (v) =>
+    page.evaluate((val) => {
+      const sel = document
+        .getElementById('request-translate-host')
+        .shadowRoot.querySelector('.rt-lang');
+      sel.value = val;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    }, v);
+
+  await selectRange(2);
+  await page.waitForTimeout(250);
+  await page.click('.rt-trigger', { force: true });
+  await settle();
+
+  const lp0 = await langPanel();
+  check('顶栏多了个目标语言下拉，候选是后台发过来的那一套',
+    lp0.options.length >= 20, `${lp0.options.length} 项`);
+  check('候选里有关键的几个（英语 / 荷兰语 / 地区变体 EN-GB）',
+    ['英语', '荷兰语', 'EN-GB'].every((v) => lp0.options.includes(v)),
+    lp0.options.slice(0, 6).join(','));
+  check('它显示的就是存档里的目标语言', lp0.value === '简体中文', String(lp0.value));
+  check('两个下拉并排没把顶栏挤溢出', lp0.headOverflow <= 1, `溢出 ${lp0.headOverflow}px`);
+  check('语言那条没反过来把接口那条压没', lp0.cfgW > lp0.langW, `cfg ${lp0.cfgW} ｜ lang ${lp0.langW}`);
+  check('请求里带上了当前语言的代码（tag=ZH-HANS）', /tag=ZH-HANS/.test(lastPath), lastPath);
+  check('译文也认这门语言', lp0.out.includes('【ZH-HANS】'), `${lp0.msg}｜${lp0.out}`);
+
+  /* 拨一下就换语言：当场重发，不用回去开设置页、也不用再点 ↻ */
+  const reqLang = textHits;
+  await pickLang('英语');
+  await settlePanel();
+  const lp1 = await langPanel();
+  check('换语言当场重发一条', textHits === reqLang + 1, `textHits ${reqLang} → ${textHits}`);
+  check('这一条带的是 EN', /tag=EN$/.test(lastPath), lastPath);
+  check('回来的是这门语言的译文（不是把上一条留在界面上）',
+    lp1.out.includes('【EN】'), `${lp1.msg}｜${lp1.out}`);
+  check('下拉停在刚挑的那门语言上', lp1.value === '英语', String(lp1.value));
+
+  const reqLang2 = textHits;
+  await pickLang('简体中文');
+  await settlePanel();
+  check('再换回中文：又发一条，带的是 ZH-HANS',
+    textHits === reqLang2 + 1 && /tag=ZH-HANS/.test(lastPath),
+    `textHits ${reqLang2} → ${textHits}｜${lastPath}`);
+
+  /* —— 流式输出：字一段段涌出来，滚动条不许被带着走 —— */
+  await opt3.evaluate(async (u) => {
+    const read = async () => (await chrome.storage.local.get('state')).state || null;
+    for (let i = 0; i < 30; i++) {
+      const st = await read();
+      st.configs[0].request = `curl ${u}?tag=long`;
+      st.configs[0].responseMode = 'auto'; // 让引擎自己认出 event-stream，走真正的 SSE 解析
+      await chrome.storage.local.set({ state: st });
+      const back = await read();
+      if (back.configs[0].request.includes('/streamlong')) return;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    throw new Error('没换成流式接口');
+  }, `http://127.0.0.1:${port}/streamlong`);
+  await page.waitForTimeout(700);
+
+  const reqLong = textHits;
+  await page.click('.rt-btn[data-act="retry"]', { force: true });
+  // 等它吐到「已经该出滚动条」的长度，量一次正在流的时候
+  await page
+    .waitForFunction(
+      () =>
+        document.getElementById('request-translate-host').shadowRoot.querySelector('.rt-out')
+          .textContent.length > 400,
+      null,
+      { timeout: 6000 }
+    )
+    .catch(() => {});
+  const midScroll = await langPanel();
+  await page.waitForTimeout(LONG_CHUNKS * LONG_GAP_MS + 1200);
+  const endScroll = await langPanel();
+
+  check('（脚手架）长流式接口从头吐到尾了',
+    endScroll.out.includes(`第${LONG_CHUNKS}段`) && endScroll.out.length > 200,
+    `${endScroll.out.length} 字｜hits ${reqLong} → ${textHits}｜${lastPath}｜msg ${endScroll.msg}｜${endScroll.dot}`);
+  check('内容确实长到该出现滚动条了',
+    endScroll.scrollH > endScroll.clientH + 20,
+    `视口 ${endScroll.clientH} ｜ 内容 ${endScroll.scrollH}`);
+  check('流到一半时视口没被甩着往下跑', midScroll.scrollTop === 0, String(midScroll.scrollTop));
+  check('流完了还停在原地（能从头安静读完）', endScroll.scrollTop === 0, String(endScroll.scrollTop));
+
+  await opt3.close();
 
   /* ------------------------------------------------------------------ */
 
