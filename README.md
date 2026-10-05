@@ -8,6 +8,8 @@
 
 你写什么，它就发什么。
 
+[**从 Edge 商店安装**](https://microsoftedge.microsoft.com/addons/detail/kbkgflnmkghalnfhgdjefbalgbljlpod) ・ [下载 zip 手动装](https://github.com/KniphH/RequestTranslate/releases)
+
 ## 演示
 
 划词 → 面板流式出译文（右上角「…」是逐项诊断：耗时、分片、响应路径）：
@@ -44,8 +46,7 @@ curl https://api.ant-ling.com/v1/chat/completions \
 
 ### 一、从商店装（能自动更新，推荐）
 
-- **Edge**：[RequestTranslate - Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/9EGCXX0CGMWT7)
-  —— 已提交，**审核中**，通过之前这个链接打不开
+- **Edge**：[RequestTranslate · 请求式划词翻译](https://microsoftedge.microsoft.com/addons/detail/kbkgflnmkghalnfhgdjefbalgbljlpod)
 - **Chrome**：还没提交
 
 ### 二、手动装（不依赖商店，Edge / Chrome 都行）
