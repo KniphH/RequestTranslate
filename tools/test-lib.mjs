@@ -20,18 +20,16 @@ const { tokenize, parseRequest, parseCurl, parseRawHttp, repairJsonBody } = awai
 const { renderTemplate, escapeJsonString, imageContentPart, targetCodeOf, TARGET_PRESETS } = await import('../lib/template.js');
 const { parsePath, getByPath, extractContent, describeShape } = await import('../lib/extract.js');
 const {
-  DEFAULT_CONFIGS, DEFAULT_SETTINGS, wantDirect, moveItem, dropIndex, buildVars,
+  DEFAULT_CONFIGS, DEFAULT_SETTINGS, moveItem, dropIndex, buildVars,
   requestTemplateFor, freshConfigs, loadState, exportState, importState
 } = await import('../lib/store.js');
 const { previewRequest } = await import('../lib/engine.js');
-const { toBingLang, hasAdapter, adapterDirectHosts } = await import('../lib/adapters.js');
-const { pacFallback, buildPac, canControlProxy, acquireDirect, isDirectActive } =
-  await import('../lib/network.js');
+const { toBingLang, hasAdapter } = await import('../lib/adapters.js');
 const {
   OCR_MENU_ID, OCR_MENU_TITLE, OCR_PROVIDERS, BUILTIN_OCR_IDS,
   DEFAULT_OCR_PROMPT,
   normalizeOcrProvider, normalizeOcrState, defaultOcrState, activeOcrProvider,
-  endpointHost, buildOcrBody, pickOcrText, describeOcrError, ocrErrorHint,
+  buildOcrBody, pickOcrText, describeOcrError, ocrErrorHint,
   normalizeMaxTokens, previewOcrRequest, runOcr
 } = await import('../lib/ocr.js');
 const {
@@ -379,96 +377,9 @@ section('9. 内置适配器：语言代码映射');
 
   check('bing 适配器已注册', hasAdapter('bing'));
   check('没注册的适配器返回 false', !hasAdapter('not-there'));
-
-  eq('bing 声明了要直连的域名', adapterDirectHosts('bing'), [
-    'bing.com', 'bing.net', 'bingapis.com', 'microsofttranslator.com'
-  ]);
-  eq('没声明的适配器返回 null', adapterDirectHosts('not-there'), null);
 }
 
-section('10. 临时直连：把当前代理翻译成 PAC 的回退项');
-{
-  eq('本来就是直连', pacFallback({ mode: 'direct' }), 'DIRECT');
-  eq('系统代理 —— 拿不到地址', pacFallback({ mode: 'system' }), null);
-  eq('自动检测 —— 拿不到地址', pacFallback({ mode: 'auto_detect' }), null);
-  eq('别人给的 PAC —— 嵌不进去', pacFallback({ mode: 'pac_script' }), null);
-  eq('空配置不会炸', pacFallback(null), null);
-
-  eq('http 代理',
-    pacFallback({ mode: 'fixed_servers', rules: { singleProxy: { scheme: 'http', host: '127.0.0.1', port: 7890 } } }),
-    'PROXY 127.0.0.1:7890');
-  eq('socks5 代理',
-    pacFallback({ mode: 'fixed_servers', rules: { singleProxy: { scheme: 'socks5', host: '10.0.0.1', port: 1080 } } }),
-    'SOCKS5 10.0.0.1:1080');
-  eq('https 代理',
-    pacFallback({ mode: 'fixed_servers', rules: { proxyForHttps: { scheme: 'https', host: 'p.example', port: 443 } } }),
-    'HTTPS p.example:443');
-  eq('没写 scheme 按 http 算、没写端口按 80 算',
-    pacFallback({ mode: 'fixed_servers', rules: { singleProxy: { host: 'p.example' } } }),
-    'PROXY p.example:80');
-  eq('fixed_servers 但没给服务器 → 翻不出来',
-    pacFallback({ mode: 'fixed_servers', rules: {} }), null);
-}
-
-section('11. 临时直连：生成的 PAC 真的会放行目标域名');
-{
-  const pac = buildPac(['bing.com'], 'PROXY 127.0.0.1:7890');
-  check('PAC 定义了 FindProxyForURL', pac.includes('function FindProxyForURL'));
-
-  // 别光看字符串 —— 真跑一遍这个 PAC 函数
-  const findProxy = new Function(pac + '\nreturn FindProxyForURL;')();
-
-  eq('cn.bing.com → 直连', findProxy('https://cn.bing.com/translator', 'cn.bing.com'), 'DIRECT');
-  eq('bing.com 本身 → 直连', findProxy('https://bing.com/', 'bing.com'), 'DIRECT');
-  eq('大小写不影响', findProxy('https://CN.Bing.COM/', 'CN.Bing.COM'), 'DIRECT');
-  eq('evil-bing.com 不能被顺带放行',
-    findProxy('https://evil-bing.com/', 'evil-bing.com'), 'PROXY 127.0.0.1:7890');
-  eq('别的域名照旧走代理',
-    findProxy('https://www.google.com/', 'www.google.com'), 'PROXY 127.0.0.1:7890');
-
-  const wide = buildPac(['bing.com', 'bing.net'], 'DIRECT');
-  const findProxy2 = new Function(wide + '\nreturn FindProxyForURL;')();
-  eq('多个后缀都认', findProxy2('https://x.bing.net/', 'x.bing.net'), 'DIRECT');
-
-  eq('host 带不带点都一样（PAC 里做的是后缀比较）',
-    findProxy2('https://blob.bing.net/a', 'blob.bing.net'), 'DIRECT');
-}
-
-section('12. 临时直连：没有 chrome.proxy 时静默降级');
-{
-  eq('Node / content 脚本里控制不了代理', canControlProxy(), false);
-  eq('降级后不谎报「已经在直连」', isDirectActive(), false);
-
-  // 这条路径必须不抛异常 —— 拿不到权限时请求该照发
-  const release = await acquireDirect(['bing.com']);
-  eq('拿到的 release 是个函数', typeof release, 'function');
-  await release();
-  await release(); // 重复调用也不能炸
-  check('全程没有把状态搞脏', isDirectActive() === false);
-}
-
-section('13. 临时直连：总开关默认关，配置自己的开关说了算');
-{
-  const bing = { id: 'cfg-a', adapter: 'bing' };
-  const custom = { id: 'cfg-b', adapter: '' };
-
-  eq('默认设置里总开关是关的', DEFAULT_SETTINGS.directAdapter, false);
-  eq('默认关着时内置适配器不直连', wantDirect(DEFAULT_SETTINGS, bing), false);
-  eq('默认关着时自定义配置也不直连', wantDirect(DEFAULT_SETTINGS, custom), false);
-
-  eq('手动打开总开关后内置适配器直连', wantDirect({ directAdapter: true }, bing), true);
-  eq('总开关管不着自定义配置', wantDirect({ directAdapter: true }, custom), false);
-
-  eq('配置自己勾了强制直连，总开关关着也直连',
-    wantDirect(DEFAULT_SETTINGS, { ...custom, direct: true }), true);
-  eq('总开关关着、配置也没勾，就是普通请求',
-    wantDirect({ directAdapter: false }, { ...custom, direct: false }), false);
-
-  eq('settings 缺席时按「关」算（不是按「开」）', wantDirect(null, bing), false);
-  eq('没有配置时返回 false', wantDirect(DEFAULT_SETTINGS, null), false);
-}
-
-section('14. 老存档迁移：开关归位 / 补预设 / OCR 供应商换模型');
+section('10. 老存档迁移：开关归位 / 补预设 / OCR 供应商换模型');
 {
   const { loadState, STORAGE_VERSION } = await import('../lib/store.js');
   const original = globalThis.chrome.storage.local;
@@ -484,7 +395,8 @@ section('14. 老存档迁移：开关归位 / 补预设 / OCR 供应商换模型
     return loadState();
   };
 
-  /* v2 存档：这个开关刚加那会儿默认是开的，老用户手里存的就是 true */
+  /* v2 存档：那时候「临时直连」的总开关默认是开的，老用户手里存的就是 true。
+     功能已经整块删掉了，迁移得把这个键**删掉** —— 留个 false 也算残渣。 */
   const v2 = await load({
     version: 2,
     configs: [{ id: 'builtin-bing', name: 'Bing', adapter: 'bing' }],
@@ -493,11 +405,12 @@ section('14. 老存档迁移：开关归位 / 补预设 / OCR 供应商换模型
     settings: { ...DEFAULT_SETTINGS, directAdapter: true, theme: 'dark' }
   });
   eq('版本号升到最新', v2.version, STORAGE_VERSION);
-  eq('临时直连被归位成关', v2.settings.directAdapter, false);
+  eq('老存档里的 directAdapter 被彻底删掉', 'directAdapter' in v2.settings, false);
   eq('顺手改了的东西不会丢', v2.settings.theme, 'dark');
   eq('已有的配置不会被迁移动到，新预设只是追加在后面', v2.configs.length, 2);
   eq('追加进来的正好是 DeepL 预设', v2.configs[1].id, 'builtin-deepl');
-  check('迁移结果落了盘', !!written && written.settings.directAdapter === false);
+  check('迁移结果落了盘，落盘的那份也没有这个键',
+    !!written && !('directAdapter' in written.settings));
 
   /* v1 存档：字段全靠默认值补，还得自动补上内置 Bing 通道 */
   const v1 = await load({
@@ -511,7 +424,7 @@ section('14. 老存档迁移：开关归位 / 补预设 / OCR 供应商换模型
   eq('补上了内置 Bing 通道', v1.configs[0].id, 'builtin-bing');
   eq('v1 一路补到最新：原有 1 条 + Bing + DeepL', v1.configs.length, 3);
   eq('也补上了 DeepL 预设', v1.configs[2].id, 'builtin-deepl');
-  eq('缺席的开关按默认关算', v1.settings.directAdapter, false);
+  eq('v1 存档里也不会冒出那个已经删掉的键', 'directAdapter' in v1.settings, false);
 
   /* v3 存档：DeepL 预设要插在内置 DeepSeek 后面，用户自己排的顺序和设置一点都不能动 */
   const v3 = await load({
@@ -530,7 +443,7 @@ section('14. 老存档迁移：开关归位 / 补预设 / OCR 供应商换模型
   eq('整张列表的顺序没被打乱', v3.configs.map((c) => c.id).join(','),
     'builtin-bing,builtin-deepseek,builtin-deepl,cfg-mine');
   eq('选中的还是用户自己那条', v3.activeConfigId, 'cfg-mine');
-  eq('v3 里用户自己开的临时直连没被这段迁移碰掉', v3.settings.directAdapter, true);
+  eq('v3 存档里残留的那个键同样被清掉', 'directAdapter' in v3.settings, false);
   eq('顺手改了的东西也不会丢', v3.settings.theme, 'dark');
 
   /* v4 存档：内置那条「硅基流动」还停在 PaddleOCR-VL，v4→v5 要归位成 DeepSeek-OCR。
@@ -679,7 +592,7 @@ const {
   DEFAULT_TRIGGER_STYLE
 } = await import('../lib/trigger-styles.js');
 
-section('15. 翻译按钮：样式预设与尺寸');
+section('11. 翻译按钮：样式预设与尺寸');
 {
   eq('三个预设', TRIGGER_STYLES.length, 3);
   eq('默认是「译字方块」', DEFAULT_TRIGGER_STYLE, 'badge');
@@ -729,7 +642,7 @@ section('15. 翻译按钮：样式预设与尺寸');
   check('笔尖那套规则已经删干净', !TRIGGER_CSS.includes('s-nib'));
 }
 
-section('16. 自定义 SVG：该放行的放行，该拦的拦住');
+section('12. 自定义 SVG：该放行的放行，该拦的拦住');
 {
   const ok = '<svg viewBox="0 0 24 24"><path d="M4 12h16"/></svg>';
   const bad = (input) => check(`拦下：${input.slice(0, 46)}`, parseTriggerSvg(input).svg === '');
@@ -766,7 +679,7 @@ section('16. 自定义 SVG：该放行的放行，该拦的拦住');
   check('后面几条是「命中即拒绝」', SVG_GUARDS.slice(2).every((g) => !g.negate));
 }
 
-section('17. 按钮样式：content.js 里的副本必须和 lib 一致');
+section('13. 按钮样式：content.js 里的副本必须和 lib 一致');
 {
   // content script 不能 import，所以 content.js 里手抄了一份 CSS、两个预设 SVG
   // 和那一组安全检查正则。抄漏一个字就会「设置页预览和实际按钮长得不一样」，
@@ -793,7 +706,7 @@ section('17. 按钮样式：content.js 里的副本必须和 lib 一致');
   }
 }
 
-section('18. 配置排序：moveItem 的下标口径 / dropIndex 的落点换算');
+section('14. 配置排序：moveItem 的下标口径 / dropIndex 的落点换算');
 {
   /* 上下移和拖动排序共用同一套数学，而这里最容易错的只有一件事：
      `to` 到底是「移除前」还是「移除后」的坐标。往下挪时两者差一位。
@@ -837,7 +750,7 @@ section('18. 配置排序：moveItem 的下标口径 / dropIndex 的落点换算
 
 /* ------------------------------------------------------------------ */
 
-section('19. 截图 OCR：供应商状态 / 请求体 / 取文字');
+section('15. 截图 OCR：供应商状态 / 请求体 / 取文字');
 {
   const d = defaultOcrState();
   check('全新状态下内置供应商都在', d.providers.length === OCR_PROVIDERS.length,
@@ -960,11 +873,6 @@ section('19. 截图 OCR：供应商状态 / 请求体 / 取文字');
   check('模型名不对时提示去核对模型名',
     /模型名/.test(ocrErrorHint('{"error":{"message":"Model does not exist"}}')));
 
-  /* ---- 主机名（喂给临时直连） ---- */
-  eq('endpointHost 取主机名',
-    endpointHost('https://api.siliconflow.cn/v1/chat/completions'), 'api.siliconflow.cn');
-  eq('地址不合法时给空串', endpointHost('不是个网址'), '');
-
   /* ---- 缺字段时直接报错，别真发请求出去 ---- */
   const err = await runOcr({ provider: { endpoint: 'https://x/y', model: 'm', apiKey: '' }, dataUrl: 'data:x' })
     .then(() => '', (e) => e.message);
@@ -1042,7 +950,7 @@ section('19. 截图 OCR：供应商状态 / 请求体 / 取文字');
     buildOcrBody({ model: 'm', prompt: 'OCR:' }, 'data:x').messages[0].content[1].text, 'OCR:');
 }
 
-section('19b. 禁用外置 OCR：勾上后图片直传模型');
+section('15b. 禁用外置 OCR：勾上后图片直传模型');
 {
   /* 「禁用外置 OCR」是 ocr 这一块上的一个全局开关，不是某条供应商的属性。
      它只可能有两种存档形态：老存档没这个字段（→ false），和用户勾过（→ true）。
@@ -1129,7 +1037,7 @@ section('19b. 禁用外置 OCR：勾上后图片直传模型');
     !imgOut.includes('"imagePart"') && !imgOut.includes('\\"imagePart\\"'), imgOut);
 }
 
-section('19c. 一条配置两段模板：文本一段、图片一段');
+section('15c. 一条配置两段模板：文本一段、图片一段');
 {
   const st = { vars: [], settings: { targetLang: '简体中文' } };
 
@@ -1184,7 +1092,7 @@ section('19c. 一条配置两段模板：文本一段、图片一段');
   eq('老配置的 id / 名字也都在', [oldState.configs[0].id, oldState.configs[0].name], ['old', '老配置']);
 }
 
-section('20. 剪切板图片：类型识别 / data URL / base64');
+section('16. 剪切板图片：类型识别 / data URL / base64');
 {
   check('image/* 才算图片',
     isImageMime('image/png') && !isImageMime('text/plain') && !isImageMime(''));
@@ -1220,7 +1128,7 @@ section('20. 剪切板图片：类型识别 / data URL / base64');
   eq('「没有图片」那句话在库里定好了', NO_IMAGE_MESSAGE, '剪切板里没有图片');
 }
 
-section('21. 模板转义：占位符落在几层引号里，就逐层转义');
+section('17. 模板转义：占位符落在几层引号里，就逐层转义');
 {
   /* 这条是真实踩出来的：模板写成 curl 的常态 `-d '{…JSON…}'`（外层 shell 单引号、
      内层 JSON 字符串），占位符两侧既不是 " 也不是 ' —— 老规则按「两侧引号」判断，
@@ -1278,7 +1186,7 @@ section('21. 模板转义：占位符落在几层引号里，就逐层转义');
 
 /* ------------------------------------------------------------------ */
 
-section('22. 目标语言：下拉挑语言，接口要的代码自动转');
+section('18. 目标语言：下拉挑语言，接口要的代码自动转');
 {
   const html = readFileSync(new URL('../options.html', import.meta.url), 'utf8');
   const js = readFileSync(new URL('../options.js', import.meta.url), 'utf8');
@@ -1346,8 +1254,8 @@ section('22. 目标语言：下拉挑语言，接口要的代码自动转');
   const picked = buildVars({ settings: { targetLang: '英语' }, vars: [] }, 'Hello');
   eq('{{target}} 原样是「英语」', picked.target, '英语');
   eq('{{targetCode}} 自动是 EN', picked.targetCode, 'EN');
-  const direct = buildVars({ settings: { targetLang: 'ZH-HANS' }, vars: [] }, 'Hello');
-  eq('直接填代码也认（原样大写）', direct.targetCode, 'ZH-HANS');
+  const codeLiteral = buildVars({ settings: { targetLang: 'ZH-HANS' }, vars: [] }, 'Hello');
+  eq('直接填代码也认（原样大写）', codeLiteral.targetCode, 'ZH-HANS');
 
   /* DeepL 那条预设必须靠映射，不能把语言写死在模板里 */
   const deeplCfg = DEFAULT_CONFIGS.find((c) => c.id === 'builtin-deepl');
@@ -1365,14 +1273,14 @@ section('22. 目标语言：下拉挑语言，接口要的代码自动转');
 
 /* ------------------------------------------------------------------ */
 
-section('23. 导出 / 导入：换台设备能把配置原样搬过去');
+section('19. 导出 / 导入：换台设备能把配置原样搬过去');
 {
   /* 导的是整份存档（配置 + 顺序 + 变量 + 设置 + OCR），导入是整体替换。
      换设备就靠这条路，所以往返一次必须一模一样 —— 顺序也得原样。 */
   const state = {
     version: 5,
     configs: [
-      { id: 'cfg-b', name: '第二条', note: '', adapter: '', request: 'curl https://b', imageRequest: '', path: '', responseMode: 'auto', direct: false },
+      { id: 'cfg-b', name: '第二条', note: '', adapter: '', request: 'curl https://b', imageRequest: '', path: '', responseMode: 'auto' },
       { id: 'cfg-a', name: '第一条', note: '说明', request: 'POST https://a\nx-k: {{apiKey}}\n\n{}', responseMode: 'json' }
     ],
     activeConfigId: 'cfg-a',
@@ -1430,6 +1338,40 @@ section('23. 导出 / 导入：换台设备能把配置原样搬过去');
   /* 老版本（1.0.0 起其实就带 kind）和手写文件可能没有 kind —— 不能因为这个就拒 */
   const noKind = importState(JSON.stringify({ configs: [{ id: 'a', name: 'A' }] }));
   eq('没有 kind 也放行（手写的文件）', noKind.configs.length, 1);
+}
+
+section('20. 「临时直连」已彻底移除：权限 / 模块 / 调用点都不留');
+{
+  /* 功能是整块拿掉的（kniph 要求），这里钉住「别哪天又被捡回来」。
+     光删文件不够 —— 调用点留着会直接抛 "does not provide an export"。 */
+  const read = (rel) => readFileSync(new URL(rel, import.meta.url), 'utf8');
+  const manifest = JSON.parse(read('../manifest.json'));
+
+  check('manifest 里不再要 proxy 权限',
+    !(manifest.permissions || []).includes('proxy'), (manifest.permissions || []).join(','));
+
+  const srcFiles = [
+    'background.js', 'content.js', 'options.js', 'popup.js', 'offscreen.js',
+    'lib/engine.js', 'lib/store.js', 'lib/adapters.js', 'lib/ocr.js'
+  ];
+  const allSrc = srcFiles.map((f) => read('../' + f)).join('\n');
+  check('源码里没有任何 chrome.proxy 调用', !/chrome\.proxy/.test(allSrc));
+  check('源码里没有人再引用 lib/network.js', !/network\.js/.test(allSrc));
+
+  let gone = false;
+  try { read('../lib/network.js'); } catch { gone = true; }
+  check('lib/network.js 这个文件已经不在', gone);
+
+  /* 三个只服务直连的辅助函数也一并删了 */
+  check('wantDirect 不见了', !/export function wantDirect/.test(read('../lib/store.js')));
+  check('adapterDirectHosts 不见了', !/export function adapterDirectHosts/.test(read('../lib/adapters.js')));
+  check('endpointHost 不见了', !/export function endpointHost/.test(read('../lib/ocr.js')));
+
+  /* 设置页上那三个开关也得消失（配置 / 供应商 / 网络各一个） */
+  const html = read('../options.html');
+  for (const id of ['f-direct', 'o-direct', 's-direct']) {
+    check(`设置页里没有 #${id} 这个开关了`, !html.includes(`id="${id}"`));
+  }
 }
 
 /* ------------------------------------------------------------------ */

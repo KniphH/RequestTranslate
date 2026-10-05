@@ -2,7 +2,7 @@
  * popup：配置快切 + 手动翻译
  */
 
-import { loadState, saveState, buildVars, getConfig, wantDirect } from './lib/store.js';
+import { loadState, saveState, buildVars, getConfig } from './lib/store.js';
 import { runRequest } from './lib/engine.js';
 
 const $ = (s) => document.querySelector(s);
@@ -174,7 +174,6 @@ async function run() {
     vars,
     path: cfg.path,
     responseMode: cfg.responseMode,
-    direct: wantDirect(state.settings, cfg),
     signal: controller.signal,
     onDelta: (current) => {
       queueOut(current);

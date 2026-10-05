@@ -20,14 +20,12 @@
  *               { type:'ocr-error', message }
  */
 
-import { loadState, getConfig, buildVars, wantDirect, requestTemplateFor } from './lib/store.js';
+import { loadState, getConfig, buildVars, requestTemplateFor } from './lib/store.js';
 import { runRequest } from './lib/engine.js';
-import { initDirectGuard, acquireDirect } from './lib/network.js';
 import {
   OCR_MENU_ID,
   ocrMenuItem,
   activeOcrProvider,
-  endpointHost,
   runOcr
 } from './lib/ocr.js';
 import { NO_IMAGE_MESSAGE, CLIPBOARD_UNAVAILABLE_MESSAGE } from './lib/clipboard.js';
@@ -37,10 +35,6 @@ import { TARGET_PRESETS } from './lib/template.js';
 
 const PORT_NAME = 'rt-translate';
 const MENU_ID = 'rt-translate-selection';
-
-/* 上次要是在「临时直连」状态下被打断（service worker 被回收），
-   代理设置会一直卡在直连上。启动时先把它交还回去。 */
-initDirectGuard();
 
 /* ------------------------------------------------------------------ */
 /* 右键菜单                                                            */
@@ -281,8 +275,6 @@ chrome.runtime.onConnect.addListener((port) => {
 
       safePost({ type: 'ocr-status', message: `正在识别截图（${provider.name}）…` });
 
-      // 这条供应商自己勾了「强制直连」时，只放行它自己的域名
-      const release = provider.direct ? await acquireDirect([endpointHost(provider.endpoint)]) : null;
       let out;
       try {
         out = await runOcr({ provider, dataUrl: shot.dataUrl });
@@ -291,8 +283,6 @@ chrome.runtime.onConnect.addListener((port) => {
           safePost({ type: 'ocr-error', message: (err && err.message) || String(err) });
         }
         return;
-      } finally {
-        if (release) await release();
       }
 
       if (mySeq !== ocrSeq) return;
@@ -334,7 +324,6 @@ chrome.runtime.onConnect.addListener((port) => {
           vars,
           path: config.path,
           responseMode: config.responseMode,
-          direct: wantDirect(state.settings, config),
           signal: controller.signal,
           onDelta: (current) => {
             if (mySeq !== seq) return;

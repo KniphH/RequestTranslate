@@ -25,7 +25,6 @@ const DEFAULT_TARGETS = [
   'lib/store.js',
   'lib/engine.js',
   'lib/adapters.js',
-  'lib/network.js',
   'lib/trigger-styles.js',
   'lib/clipboard.js',
   'lib/ocr.js'

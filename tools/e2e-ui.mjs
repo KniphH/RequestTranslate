@@ -667,9 +667,9 @@ try {
   await page.waitForTimeout(400);
 
   /* ------------------------------------------------------------------ */
-  /* 5. 设置页：新加的「临时直连」开关                                   */
+  /* 5. 设置页：打得开、语言下拉是真的                                   */
   /* ------------------------------------------------------------------ */
-  /* 静态检查只能证明 id 对得上，开关到底渲没渲染出来、能不能存下去，
+  /* 静态检查只能证明 id 对得上，东西到底渲没渲染出来、能不能存下去，
      还是得真开一次设置页。 */
 
   const extId = new URL(sw.url()).host;
@@ -691,50 +691,6 @@ try {
     document.querySelector('.tab[data-tab="settings"]')?.click();
   });
   await opt.waitForTimeout(150);
-
-  const netSwitch = await opt.evaluate(() => {
-    const el = document.getElementById('s-direct');
-    const box = el ? el.getBoundingClientRect() : null;
-    const hint = el ? el.closest('.stack')?.querySelector('.hint') : null;
-    return {
-      exists: !!el,
-      visible: !!box && box.height > 0,
-      checked: el ? el.checked : null,
-      label: el ? (el.closest('.switch')?.textContent || '').trim().slice(0, 24) : '',
-      hint: hint ? (hint.textContent || '').replace(/\s+/g, ' ').trim() : ''
-    };
-  });
-  check('网络设置里有「临时直连」开关', netSwitch.exists && netSwitch.visible, netSwitch.label);
-  check('开关默认是关的', netSwitch.checked === false, `checked = ${netSwitch.checked}`);
-  check('hint 里推荐了「代理客户端加直连规则」这个做法',
-    netSwitch.hint.includes('DOMAIN-SUFFIX'), netSwitch.hint.slice(0, 60));
-  check('旁边写了 TUN 模式的例外', netSwitch.hint.includes('TUN'), netSwitch.hint.slice(0, 40));
-
-  // 打开它，看有没有落盘
-  await opt.evaluate(() => {
-    const el = document.getElementById('s-direct');
-    el.checked = true;
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-  });
-  await opt.waitForTimeout(1300);
-  const savedOn = await opt.evaluate(async () => {
-    const { state } = await chrome.storage.local.get('state');
-    return state.settings.directAdapter;
-  });
-  check('打开后写进了存储', savedOn === true, `directAdapter = ${JSON.stringify(savedOn)}`);
-
-  // 再关回去 —— 两个方向都得能存
-  await opt.evaluate(() => {
-    const el = document.getElementById('s-direct');
-    el.checked = false;
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-  });
-  await opt.waitForTimeout(1300);
-  const savedOff = await opt.evaluate(async () => {
-    const { state } = await chrome.storage.local.get('state');
-    return state.settings.directAdapter;
-  });
-  check('关掉后也写进了存储', savedOff === false, `directAdapter = ${JSON.stringify(savedOff)}`);
 
   /* ---- 目标语言：真的是个下拉框，候选不是空的 ----------------------
      早先是 <input list> + datalist，输入框里有值时点开只剩匹配的几项，
@@ -787,35 +743,6 @@ try {
     return state.settings.targetLang;
   });
   check('改回「简体中文」，不留脏数据给后面几节', langBack === '简体中文', String(langBack));
-
-  // 回到「配置」tab，切到一条「自定义请求」配置，勾上强制直连
-  await opt.evaluate(() => {
-    document.querySelector('.tab[data-tab="configs"]')?.click();
-    const items = [...document.querySelectorAll('#cfg-list .cfg-item')];
-    const target = items.find((b) => /OpenAI/.test(b.textContent)) || items[1];
-    if (target) target.click();
-  });
-  await opt.waitForTimeout(350);
-
-  const fieldBox = await opt.evaluate(() => {
-    const el = document.getElementById('f-direct');
-    if (!el) return null;
-    const r = el.closest('.field').getBoundingClientRect();
-    return { visible: r.height > 0, top: r.top };
-  });
-  check('自定义配置里能看到「强制直连」', !!fieldBox && fieldBox.visible);
-
-  await opt.evaluate(() => {
-    const el = document.getElementById('f-direct');
-    el.checked = true;
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-  });
-  await opt.waitForTimeout(1300);
-  const savedCfg = await opt.evaluate(async () => {
-    const { state } = await chrome.storage.local.get('state');
-    return state.configs.find((c) => c.id === 'builtin-openai')?.direct;
-  });
-  check('勾上之后写进了那条配置', savedCfg === true, `config.direct = ${JSON.stringify(savedCfg)}`);
 
   check('操作完仍然没有报错', errors.length === 0, errors.join(' | '));
 
@@ -1414,8 +1341,7 @@ try {
       adapter: '',
       request: 'curl ' + url,
       path: '',
-      responseMode: 'text',
-      direct: false
+      responseMode: 'text'
     };
     const i = state.configs.findIndex((c) => c.id === id);
     if (i >= 0) state.configs[i] = cfg;
@@ -1910,8 +1836,7 @@ try {
               "-d '{\"role\":\"user\",\"content\":\"翻成{{target}}：\\n\\\"\\\"\\\"\\n{{text}}\\n\\\"\\\"\\\"\"}' " +
               u.text,
             path: '',
-            responseMode: 'text',
-            direct: false
+            responseMode: 'text'
           };
           const j = state.configs.findIndex((c) => c.id === 'e2e-local');
           if (j >= 0) state.configs[j] = cfg;
@@ -2256,140 +2181,14 @@ try {
   fs.rmSync(shotPng, { force: true });
 
   /* ------------------------------------------------------------------ */
-  /* 11. 临时直连：真会切代理、也真会切回来                              */
-  /* ------------------------------------------------------------------ */
-  /* 这一段量的是「机制」，不是「效果」——
-     能不能真的绕过代理，取决于系统代理是谁设的，测试机上没法复现。
-     能在这里验的是最容易出事的两个点：请求期间代理确实被改了、
-     请求结束后确实交还了控制权（不会把浏览器一直按在直连上）。
-     注意：127.0.0.1 属于 loopback，Chromium 默认不套代理，
-     所以就算设了黑洞代理请求也照样能通，这里不拿它当「绕过了」的证据。 */
-
-  const slow = `http://127.0.0.1:${port}/slow`;
-
-  /* 扩展页面的 CSP 是 script-src 'self'，new Function / eval 一律被拒，
-     所以这个采样函数必须在每个 evaluate 里各写一份。 */
-  const probeA = await opt.evaluate(
-    async ({ slowUrl }) => {
-      const { runRequest } = await import('./lib/engine.js');
-      const snap = async () => {
-        const c = await chrome.proxy.settings.get({ incognito: false });
-        return {
-          mode: c && c.value ? c.value.mode : null,
-          control: c ? c.levelOfControl : null,
-          pac: c && c.value && c.value.pacScript ? String(c.value.pacScript.data || '') : ''
-        };
-      };
-
-      const before = await snap();
-      const pending = runRequest({ requestText: 'curl ' + slowUrl, direct: true });
-      const during = [];
-      for (let i = 0; i < 6; i += 1) {
-        await new Promise((r) => setTimeout(r, 110));
-        during.push(await snap());
-      }
-      const result = await pending;
-      return {
-        before,
-        during,
-        after: await snap(),
-        ok: result.ok,
-        text: result.text,
-        direct: result.direct,
-        error: result.error
-      };
-    },
-    { slowUrl: slow }
-  );
-
-  const grabbed = probeA.during.find((s) => s.control === 'controlled_by_this_extension');
-  check('请求飞行期间代理确实被接管了', !!grabbed, JSON.stringify(probeA.during.map((s) => s.mode + '/' + s.control)));
-  check(
-    '没配代理时切的是「整机直连」',
-    !!grabbed && grabbed.mode === 'direct',
-    grabbed ? `mode = ${grabbed.mode}` : '一次都没抓到'
-  );
-  check('请求本身正常完成', probeA.ok && probeA.text.includes('慢速响应'), probeA.error || probeA.text);
-  check('结果里标了「本次已直连」', probeA.direct === true);
-  check(
-    '请求结束后控制权交还了',
-    probeA.after.control !== 'controlled_by_this_extension' && probeA.after.mode === probeA.before.mode,
-    `${probeA.before.mode}/${probeA.before.control} → ${probeA.after.mode}/${probeA.after.control}`
-  );
-
-  const probeB = await opt.evaluate(
-    async ({ slowUrl }) => {
-      const { runRequest } = await import('./lib/engine.js');
-      const snap = async () => {
-        const c = await chrome.proxy.settings.get({ incognito: false });
-        return {
-          mode: c && c.value ? c.value.mode : null,
-          control: c ? c.levelOfControl : null,
-          pac: c && c.value && c.value.pacScript ? String(c.value.pacScript.data || '') : ''
-        };
-      };
-
-      // 摆一个固定的假代理出来：地址能被读出来，所以应该走 PAC 而不是整机直连
-      await chrome.proxy.settings.set({
-        value: {
-          mode: 'fixed_servers',
-          rules: { singleProxy: { scheme: 'http', host: '127.0.0.1', port: 9 } }
-        },
-        scope: 'regular'
-      });
-      const configured = await snap();
-
-      const pending = runRequest({ requestText: 'curl ' + slowUrl, direct: true });
-      const during = [];
-      for (let i = 0; i < 6; i += 1) {
-        await new Promise((r) => setTimeout(r, 110));
-        during.push(await snap());
-      }
-      const result = await pending;
-      const after = await snap();
-
-      await chrome.proxy.settings.clear({ scope: 'regular' }); // 收尾：清掉测试用的假代理
-      return {
-        configured,
-        during,
-        after,
-        cleaned: await snap(),
-        ok: result.ok,
-        text: result.text,
-        direct: result.direct,
-        error: result.error
-      };
-    },
-    { slowUrl: slow }
-  );
-
-  check('测试用假代理已生效', probeB.configured.mode === 'fixed_servers', probeB.configured.mode);
-
-  const pacSample = probeB.during.find((s) => s.mode === 'pac_script');
-  check('读得到原代理时改用 PAC（不是整机直连）', !!pacSample, probeB.during.map((s) => s.mode).join(','));
-  if (pacSample) {
-    check('PAC 里放行了本次请求的域名', pacSample.pac.includes('127.0.0.1'), pacSample.pac.split('\n')[0]);
-    check('PAC 里其余流量仍走原代理', pacSample.pac.includes('PROXY 127.0.0.1:9'));
-  }
-
-  check('走 PAC 时请求也正常完成', probeB.ok && probeB.text.includes('慢速响应'), probeB.error || probeB.text);
-  check('结果里同样标了直连', probeB.direct === true);
-  check(
-    '结束后没赖着不放',
-    probeB.after.control !== 'controlled_by_this_extension',
-    `after = ${probeB.after.mode}/${probeB.after.control}`
-  );
-  check('收尾后回到系统设置', probeB.cleaned.mode === 'system', probeB.cleaned.mode);
-
-  /* ------------------------------------------------------------------ */
-  /* 12. 换配置：翻过的直接放回来，没翻过的当场翻                         */
+  /* 11. 换配置：翻过的直接放回来，没翻过的当场翻                         */
   /* ------------------------------------------------------------------ */
   /* kniph 报的：切到 A 翻完 → 切到 B → 切回 A 又发了一次请求。
      他要的是「a 翻 - 切 b（b 自己翻）- 切回 a（看到 a 刚才那条，不重发）」。
      所以：翻过的配置放回缓存里的结果，没翻过的当场发一条，
      「↻」只负责**重发同一条请求**（结果不满意时才按）。 */
 
-  console.log('\n12. 换配置：翻过的放回缓存，没翻过的当场翻');
+  console.log('\n11. 换配置：翻过的放回缓存，没翻过的当场翻');
 
   await opt.evaluate(async (u) => {
     const read = async () => (await chrome.storage.local.get('state')).state || null;
@@ -2400,8 +2199,7 @@ try {
       adapter: '',
       request: `curl ${u}?tag=${tag}`,
       path: '',
-      responseMode: 'text',
-      direct: false
+      responseMode: 'text'
     });
     for (let i = 0; i < 30; i++) {
       const st = await read();
@@ -2667,10 +2465,10 @@ try {
   await opt.close();
 
   /* ------------------------------------------------------------------ */
-  /* 13. 网页想给滚动条上色？面板不吃这一套                              */
+  /* 12. 网页想给滚动条上色？面板不吃这一套                              */
   /* ------------------------------------------------------------------ */
 
-  console.log('\n13. 网页把滚动条染成浅蓝，面板里那条还得是自己的灰滑块');
+  console.log('\n12. 网页把滚动条染成浅蓝，面板里那条还得是自己的灰滑块');
 
   await page.bringToFront();
   // 架一个「滚动条配色陷阱」：scrollbar-color 是**继承属性**，写在 html 上会一路
@@ -2722,12 +2520,12 @@ try {
   }
 
   /* ------------------------------------------------------------------ */
-  /* 14. 导出 / 导入                                                     */
+  /* 13. 导出 / 导入                                                     */
   /* ------------------------------------------------------------------ */
   /* 多设备搬家的唯一一条路：导出成 JSON，在新设备上导入。整份存档都会被换掉，
      所以「导出的是不是当下这一份」和「点了取消会不会照样覆盖」都得真的走一遍。 */
 
-  console.log('\n14. 导出 / 导入：换台设备能把配置原样搬过去');
+  console.log('\n13. 导出 / 导入：换台设备能把配置原样搬过去');
 
   // 第 12 节结束时把设置页关了，这里另开一个（顺便盯住导入导出过程中没报错）
   const opt2 = await ctx.newPage();
@@ -2886,13 +2684,13 @@ try {
   await opt2.close();
 
   /* ------------------------------------------------------------------ */
-  /* 15. 顶栏换目标语言；流式输出不甩着滚动条跑                          */
+  /* 14. 顶栏换目标语言；流式输出不甩着滚动条跑                          */
   /* ------------------------------------------------------------------ */
   /* kniph 提的两条：①想换门语言翻，不该还得开设置页 —— 顶栏「翻译接口」
      旁边再加一个「目标语言」选择框；②流式输出吐得快的时候滚动条被文字牵着跑
      就看不了了 —— 视口原地不动，要追尾巴自己拖。 */
 
-  console.log('\n15. 顶栏直接换目标语言；流式输出时滚动条不跟着跑');
+  console.log('\n14. 顶栏直接换目标语言；流式输出时滚动条不跟着跑');
 
   await page.bringToFront();
 
@@ -2902,7 +2700,7 @@ try {
   await opt3.goto(`chrome-extension://${extId}/options.html`, { waitUntil: 'load' });
   await opt3.waitForTimeout(400);
 
-  /* 14 节把配置换成了导入进来那两条、字号还留着 31 —— 这一节重架一条自己的配置，
+  /* 13 节把配置换成了导入进来那两条、字号还留着 31 —— 这一节重架一条自己的配置，
      顺手把字号 / 面板宽度**归位**：小节之间互相污染过，别让上一节的决定影响这一节的度量。
      请求模板里带 {{targetCode}} 并把它当 ?tag= —— 「到底换没换成英语」看
      假接口收到的路径就知道（后台每次发请求都重读一遍设置，所以这也顺带验了落盘）。 */
@@ -2917,8 +2715,7 @@ try {
         adapter: '',
         request: `curl ${u}?tag={{targetCode}}`,
         path: '',
-        responseMode: 'text',
-        direct: false
+        responseMode: 'text'
       }];
       st.activeConfigId = 'e2e-lang';
       st.settings.targetLang = '简体中文';

@@ -121,17 +121,6 @@
             <p class="hint">点号 + 下标，例如 <code>data.translations[0].translatedText</code>。留空时会依次尝试各家常见的返回结构。</p>
           </div>
 
-          <div class="field">
-            <label class="switch">
-              <input type="checkbox" id="f-direct">
-              <span>这条配置强制直连（不经过系统代理）</span>
-            </label>
-            <p class="hint">
-              发请求前把浏览器代理临时切成直连，拿到响应立刻切回来。只在扩展自己发出的请求上生效，
-              窗口通常几百毫秒，其余流量不受影响。适合「开着代理时这个接口反而连不上」的情况。
-            </p>
-          </div>
-
           <details class="preview">
             <summary>渲染预览（把占位符换成实际值之后的样子）</summary>
             <pre id="f-preview"></pre>
@@ -265,17 +254,6 @@
           </p>
         </div>
 
-        <div class="field">
-          <label class="switch">
-            <input type="checkbox" id="o-direct">
-            <span>这条供应商强制直连（不经过系统代理）</span>
-          </label>
-          <p class="hint">
-            和配置里那个开关是同一套：发请求前把浏览器代理临时切成直连，拿到响应立刻切回来。
-            注意代理是 TUN / 虚拟网卡模式时没用。
-          </p>
-        </div>
-
         <details class="preview" open>
           <summary>这次会发出去的请求（请求头里的 Key 已打码）</summary>
           <pre id="o-preview"></pre>
@@ -379,27 +357,6 @@
         <div class="setting">
           <label for="s-max">单次最多发送字数</label>
           <input id="s-max" type="number" min="100" max="200000" step="100">
-        </div>
-
-        <h2>网络</h2>
-
-        <div class="setting">
-          <label for="s-direct">代理</label>
-          <div class="stack">
-            <label class="switch">
-              <input type="checkbox" id="s-direct">
-              <span>用内置适配器（Bing）时临时直连，绕过系统代理</span>
-            </label>
-            <p class="hint">
-              <b>默认关。</b>开着代理时 Bing 的翻译接口经常只回一个空 body —— 节点把它掐了，换节点也一样。
-              推荐先在代理客户端里给 <code>bing.com</code> 加一条直连规则
-              （mihomo / Clash 系：<code>DOMAIN-SUFFIX,bing.com,DIRECT</code>），
-              这样最干净：插件不用碰浏览器代理，权限里那条「读取和更改您的代理设置」也就闲置了。
-              改不了代理客户端、或者嫌麻烦，再把这里勾上 —— 扩展会在发请求前把浏览器代理临时切成直连，
-              拿到响应立刻切回来（通常几百毫秒），其余流量不受影响。
-              <br>注意：代理是 <b>TUN / 虚拟网卡</b>模式时这招没用，流量在网卡层就被抓走了，只能去代理软件里加规则。
-            </p>
-          </div>
         </div>
 
         <h2>翻译按钮</h2>

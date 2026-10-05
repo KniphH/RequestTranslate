@@ -9,12 +9,10 @@ import {
   uid,
   exportState,
   importState,
-  wantDirect,
   moveItem,
   dropIndex
 } from './lib/store.js';
 import { runRequest, previewRequest } from './lib/engine.js';
-import { acquireDirect, isDirectActive } from './lib/network.js';
 import { ADAPTERS } from './lib/adapters.js';
 import { BUILTIN_VAR_HINTS, TARGET_PRESETS } from './lib/template.js';
 import {
@@ -39,8 +37,7 @@ import {
   normalizeOcrState,
   normalizeMaxTokens,
   previewOcrRequest,
-  runOcr,
-  endpointHost
+  runOcr
 } from './lib/ocr.js';
 
 /* ------------------------------------------------------------------ */
@@ -73,7 +70,6 @@ const els = {
   request: $('#f-request'),
   imageRequest: $('#f-image-request'),
   path: $('#f-path'),
-  direct: $('#f-direct'),
   trigStyles: $('#trig-styles'),
   trigSize: $('#s-trigsize'),
   trigSvg: $('#s-trigsvg'),
@@ -103,7 +99,6 @@ const els = {
   oKey: $('#o-key'),
   oPrompt: $('#o-prompt'),
   oPreview: $('#o-preview'),
-  oDirect: $('#o-direct'),
   oNote: $('#o-note'),
   oDisabled: $('#o-disabled'),
   oDisabledNote: $('#o-disabled-note'),
@@ -394,7 +389,6 @@ function renderEditor() {
   els.request.value = cfg.request || '';
   els.imageRequest.value = cfg.imageRequest || '';
   els.path.value = cfg.path || '';
-  els.direct.checked = !!cfg.direct;
   els.testResult.hidden = true;
 
   els.kind.value = cfg.adapter ? 'adapter' : 'request';
@@ -438,7 +432,6 @@ function collectEditor() {
   cfg.request = els.request.value;
   cfg.imageRequest = els.imageRequest.value;
   cfg.path = els.path.value.trim();
-  cfg.direct = !!els.direct.checked;
   return cfg;
 }
 
@@ -463,8 +456,7 @@ function bindConfigList() {
         "}'",
       path: '',
       responseMode: 'auto',
-      imageRequest: '',
-      direct: false
+      imageRequest: ''
     };
     state.configs.push(cfg);
     editingId = cfg.id;
@@ -491,7 +483,6 @@ function bindEditor() {
   els.request.addEventListener('input', onInput);
   els.imageRequest.addEventListener('input', onInput);
   els.path.addEventListener('input', onInput);
-  els.direct.addEventListener('input', onInput);
 
   // 类型 / 适配器是下拉，用 change
   els.kind.addEventListener('change', () => {
@@ -696,8 +687,7 @@ async function runTest() {
       adapter: cfg.adapter,
       vars,
       path: cfg.path,
-      responseMode: cfg.responseMode,
-      direct: wantDirect(state.settings, cfg)
+      responseMode: cfg.responseMode
     });
   } catch (err) {
     result = { ok: false, status: 0, ms: 0, text: '', error: String(err && err.message), warnings: [], raw: '' };
@@ -716,7 +706,6 @@ function renderTestResult(r) {
     `<span class="badge">${r.ms} ms</span>`
   ];
   if (r.usedPath) badges.push(`<span class="badge">${escapeHtml(r.usedPath)}</span>`);
-  if (r.direct) badges.push('<span class="badge">已直连</span>');
   for (const w of r.warnings || []) badges.push(`<span class="badge warn">${escapeHtml(w)}</span>`);
   if (r.missingVars && r.missingVars.length) {
     badges.push(`<span class="badge warn">未填变量 ${r.missingVars.map(escapeHtml).join(', ')}</span>`);
@@ -898,7 +887,6 @@ function renderOcrEditor() {
   els.oMaxTokens.value = p.maxTokens > 0 ? String(p.maxTokens) : '';
   els.oKey.value = p.apiKey || '';
   els.oPrompt.value = p.prompt || '';
-  els.oDirect.checked = !!p.direct;
   els.oNote.textContent = p.note || '';
 
   // 换了一条供应商，上一次的测试结果就不是这条的了 —— 收起来，免得看岔
@@ -978,7 +966,6 @@ function collectOcrEditor() {
   p.maxTokens = normalizeMaxTokens(els.oMaxTokens.value);
   p.apiKey = els.oKey.value;
   p.prompt = els.oPrompt.value;
-  p.direct = !!els.oDirect.checked;
   return p;
 }
 
@@ -998,8 +985,7 @@ function bindOcr() {
     [els.oModel, 'model', false],
     [els.oMaxTokens, 'maxTokens', false],
     [els.oKey, 'apiKey', false],
-    [els.oPrompt, 'prompt', false],
-    [els.oDirect, 'direct', true]
+    [els.oPrompt, 'prompt', false]
   ];
 
   for (const [el, key, isCheck] of fields) {
@@ -1163,30 +1149,23 @@ async function runOcrTest() {
 
   let r = null;
   let err = null;
-  let release = null;
   try {
-    // 和 background 里那条路一样：这条供应商自己勾了直连就先切过去
-    if (p.direct) release = await acquireDirect([endpointHost(p.endpoint)]);
     r = await runOcr({ provider: p, dataUrl: shot.dataUrl });
   } catch (e) {
     err = e;
-  } finally {
-    // 交还失败别盖住真正的错
-    if (release) { try { await release(); } catch { /* ignore */ } }
   }
 
   btn.disabled = false;
   btn.textContent = '测试';
-  renderOcrTestResult({ name: p.name, srcLabel, r, err, direct: isDirectActive() });
+  renderOcrTestResult({ name: p.name, srcLabel, r, err });
 }
 
-function renderOcrTestResult({ name, srcLabel, r, err, direct }) {
+function renderOcrTestResult({ name, srcLabel, r, err }) {
   const status = err ? (err.status || '失败') : r.status;
   const ms = err ? err.ms : r.ms;
 
   const badges = [`<span class="badge ${err ? 'err' : 'ok'}">HTTP ${escapeHtml(String(status))}</span>`];
   if (typeof ms === 'number') badges.push(`<span class="badge">${ms} ms</span>`);
-  if (direct) badges.push('<span class="badge">已直连</span>');
   badges.push(`<span class="badge">${escapeHtml(name)}</span>`);
   badges.push(`<span class="badge">${escapeHtml(srcLabel)}</span>`);
 
@@ -1247,7 +1226,6 @@ const SETTING_MAP = {
   '#s-font': ['settings', 'fontSize', 'number'],
   '#s-theme': ['settings', 'theme', 'value'],
   '#s-showsrc': ['settings', 'showOriginal', 'checked'],
-  '#s-direct': ['settings', 'directAdapter', 'checked'],
   '#s-trigsize': ['settings', 'triggerSize', 'number'],
   '#s-trigsvg': ['settings', 'triggerSvg', 'value']
 };
@@ -1264,8 +1242,6 @@ function renderSettings() {
   $('#s-font').value = state.settings.fontSize;
   $('#s-theme').value = state.settings.theme;
   $('#s-showsrc').checked = !!state.settings.showOriginal;
-  // 缺席按「关」算，和 DEFAULT_SETTINGS 保持一致
-  $('#s-direct').checked = state.settings.directAdapter === true;
   els.trigSize.value = clampTriggerSize(state.settings.triggerSize);
   els.trigSvg.value = state.settings.triggerSvg || '';
   renderTriggerStyles();

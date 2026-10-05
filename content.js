@@ -818,13 +818,6 @@ ${TRIGGER_CSS}
     if (typeof r.chunks === 'number') rows.push({ k: '分片', v: String(r.chunks) });
     if (r.bytes) rows.push({ k: '响应大小', v: formatBytes(r.bytes) });
     if (r.usedPath) rows.push({ k: '命中路径', v: r.usedPath });
-    if (r.direct) {
-      rows.push({
-        k: '网络',
-        v: '临时直连 —— 本次绕过了系统代理',
-        hint: '发请求前把浏览器代理切成直连，拿到响应就切回来了'
-      });
-    }
 
     if (r.reasoningChars) {
       rows.push({

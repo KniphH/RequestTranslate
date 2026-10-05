@@ -443,26 +443,6 @@ console.log('\n15. 内置适配器（Bing 免费通道）');
     new URLSearchParams(received[received.length - 1].body).get('to'), 'zh-Hans');
 }
 {
-  // 强制直连：Node 里没有 chrome.proxy，应该静默降级，请求照发
-  resetBingSession();
-  const r = await runRequest({
-    adapter: 'bing',
-    vars: { text: 'Direct', targetLang: 'en' },
-    direct: true
-  });
-  eq('开着直连开关也能正常翻译', r.text, '【译】Direct');
-  eq('拿不到代理权限时不谎报「已直连」', r.direct, false);
-}
-{
-  // 自定义请求 + 直连：同样该降级成普通请求，不能因为切代理失败就发不出去
-  const r = await runRequest({
-    requestText: `curl ${base}/json`,
-    direct: true
-  });
-  eq('直连开关不影响自定义请求', r.text, '整体返回');
-  eq('同样不谎报', r.direct, false);
-}
-{
   const r = await runRequest({ adapter: 'nope', vars: { text: 'x' } });
   eq('未知适配器返回失败', r.ok, false);
   check('错误信息里点出了名字', (r.error || '').includes('nope'), r.error);
