@@ -1418,7 +1418,7 @@ try {
   check(
     '编辑器显示的就是选中那条的接口与模型',
     ocrShape.endpoint === 'https://api.siliconflow.cn/v1/chat/completions' &&
-      ocrShape.model === 'PaddlePaddle/PaddleOCR-VL-1.5',
+      ocrShape.model === 'deepseek-ai/DeepSeek-OCR',
     `${ocrShape.endpoint} / ${ocrShape.model}`
   );
   check('提示词给了可以点的短指令', ocrShape.prompts >= 1, String(ocrShape.prompts));
@@ -1458,7 +1458,7 @@ try {
     set('#o-endpoint', url);
     set('#o-model', 'e2e-ocr-model');
     set('#o-key', 'sk-e2e');
-    set('#o-prompt', 'OCR:');
+    set('#o-prompt', 'Free OCR.');
     await new Promise((r) => setTimeout(r, 1000));
   }, `http://127.0.0.1:${port}/ocr`);
   await opt.waitForTimeout(1300);
@@ -1471,7 +1471,7 @@ try {
   check(
     '改过的 OCR 供应商落盘了',
     ocrSaved.endpoint.includes('/ocr') && ocrSaved.model === 'e2e-ocr-model' &&
-      ocrSaved.key === 'sk-e2e' && ocrSaved.prompt === 'OCR:',
+      ocrSaved.key === 'sk-e2e' && ocrSaved.prompt === 'Free OCR.',
     JSON.stringify(ocrSaved)
   );
 
@@ -1724,7 +1724,7 @@ try {
           p.endpoint = u.ocr;
           p.model = 'e2e-ocr-model';
           p.apiKey = 'sk-e2e';
-          p.prompt = 'OCR:';
+          p.prompt = 'Free OCR.';
           await chrome.storage.local.set({ state });
 
           const back = await read();
@@ -1810,7 +1810,7 @@ try {
         /^data:image\/[a-z]+;base64,[A-Za-z0-9+/]{100,}/.test(String((parts[0] || {}).image_url?.url || '')),
         String((parts[0] || {}).image_url?.url || '').slice(0, 48)
       );
-      check('提示词跟在图片后面', (parts[1] || {}).text === 'OCR:', JSON.stringify(parts[1]));
+      check('提示词跟在图片后面', (parts[1] || {}).text === 'Free OCR.', JSON.stringify(parts[1]));
 
       /* ---- 剪切板里是纯文字时，要明说没有图片 ---- */
       /* 计数按「进入这一小节之前」为准，别写死绝对值 ——
@@ -1990,7 +1990,7 @@ try {
         p.endpoint = u;
         p.model = 'e2e-ocr-model';
         p.apiKey = 'sk-e2e';
-        p.prompt = 'OCR:';
+        p.prompt = 'Free OCR.';
         state.ocr.disabled = false;
         await chrome.storage.local.set({ state });
       }, `http://127.0.0.1:${port}/slow`);

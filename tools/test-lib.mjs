@@ -29,6 +29,7 @@ const { pacFallback, buildPac, canControlProxy, acquireDirect, isDirectActive } 
   await import('../lib/network.js');
 const {
   OCR_MENU_ID, OCR_MENU_TITLE, OCR_PROVIDERS, OCR_PROMPTS, BUILTIN_OCR_IDS,
+  DEFAULT_OCR_PROMPT,
   normalizeOcrProvider, normalizeOcrState, defaultOcrState, activeOcrProvider,
   endpointHost, buildOcrBody, pickOcrText, describeOcrError, ocrErrorHint,
   normalizeMaxTokens, runOcr
@@ -467,7 +468,7 @@ section('13. 临时直连：总开关默认关，配置自己的开关说了算'
   eq('没有配置时返回 false', wantDirect(DEFAULT_SETTINGS, null), false);
 }
 
-section('14. 老存档迁移：v2 里那个「开着的」开关会被归位成默认关');
+section('14. 老存档迁移：开关归位 / 补预设 / OCR 供应商换模型');
 {
   const { loadState, STORAGE_VERSION } = await import('../lib/store.js');
   const original = globalThis.chrome.storage.local;
@@ -532,15 +533,112 @@ section('14. 老存档迁移：v2 里那个「开着的」开关会被归位成�
   eq('v3 里用户自己开的临时直连没被这段迁移碰掉', v3.settings.directAdapter, true);
   eq('顺手改了的东西也不会丢', v3.settings.theme, 'dark');
 
+  /* v4 存档：内置那条「硅基流动」还停在 PaddleOCR-VL，v4→v5 要归位成 DeepSeek-OCR。
+     换模型就得换提示词 —— 这两件事是一套的，所以一起断言。 */
+  const v4ocr = await load({
+    version: 4,
+    configs: [{ id: 'builtin-deepseek', name: 'DeepSeek' }],
+    activeConfigId: 'builtin-deepseek',
+    vars: [],
+    settings: { ...DEFAULT_SETTINGS },
+    ocr: {
+      activeId: 'builtin-siliconflow',
+      providers: [
+        {
+          id: 'builtin-siliconflow',
+          name: '硅基流动 · PaddleOCR-VL',
+          note: 'PaddleOCR-VL-1.5 在硅基流动上免费。只需要一个 API Key，去 cloud.siliconflow.cn 拿。',
+          endpoint: 'https://api.siliconflow.cn/v1/chat/completions',
+          model: 'PaddlePaddle/PaddleOCR-VL-1.5',
+          prompt: 'OCR:',
+          apiKey: 'sk-keep-me'
+        }
+      ]
+    }
+  });
+  const v4sf = v4ocr.ocr.providers.find((p) => p.id === 'builtin-siliconflow');
+  eq('老存档那条硅基流动换成了 DeepSeek-OCR', v4sf.model, 'deepseek-ai/DeepSeek-OCR');
+  eq('提示词跟着换成 DeepSeek-OCR 的预设', v4sf.prompt, 'Free OCR.');
+  eq('名称也归位成新的', v4sf.name, '硅基流动');
+  eq('说明也换成新内置的那份', v4sf.note, OCR_PROVIDERS[0].note);
+  eq('用户自己填的 key 一点没动', v4sf.apiKey, 'sk-keep-me');
+  eq('选中的还是那条', v4ocr.ocr.activeId, 'builtin-siliconflow');
+
+  /* 关键的另一半：用户自己换过模型 / 改过提示词的那条**不能**被归位。
+     判据是「逐字还等于老默认值」，所以这里两个变体都得原样留着。 */
+  const v4kept = await load({
+    version: 4,
+    configs: [{ id: 'builtin-deepseek' }],
+    activeConfigId: 'builtin-deepseek',
+    vars: [],
+    settings: { ...DEFAULT_SETTINGS },
+    ocr: {
+      activeId: 'builtin-siliconflow',
+      providers: [
+        { id: 'builtin-siliconflow', model: 'PaddlePaddle/PaddleOCR-VL-1.5', prompt: '请原样输出文字', apiKey: 'k' }
+      ]
+    }
+  });
+  eq('提示词被自己改过 → 那条一律不碰（模型名留着）',
+    v4kept.ocr.providers[0].model, 'PaddlePaddle/PaddleOCR-VL-1.5');
+  eq('它自己写的提示词也原样留着',
+    v4kept.ocr.providers[0].prompt, '请原样输出文字');
+
+  const v4model = await load({
+    version: 4,
+    configs: [{ id: 'builtin-deepseek' }],
+    activeConfigId: 'builtin-deepseek',
+    vars: [],
+    settings: { ...DEFAULT_SETTINGS },
+    ocr: {
+      activeId: 'builtin-siliconflow',
+      providers: [
+        { id: 'builtin-siliconflow', model: 'some/other-vl', prompt: 'OCR:' }
+      ]
+    }
+  });
+  eq('模型被自己换过 → 也不碰', v4model.ocr.providers[0].model, 'some/other-vl');
+
+  /* 用户自己起的名字不能被冲掉（说明在设置页是只读的，名字可编辑） */
+  const v4named = await load({
+    version: 4,
+    configs: [{ id: 'builtin-deepseek' }],
+    activeConfigId: 'builtin-deepseek',
+    vars: [],
+    settings: { ...DEFAULT_SETTINGS },
+    ocr: {
+      activeId: 'builtin-siliconflow',
+      providers: [
+        { id: 'builtin-siliconflow', name: '我的硅基', model: 'PaddlePaddle/PaddleOCR-VL-1.5', prompt: 'OCR:' }
+      ]
+    }
+  });
+  const v4namedP = v4named.ocr.providers.find((p) => p.id === 'builtin-siliconflow');
+  eq('模型和提示词归位了', v4namedP.prompt, 'Free OCR.');
+  eq('但用户自己起的名字留着', v4namedP.name, '我的硅基');
+
+  /* 用户把这条删了（记在 hidden 里）→ 迁移也别把它变出来 */
+  const v4hidden = await load({
+    version: 4,
+    configs: [{ id: 'builtin-deepseek' }],
+    activeConfigId: 'builtin-deepseek',
+    vars: [],
+    settings: { ...DEFAULT_SETTINGS },
+    ocr: { activeId: 'builtin-openai-vl', hidden: ['builtin-siliconflow'], providers: [] }
+  });
+  check('删过的内置条目迁移后也不会自己冒出来',
+    !v4hidden.ocr.providers.some((p) => p.id === 'builtin-siliconflow'),
+    v4hidden.ocr.providers.map((p) => p.id));
+
   /* 已经是最新版本的存档：不会再插一次 */
-  const v4 = await load({
+  const vNow = await load({
     version: STORAGE_VERSION,
     configs: [{ id: 'builtin-deepl', name: 'DeepL' }],
     activeConfigId: 'builtin-deepl',
     vars: [],
     settings: { ...DEFAULT_SETTINGS }
   });
-  eq('最新版本的存档不会被重复插入', v4.configs.length, 1);
+  eq('最新版本的存档不会被重复插入', vNow.configs.length, 1);
 
   globalThis.chrome.storage.local = original;
 }
@@ -716,7 +814,7 @@ section('19. 截图 OCR：供应商状态 / 请求体 / 取文字');
   const sf = saved.providers.find((p) => p.id === 'builtin-siliconflow');
   check('改过的内置条目：改了的字段保住了',
     sf.endpoint === 'https://my.proxy/v1/chat/completions' && sf.apiKey === 'sk-abc', sf);
-  eq('改过的内置条目：没动的字段还是默认', sf.model, 'PaddlePaddle/PaddleOCR-VL-1.5');
+  eq('改过的内置条目：没动的字段还是默认', sf.model, 'deepseek-ai/DeepSeek-OCR');
   check('内置没被删的那条也补齐了', saved.providers.some((p) => p.id === 'builtin-openai-vl'));
   eq('自己新建的排在内置后面', saved.providers[saved.providers.length - 1].id, 'my-own');
   eq('activeId 指向自己新建的那条', saved.activeId, 'my-own');
@@ -746,9 +844,9 @@ section('19. 截图 OCR：供应商状态 / 请求体 / 取文字');
     body.messages[0].content.map((c) => c.type), ['image_url', 'text']);
   eq('图片走 image_url.url 的 data URL',
     body.messages[0].content[0].image_url.url, 'data:image/png;base64,AAA');
-  eq('文字就是提示词', body.messages[0].content[1].text, 'OCR:');
+  eq('没填提示词就用默认的那句', body.messages[0].content[1].text, 'Free OCR.');
   eq('提示词留空时退回默认',
-    buildOcrBody({ model: 'm', prompt: '   ' }, 'data:x').messages[0].content[1].text, 'OCR:');
+    buildOcrBody({ model: 'm', prompt: '   ' }, 'data:x').messages[0].content[1].text, 'Free OCR.');
 
   /* ---- max_tokens：默认**不发**这个字段 ---- */
   /* 写死一个数会在上下文窄的模型上直接 400：
@@ -857,8 +955,19 @@ section('19. 截图 OCR：供应商状态 / 请求体 / 取文字');
   eq('菜单 id', OCR_MENU_ID, 'rt-ocr-clipboard');
   eq('菜单文案', OCR_MENU_TITLE, '翻译剪切板中的截图');
   check('右键菜单开关默认开', DEFAULT_SETTINGS.ocrMenu === true);
-  check('提示词里给 PaddleOCR-VL 留了 OCR:',
-    OCR_PROMPTS.some((p) => p.text === 'OCR:'), OCR_PROMPTS.map((p) => p.text));
+  check('内置那条默认是硅基流动的 DeepSeek-OCR',
+    OCR_PROVIDERS[0].model === 'deepseek-ai/DeepSeek-OCR', OCR_PROVIDERS[0].model);
+  check('默认提示词是 DeepSeek-OCR 的预设（不是 PaddleOCR-VL 的 OCR:）',
+    DEFAULT_OCR_PROMPT === 'Free OCR.', DEFAULT_OCR_PROMPT);
+  check('提示词预设全是 DeepSeek-OCR 认的那一套',
+    OCR_PROMPTS.some((p) => p.text === 'Free OCR.') &&
+      OCR_PROMPTS.some((p) => p.text.includes('|grounding|')),
+    OCR_PROMPTS.map((p) => p.text));
+  check('预设里不再混 PaddleOCR-VL 的写法',
+    !OCR_PROMPTS.some((p) => /^(OCR|Table Recognition|Formula Recognition|Seal Recognition):$/.test(p.text)),
+    OCR_PROMPTS.map((p) => p.text));
+  check('每个预设都带用途说明（鼠标停上去有用）',
+    OCR_PROMPTS.every((p) => p.text.trim() && p.hint.trim()));
 }
 
 section('19b. 禁用外置 OCR：勾上后图片直传模型');

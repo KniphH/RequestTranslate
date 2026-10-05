@@ -87,8 +87,8 @@ curl https://api.ant-ling.com/v1/chat/completions \
 3. 点 **发送** 测试一下，能出结果就通了
 
 还有一条路是**翻译截图**：系统截完图，在网页上右键 →「翻译剪切板中的截图」。
-默认接的是硅基流动的 **PaddleOCR-VL**（调用免费，填个硅基流动的 key 即可），
-识别出的文字照走你当前的配置翻出来 —— 见下面 [翻译截图（OCR）](#翻译截图ocr)。
+默认接的是硅基流动的 **DeepSeek-OCR**（调用免费，填个硅基流动的 key 即可；比 PaddleOCR-VL
+更稳、出字也快），识别出的文字照走你当前的配置翻出来 —— 见下面 [翻译截图（OCR）](#翻译截图ocr)。
 
 ---
 
@@ -337,13 +337,18 @@ output.choices[0].text
 
 | 内置 | 接口 | 模型 | 费用 |
 | --- | --- | --- | --- |
-| 硅基流动 | `api.siliconflow.cn/v1/chat/completions` | `PaddlePaddle/PaddleOCR-VL-1.5` | 免费 |
+| 硅基流动 | `api.siliconflow.cn/v1/chat/completions` | `deepseek-ai/DeepSeek-OCR` | 免费 |
 | OpenAI 兼容（VL） | `api.openai.com/v1/chat/completions` | `gpt-4o-mini` | 要钱 |
 
 要的是一套 **OpenAI 兼容的 `chat/completions`**：截图以 data URL 塞进
 `messages[0].content` 的 `image_url`，文字从 `choices[0].message.content` 取。
-提示词里给了几个可以点的短指令（`OCR:` / `Table Recognition:` / `Formula Recognition:` /
-`Seal Recognition:`），PaddleOCR-VL 认这几个前缀。
+提示词里给了几个可以点的预设（`Free OCR.` / `<|grounding|>Convert the document to
+markdown.` / `Parse the figure.` …），这些是 DeepSeek-OCR 训练时用的固定写法，
+**照着点就行、别自己改**。想让识别结果直接进翻译，用默认的 `Free OCR.` ——
+带 `<|grounding|>` 的那几个会往结果里夹 `|ref|` / `|det|` 位置标记。
+
+> 提示词和模型是绑在一起的：换回 PaddleOCR-VL（`PaddlePaddle/PaddleOCR-VL-1.5`）得把它那套
+> `OCR:` / `Table Recognition:` 短指令填回去，DeepSeek-OCR 的预设它不认。
 
 **「最大输出长度」（`max_tokens`）建议留空。** 留空就是不发送这个字段，由服务端按模型
 自己的上限定。这是踩过坑才这么定的：这个上限是「提示词 + `max_tokens`」**加在一起**算的，
@@ -641,7 +646,7 @@ tools/
 ## 开发
 
 ```bash
-npm test              # 静态检查 + 单元 + 端到端 + 真实浏览器 UI（686 项）
+npm test              # 静态检查 + 单元 + 端到端 + 真实浏览器 UI（702 项）
 npm run check         # 只跑两项静态检查
 npm run test:lib      # 解析器 / 模板 / 提取
 npm run test:engine   # 本地 mock 服务器，验证各类响应格式
@@ -653,7 +658,7 @@ npm run pack          # 出 dist/request-translate-<版本>.zip（传商店 / �
 
 `npm run perf` 只跑指定档位可以快很多：`PERF_ONLY=heavy npm run perf`（可选档位 `normal` / `fewLong` / `manyShort` / `heavy`）。
 
-拆开看是 `test-lib` 410 项、`test-engine` 79 项、`e2e-ui` 195 项，另加两项静态检查。这几层各自补不同的盲区：
+拆开看是 `test-lib` 426 项、`test-engine` 79 项、`e2e-ui` 195 项，另加两项静态检查。这几层各自补不同的盲区：
 
 - **`check-globals`** — 语法检查看不出 `bindConfigList()` 这种「调用了但没写」，只有运行时才炸。它把注释、字符串、正则字面量剥掉之后逐个比对调用与声明。也可以指定文件：`node tools/check-globals.mjs lib/engine.js`
 - **`check-dom`** — 比对 JS 里的 `$('#id')` / `querySelector('.x')` / `closest('.x')`，和「HTML 里写死的**加上** JS 里拼出来的」类名，防的是「选择器指向不存在的元素，启动时炸在 null 上」。动态建节点用的类名（`row.className = 'cfg-row'`）在 HTML 里找不到，所以脚本里拼过的名字也算数。

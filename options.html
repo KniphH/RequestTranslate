@@ -206,7 +206,7 @@
         <div class="editor-head">
           <div class="field grow">
             <label for="o-name">名称</label>
-            <input id="o-name" type="text" placeholder="例如：硅基流动 PaddleOCR-VL" autocomplete="off">
+            <input id="o-name" type="text" placeholder="例如：硅基流动" autocomplete="off">
           </div>
         </div>
 
@@ -224,7 +224,7 @@
         <div class="field">
           <label for="o-model">模型</label>
           <input id="o-model" type="text" spellcheck="false" autocomplete="off"
-            placeholder="PaddlePaddle/PaddleOCR-VL-1.5">
+            placeholder="deepseek-ai/DeepSeek-OCR">
         </div>
 
         <div class="field">
@@ -250,11 +250,14 @@
 
         <div class="field">
           <label for="o-prompt">提示词</label>
-          <input id="o-prompt" type="text" spellcheck="false" autocomplete="off" placeholder="OCR:">
+          <input id="o-prompt" type="text" spellcheck="false" autocomplete="off" placeholder="Free OCR.">
           <div class="chips" id="o-prompts"></div>
           <p class="hint">
-            和图片一起发过去的那句话。PaddleOCR-VL 认的是上面这几个短指令（点一下就填）；
-            别的视觉模型直接写一句「请原样输出图片里的文字」也行。
+            和图片一起发过去的那句话。DeepSeek-OCR 认的是上面这几个<b>固定预设</b>（点一下就填），
+            别自己改写写法 —— 带 <code>&lt;|grounding|&gt;</code> 的那几个会在结果里夹带
+            <code>&lt;|ref|&gt;</code> 之类的<b>位置标记</b>，只想要干净文字就用 <code>Free OCR.</code>。
+            别的视觉模型（PaddleOCR-VL 那种认 <code>OCR:</code>）直接写一句
+            「请原样输出图片里的文字」也行。
           </p>
         </div>
 
