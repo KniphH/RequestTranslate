@@ -1,8 +1,14 @@
+<div align="center">
+
+<img src="icons/icon128.png" width="96" alt="RequestTranslate 图标">
+
 # RequestTranslate
 
 划词翻译扩展，但**配置不是一堆输入框，而是一整段请求文本**。
 
 你写什么，它就发什么。
+
+</div>
 
 ````
 curl https://api.ant-ling.com/v1/chat/completions \
