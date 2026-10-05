@@ -35,9 +35,14 @@
   let busy = false;
   let lastAuto = { text: '', at: 0 };
 
-  /* 每个配置各自留一份结果快照 —— 顶栏那个下拉只负责「换配置」，不重新发请求：
-     切回切过的配置就把上次的结果原样放回来，想用这个配置重新翻要点 ↻。
-     （kniph：切来切去对比接口时，每次切回都重发一遍太亏，重试按钮本来就是干这个的。）
+  /* 每个配置各自留一份结果快照。顶栏那个下拉的规矩（kniph 定的，两条缺一不可）：
+
+       * **翻过的配置** → 把上次的结果原样放回来，一个请求都不发；
+       * **没翻过的配置** → 当场用这个配置翻一次，不能只清空面板等用户去点 ↻；
+       * 「↻」的语义是**重发同一条请求**（结果不满意才按），不是「第一次翻」。
+
+     这样才够用：a 翻 → 切 b（b 自己翻）→ 切回 a（立刻看到 a 刚才那条），
+     切来切去对比接口不用重复付钱。
 
      只对**同一段原文**有效：原文一变（新划词 / 右键 / 换一张截图）整批作废。
      判据是下面的 cacheKey —— 数据驱动，不指望每个调用点都记得来清。 */
@@ -969,7 +974,8 @@ ${TRIGGER_CSS}
     resultCache.set(configId, { r, ocr, action, fatal: !!fatal });
   }
 
-  /** 切到一个还没翻过的配置：面板清干净、灯灭掉，等用户点 ↻ 用这个配置翻 */
+  /** 没东西可翻的那种切换（连原文都没有）：面板清干净，让用户点 ↻ 重来。
+      有原文或图的时候不该走到这儿 —— 那条路会**直接发请求**（见 cfgSelect 的 change）。 */
   function showNoCachedResult(configId) {
     const hit = configs.find((c) => c.id === configId);
     cancelPendingDelta();
@@ -995,6 +1001,10 @@ ${TRIGGER_CSS}
     }
 
     if (msg.type === 'start') {
+      // 这条是给「发请求时选中的那个配置」看的。用户可能已经切走了 ——
+      // 切到**有缓存**的配置时那条请求不会被中止（后台只在收到新的 translate 时才 abort），
+      // 所以它的 start / delta 还会继续来，不挡住就把人家刚铺好的结果冲掉了。
+      if (pendingConfigId !== currentConfigId) return;
       cancelPendingDelta();
       setStatus('请求中…');
       setDot('on');
@@ -1005,6 +1015,8 @@ ${TRIGGER_CSS}
     }
 
     if (msg.type === 'delta') {
+      // 和 start 同理：这条流是**别的配置**的，用户已经切走了，别往眼前这屏上涂
+      if (pendingConfigId !== currentConfigId) return;
       queueDelta(msg.text);
       return;
     }
@@ -1062,17 +1074,19 @@ ${TRIGGER_CSS}
     if (msg.type === 'done') {
       const r = msg.result || {};
       // 按「发出这条请求时选中的配置」归档，不是当前选中的那个 ——
-      // 请求在飞的时候用户可能已经换配置了（换配置不重发，见 cfgSelect 的 change）
+      // 请求在飞的时候用户可能已经切到别的配置上了（见 cfgSelect 的 change）
       rememberResult(pendingConfigId, r, lastOcr, lastAction, false);
       if (pendingConfigId === currentConfigId) {
         // 必须先取消挂起的这一帧：done 往往在最后一个 delta 之后立刻到达，
         // 如果让那个 rAF 稍后执行，它会用更旧的文本把最终结果覆盖掉。
         renderResult(r, lastOcr, lastAction, false);
       } else {
-        // 这次结果归另一个配置，只进缓存，别去动眼前这个配置的界面
+        // 这次结果归另一个配置，只进缓存，别去动眼前这个配置的界面（切回去就能看到）
         cancelPendingDelta();
         busy = false;
         retryBtn.disabled = false;
+        // 兜底：眼前这个配置连缓存都没有（正常到不了这儿 —— 切到没翻过的配置时
+        // 会当场发新请求，而那条会把这条顶掉）
         if (!resultCache.has(currentConfigId)) showNoCachedResult(currentConfigId);
       }
       return;
@@ -1449,12 +1463,19 @@ ${TRIGGER_CSS}
 
   cfgSelect.addEventListener('change', () => {
     currentConfigId = cfgSelect.value;
-    // 换配置**不重新发请求**：每个配置各自留了一份结果，切回来直接放回去；
-    // 没翻过的配置就清空面板等用户点 ↻。重发请求本来就该由「重试」按钮负责 ——
-    // 切来切去对比接口时每次都重发一遍太亏（kniph）。
+    // 翻过的 → 放回上次的结果，一个请求都不发；
+    // 没翻过的 → 当场用这个配置翻一次（重发同一条请求是 ↻ 的活儿，不是这儿）
     const hit = resultCache.get(currentConfigId);
-    if (hit) renderResult(hit.r, hit.ocr, hit.action, hit.fatal);
-    else showNoCachedResult(currentConfigId);
+    if (hit) {
+      renderResult(hit.r, hit.ocr, hit.action, hit.fatal);
+      return;
+    }
+    // 截图直传那一路没有文字原文，判据得看图片；OCR 认出来的文字在 currentText 里
+    if (currentText || (lastOcr && lastOcr.image)) {
+      translate(currentText, currentConfigId, lastOcr || undefined);
+      return;
+    }
+    showNoCachedResult(currentConfigId);
   });
 
   // 拖动

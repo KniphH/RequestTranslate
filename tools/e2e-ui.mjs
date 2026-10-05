@@ -143,12 +143,47 @@ let textHits = 0;
 /** 假接口收到的最后一个请求路径 —— 断言挂了的时候用来判断「请求到底打到哪条路由」 */
 let lastPath = '';
 
+/** 慢速**流式**接口：先建连、再一段一段吐，用来量「请求在飞的时候用户切走了」。
+    分段数和间隔要够大，大到用户切完之后它还在吐 —— 不然那种「半路的流糊到
+    别人脸上」的问题根本采不到。 */
+const STREAM_CHUNKS = 3;
+const STREAM_GAP_MS = 400;
+
 const server = http.createServer(async (req, res) => {
   lastPath = req.url || '';
   if (req.url && req.url.startsWith('/slow')) {
     await new Promise((r) => setTimeout(r, SLOW_MS));
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('慢速响应');
+    return;
+  }
+  // SSE 假接口：引擎是看 Content-Type 里的 event-stream 认流式的，
+  // 片段按 choices[0].delta.content 走（AUTO_PATHS 里那条）。
+  if (req.url && req.url.startsWith('/stream')) {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      lastTextRequest = body;
+      textHits += 1;
+      res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8' });
+      let i = 0;
+      const timer = setInterval(() => {
+        if (res.writableEnded) {
+          clearInterval(timer);
+          return;
+        }
+        i += 1;
+        res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: '分段' + i } }] }) + '\n\n');
+        if (i >= STREAM_CHUNKS) {
+          clearInterval(timer);
+          res.end('data: [DONE]\n\n');
+        }
+      }, STREAM_GAP_MS);
+      // 注意挂的是 res 不是 req：Node 16 起 IncomingMessage 的 'close' 在
+      // **请求体收完**时就触发（不是连接断开），挂 req 上等于一起手就掐掉定时器，
+      // 结果一个分片都吐不出去、响应永远不结束（踩过）。
+      res.on('close', () => clearInterval(timer));
+    });
     return;
   }
   // 「这就是硅基流动那种 400」：原样复刻真实撞过的报错体。
@@ -2149,13 +2184,14 @@ try {
   check('收尾后回到系统设置', probeB.cleaned.mode === 'system', probeB.cleaned.mode);
 
   /* ------------------------------------------------------------------ */
-  /* 12. 换配置不重发请求：每个配置各自留着自己的结果                     */
+  /* 12. 换配置：翻过的直接放回来，没翻过的当场翻                         */
   /* ------------------------------------------------------------------ */
   /* kniph 报的：切到 A 翻完 → 切到 B → 切回 A 又发了一次请求。
-     换配置只该「换显示」，重发由 ↻ 负责（重试按钮本来就是干这个的）。
-     所以每个配置的结果都留一份：切回来就放回去，没翻过的才空着等 ↻。 */
+     他要的是「a 翻 - 切 b（b 自己翻）- 切回 a（看到 a 刚才那条，不重发）」。
+     所以：翻过的配置放回缓存里的结果，没翻过的当场发一条，
+     「↻」只负责**重发同一条请求**（结果不满意时才按）。 */
 
-  console.log('\n12. 换配置：不重发请求，各自的译文留着');
+  console.log('\n12. 换配置：翻过的放回缓存，没翻过的当场翻');
 
   await opt.evaluate(async (u) => {
     const read = async () => (await chrome.storage.local.get('state')).state || null;
@@ -2204,6 +2240,21 @@ try {
       sel.dispatchEvent(new Event('change', { bubbles: true }));
     }, id);
 
+  /** 等面板自己安静下来（发请求的那条路要等译文铺上去） */
+  const settlePanel = async () => {
+    await page
+      .waitForFunction(
+        () => {
+          const root = document.getElementById('request-translate-host').shadowRoot;
+          return !/(^|\s)on(\s|$)/.test(root.querySelector('.rt-dot').className);
+        },
+        null,
+        { timeout: 6000 }
+      )
+      .catch(() => {});
+    await page.waitForTimeout(120);
+  };
+
   await selectText();
   await page.waitForTimeout(250);
   await page.click('.rt-trigger', { force: true });
@@ -2218,56 +2269,57 @@ try {
 
   const reqA = textHits;
 
-  /* 切到还没翻过的 B：不发请求，面板清干净等着点 ↻ */
+  /* 切到还没翻过的 B：当场就用 B 翻一次 */
   await pickConfig('e2e-pick-b');
-  await page.waitForTimeout(700); // 给够时间 —— 万一它偷偷发请求，这里就能抓到
+  await settlePanel();
   const p1 = await readPanel();
-  check('切到没翻过的配置：一个请求都没发', textHits === reqA, `textHits ${reqA} → ${textHits}`);
-  check('切过去后面板清空（不拿上一个配置的译文冒充）', p1.out === '', p1.out.slice(0, 40));
-  check('底栏提示点 ↻ 翻译', p1.msg.includes('点 ↻'), p1.msg);
   check(
-    '灯灭掉（这个配置还没发过请求，不该亮）',
-    !/(^|\s)(on|ok|err)(\s|$)/.test(p1.dot),
-    p1.dot
+    '切到没翻过的配置：自己发了一条请求（不用等用户点 ↻）',
+    textHits === reqA + 1,
+    `textHits ${reqA} → ${textHits}｜lastPath ${lastPath}`
   );
-
-  /* ↻ 才是发请求的入口 */
-  await page.click('.rt-btn[data-act="retry"]', { force: true });
-  await settle();
-  const p2 = await readPanel();
-  check('点 ↻ 才用 B 发了请求', textHits === reqA + 1, `textHits ${reqA} → ${textHits}`);
-  check('B 的译文出来了', p2.out.includes('本地假译文【beta】'), `${p2.msg}｜${p2.out}`);
-  check('B 也拿到绿灯', /(^|\s)ok(\s|$)/.test(p2.dot), p2.dot);
+  check('出来的是 B 自己的译文', p1.out.includes('本地假译文【beta】'), `${p1.msg}｜${p1.out}`);
+  check('B 也拿到绿灯', /(^|\s)ok(\s|$)/.test(p1.dot), p1.dot);
 
   const reqB = textHits;
 
-  /* 切回 A：直接把 A 上次的结果放回来 */
+  /* 切回 A：直接把 A 上次的结果放回来，一个请求都不发 */
   await pickConfig('e2e-pick-a');
-  await page.waitForTimeout(700);
-  const p3 = await readPanel();
-  check('切回翻过的配置：也没发请求', textHits === reqB, `textHits ${reqB} → ${textHits}`);
+  await page.waitForTimeout(700); // 给够时间 —— 万一它偷偷发请求，这里就能抓到
+  const p2 = await readPanel();
+  check('切回翻过的配置：没发请求', textHits === reqB, `textHits ${reqB} → ${textHits}`);
   check(
     '立刻看到 A 自己的译文（不是 B 留在界面上的）',
-    p3.out.includes('本地假译文【alpha】'),
-    `${p3.msg}｜${p3.out}`
+    p2.out.includes('本地假译文【alpha】'),
+    `${p2.msg}｜${p2.out}`
   );
-  check('灯恢复成绿灯', /(^|\s)ok(\s|$)/.test(p3.dot), p3.dot);
+  check('灯恢复成绿灯', /(^|\s)ok(\s|$)/.test(p2.dot), p2.dot);
 
   /* 再切到 B：同样放回来 */
   await pickConfig('e2e-pick-b');
   await page.waitForTimeout(700);
-  const p4 = await readPanel();
+  const p3 = await readPanel();
   check('再切到 B：一样是放回缓存', textHits === reqB, `textHits ${reqB} → ${textHits}`);
-  check('B 的译文也还留着', p4.out.includes('本地假译文【beta】'), `${p4.msg}｜${p4.out}`);
+  check('B 的译文也还留着', p3.out.includes('本地假译文【beta】'), `${p3.msg}｜${p3.out}`);
+
+  /* ↻ 的语义：用当前配置**重发同一条请求**（这是唯一该重发的地方） */
+  await page.click('.rt-btn[data-act="retry"]', { force: true });
+  await settlePanel();
+  const p4 = await readPanel();
+  check('点 ↻：用当前配置（B）重发了一条', textHits === reqB + 1, `textHits ${reqB} → ${textHits}`);
+  check('重发后 B 的译文还在', p4.out.includes('本地假译文【beta】'), `${p4.msg}｜${p4.out}`);
+
+  const reqRetry = textHits;
 
   /* 换一段原文 → 所有配置的旧结果都得作废：
-     不然切配置会把上一段文字的译文端出来，冒充这一次的结果 */
-  const selectOtherText = () =>
-    page.evaluate(() => {
+     不然切配置会把上一段文字的译文端出来，冒充这一次的结果。
+     参数是选几个字 —— 不同长度就是不同原文（缓存作废的判据是原文本身）。 */
+  const selectRange = (n) =>
+    page.evaluate((k) => {
       const t0 = document.getElementById('t').childNodes[0];
       const range = document.createRange();
       range.setStart(t0, 0);
-      range.setEnd(t0, Math.min(3, t0.textContent.length));
+      range.setEnd(t0, Math.min(k, t0.textContent.length));
       const s = window.getSelection();
       s.removeAllRanges();
       s.addRange(range);
@@ -2281,9 +2333,9 @@ try {
           clientY: tail.top + tail.height / 2
         })
       );
-    });
+    }, n);
 
-  await selectOtherText();
+  await selectRange(3);
   await page.waitForTimeout(250);
   await page.click('.rt-trigger', { force: true });
   await settle();
@@ -2296,14 +2348,123 @@ try {
 
   const reqOther = textHits;
   await pickConfig('e2e-pick-a');
-  await page.waitForTimeout(700);
+  await settlePanel();
   const p6 = await readPanel();
   check(
-    '新原文下 A 是没翻过的 → 提示点 ↻（旧译文不作数）',
-    p6.msg.includes('点 ↻') && p6.out === '',
-    `${p6.msg}｜${p6.out.slice(0, 40)}`
+    '新原文下 A 是没翻过的 → 当场翻（旧译文不作数）',
+    p6.out.includes('本地假译文【alpha】'),
+    `${p6.msg}｜${p6.out}`
   );
-  check('也没有偷偷拿新原文去发请求', textHits === reqOther, `textHits ${reqOther} → ${textHits}`);
+  check('而且只发了一条', textHits === reqOther + 1, `textHits ${reqOther} → ${textHits}`);
+
+  /* 请求还在飞的时候切走：切到**有缓存**的配置时那条请求不会被中止（后台只在
+     收到新的 translate 时才 abort），它的流还会继续来 —— 不许糊到眼前这屏上。
+     这条就是为它准备的：A 换成慢速流式接口，B 仍是即答。 */
+  await opt.evaluate(async (u) => {
+    const read = async () => (await chrome.storage.local.get('state')).state || null;
+    for (let i = 0; i < 30; i++) {
+      const st = await read();
+      const a = st.configs.find((c) => c.id === 'e2e-pick-a');
+      a.request = `curl ${u}?tag=alpha`;
+      a.responseMode = 'auto'; // 让引擎自己认出 event-stream，走真正的 SSE 解析
+      await chrome.storage.local.set({ state: st });
+      const back = await read();
+      if (back.configs.find((c) => c.id === 'e2e-pick-a').request.includes('/stream')) return;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    throw new Error('A 没换成流式接口');
+  }, `http://127.0.0.1:${port}/stream`);
+  await page.waitForTimeout(700);
+
+  /* 切回 B，然后把面板收起来 —— 面板就压在第一行的选区上，
+     新选区冒出来的小圆点会被它盖住（Playwright 的点击会落到面板上）。
+     Esc 只是把面板藏起来，缓存和下拉选中的配置都还在。 */
+  await pickConfig('e2e-pick-b'); // B 在老原文上有缓存 → 只是铺回旧结果，不发请求
+  await page.waitForTimeout(150);
+  await page.evaluate(() => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  });
+  const panelHidden = await page.evaluate(
+    () =>
+      !document
+        .getElementById('request-translate-host')
+        .shadowRoot.querySelector('.rt-panel')
+        .classList.contains('show')
+  );
+  check('（脚手架）Esc 把面板收起来了，小圆点不会再被压住', panelHidden);
+
+  /* 先把 B 在这段**新**原文上翻好并缓存住（故意选 6 个字，和上面那段不同 ——
+     不然 A 在老原文上的缓存还在，切过去直接铺回来了，那条流压根不会发） */
+  await selectRange(6);
+  await page.waitForTimeout(250);
+  const reqB2 = textHits;
+  await page.click('.rt-trigger', { force: true }); // 新原文 → 旧结果作废，用 B 发一条
+  await settle();
+  const p7 = await readPanel();
+  check(
+    '（脚手架）B 用新原文发了一条，并翻好了',
+    textHits === reqB2 + 1 && p7.out.includes('本地假译文【beta】'),
+    `textHits ${reqB2} → ${textHits}｜${p7.msg}｜${p7.out}`
+  );
+
+  const reqFlow = textHits;
+
+  /* 切到 A（这段原文它没翻过）→ 走 /stream，开始一段一段吐 */
+  await pickConfig('e2e-pick-a');
+  await page
+    .waitForFunction(
+      () => {
+        const root = document.getElementById('request-translate-host').shadowRoot;
+        return root.querySelector('.rt-out').textContent.includes('分段1');
+      },
+      null,
+      { timeout: 6000 }
+    )
+    .catch(() => {});
+  const flying = await readPanel();
+  check(
+    '（脚手架）A 的流已经吐到一半了',
+    flying.out.includes('分段1'),
+    `${flying.msg}｜${flying.out}`
+  );
+  check(
+    '切到没翻过的配置就用它发了请求（不用等用户点 ↻）',
+    textHits === reqFlow + 1,
+    `textHits ${reqFlow} → ${textHits}｜lastPath ${lastPath}`
+  );
+
+  /* 流还在飞的时候切回有缓存的 B */
+  await pickConfig('e2e-pick-b');
+  const p8 = await readPanel();
+  check(
+    '流在飞的时候切回有缓存的配置：立刻铺上它自己的译文',
+    p8.out.includes('本地假译文【beta】') && !p8.out.includes('分段'),
+    `${p8.msg}｜${p8.out}`
+  );
+
+  /* 等 A 那条流吐完（剩下的分段全落在「不在看的配置」上） */
+  await page.waitForTimeout(STREAM_CHUNKS * STREAM_GAP_MS + 900);
+  const p9 = await readPanel();
+  check(
+    'A 后面几段没糊到 B 的脸上',
+    p9.out.includes('本地假译文【beta】') && !p9.out.includes('分段'),
+    `${p9.msg}｜${p9.out}`
+  );
+  check('状态栏也没被 A 的「请求中…」改掉', !p9.msg.includes('请求中'), p9.msg);
+  check('灯还是 B 的绿灯', /(^|\s)ok(\s|$)/.test(p9.dot), p9.dot);
+
+  /* A 那条结果虽然没显示，但**进了它自己的缓存**：切回去立刻能看到，不用重发 */
+  const reqLate = textHits;
+  await pickConfig('e2e-pick-a');
+  await page.waitForTimeout(700);
+  const p10 = await readPanel();
+  check(
+    'A 的结果在后台存下来了：切回去就看得到',
+    p10.out.includes('分段1') && p10.out.includes('分段' + STREAM_CHUNKS),
+    `${p10.msg}｜${p10.out}`
+  );
+  check('看到它也不用再发请求', textHits === reqLate, `textHits ${reqLate} → ${textHits}`);
+  check('而且已经不是「请求中」了', !p10.msg.includes('请求中'), p10.msg);
 
   await opt.close();
 
