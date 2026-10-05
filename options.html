@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>RequestTranslate · 设置</title>
+<link rel="stylesheet" href="options.css">
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <span class="logo">译</span>
+      <div class="brand-text">
+        <h1>RequestTranslate</h1>
+        <p>配置就是一段请求，参数怎么摆你说了算</p>
+      </div>
+    </div>
+
+    <nav class="tabs">
+      <button class="tab is-active" data-tab="configs">配置</button>
+      <button class="tab" data-tab="ocr">OCR</button>
+      <button class="tab" data-tab="vars">变量</button>
+      <button class="tab" data-tab="settings">设置</button>
+    </nav>
+
+    <div class="head-actions">
+      <button id="btn-import" class="ghost">导入</button>
+      <button id="btn-export" class="ghost">导出</button>
+      <input type="file" id="file-import" accept="application/json,.json" hidden>
+    </div>
+  </header>
+
+  <main>
+    <!-- ============================ 配置 ============================ -->
+    <section class="tabpanel is-active" data-panel="configs">
+      <aside class="list">
+        <div class="list-head">
+          <span>配置列表</span>
+          <span class="list-tip" title="按住左侧的手柄上下拖动，或者点右侧的 ↑ ↓">可拖动排序</span>
+        </div>
+        <div id="cfg-list" class="list-body"></div>
+        <div class="list-foot">
+          <button id="btn-new" class="primary block">＋ 新建配置</button>
+        </div>
+      </aside>
+
+      <div class="editor" id="editor">
+        <div class="editor-head">
+          <div class="field grow">
+            <label for="f-name">配置名称</label>
+            <input id="f-name" type="text" placeholder="例如：DeepSeek 翻译 / 本地 Ollama" autocomplete="off">
+          </div>
+          <div class="field mode-field">
+            <label for="f-kind">类型</label>
+            <select id="f-kind">
+              <option value="request">自定义请求</option>
+              <option value="adapter">内置适配器</option>
+            </select>
+          </div>
+          <div class="field mode-field" id="f-mode-field">
+            <label for="f-mode">响应格式</label>
+            <select id="f-mode">
+              <option value="auto">自动识别</option>
+              <option value="sse">SSE 事件流</option>
+              <option value="json">整体 JSON</option>
+              <option value="text">纯文本</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field" id="f-adapter-field" hidden>
+          <label for="f-adapter">内置适配器</label>
+          <select id="f-adapter"></select>
+          <p class="hint" id="f-adapter-hint"></p>
+        </div>
+
+        <div id="request-only">
+          <div class="field">
+            <div class="field-head">
+              <label for="f-request">请求模板</label>
+              <div class="chips" id="chips">
+                <button type="button" class="chip" data-ins="{{text}}" title="选中/待翻译的文本">text</button>
+                <button type="button" class="chip" data-ins="{{target}}" title="设置里的目标语言">target</button>
+                <button type="button" class="chip" data-ins="{{image}}" title="截图翻译直传模式下的图片（data URL）；普通翻译时是空串">image</button>
+                <button type="button" class="chip" data-ins="{{imagePart}}" title="图片那一段（含前导逗号），写在 content 数组最后；没图时是空串。用它就能让一段模板同时翻文字和翻图">imagePart</button>
+                <button type="button" class="chip" data-ins="{{url}}" title="页面地址">url</button>
+                <button type="button" class="chip" data-ins="{{title}}" title="页面标题">title</button>
+                <button type="button" class="chip" data-ins="{{date}}" title="今天日期">date</button>
+              </div>
+            </div>
+            <textarea id="f-request" spellcheck="false" wrap="off"
+              placeholder="在这里粘贴 curl，或者写原始 HTTP 报文"></textarea>
+            <p class="hint">
+              支持 curl 与原始 HTTP 报文两种写法，除占位符外一字不改地发出去。
+              JSON 字符串内不能有裸换行，换行写 <code>\n</code>，双引号写 <code>\"</code>。
+              行首 <code>#</code> 是注释，引号内的 <code>#</code> 不受影响。
+            </p>
+          </div>
+
+          <div class="field">
+            <div class="field-head">
+              <label for="f-image-request">图片请求模板（可选）</label>
+            </div>
+            <textarea id="f-image-request" spellcheck="false" wrap="off"
+              placeholder="留空 = 图片那次也用上面那段模板"></textarea>
+            <p class="hint">
+              <b>翻图专用的一段。</b>右键「翻译剪切板中的截图」、且 OCR 栏勾了「禁用外置 OCR」时用这一段；
+              普通划词翻译用上面那段。两段互不干扰，可以放心把这段写成多模态的样子：
+              <code>{"role":"user","content":[{"type":"image_url","image_url":{"url":"{{image}}"}},{"type":"text","text":"把图里的文字翻成{{target}}，只输出译文"}]}</code>
+              <br>
+              留空就回退到上面那段（那时 <code>{{image}}</code> 是空的，所以只写了文字模板也不会坏）。
+              这段里 <code>{{text}}</code> 始终是空串 —— 直接翻译时，图片本身就是原文。
+              上面那排 <code>text / image / target …</code> 标签会插进当前光标所在的框。
+            </p>
+          </div>
+
+          <div class="field">
+            <label for="f-path">响应提取路径（留空自动识别）</label>
+            <input id="f-path" type="text" spellcheck="false" placeholder="choices[0].message.content">
+            <p class="hint">点号 + 下标，例如 <code>data.translations[0].translatedText</code>。留空时会依次尝试各家常见的返回结构。</p>
+          </div>
+
+          <div class="field">
+            <label class="switch">
+              <input type="checkbox" id="f-direct">
+              <span>这条配置强制直连（不经过系统代理）</span>
+            </label>
+            <p class="hint">
+              发请求前把浏览器代理临时切成直连，拿到响应立刻切回来。只在扩展自己发出的请求上生效，
+              窗口通常几百毫秒，其余流量不受影响。适合「开着代理时这个接口反而连不上」的情况。
+            </p>
+          </div>
+
+          <details class="preview">
+            <summary>渲染预览（把占位符换成实际值之后的样子）</summary>
+            <pre id="f-preview"></pre>
+          </details>
+        </div>
+
+        <div class="field">
+          <label>测试</label>
+          <div class="test-row">
+            <input id="test-text" type="text" placeholder="测试用的原文，默认为 Hello, world!" autocomplete="off">
+            <button id="btn-test" class="primary">发送</button>
+          </div>
+          <div id="test-result" class="result" hidden></div>
+        </div>
+
+        <div class="editor-foot">
+          <span id="save-status" class="save-status"></span>
+          <span class="spacer"></span>
+          <button id="btn-duplicate" class="ghost">复制一份</button>
+          <button id="btn-delete" class="danger">删除配置</button>
+        </div>
+      </div>
+
+      <div class="empty-hint" id="empty-hint" hidden>左边新建一条配置开始吧</div>
+    </section>
+
+    <!-- ============================ OCR ============================ -->
+    <section class="tabpanel" data-panel="ocr">
+      <aside class="list">
+        <div class="list-head">
+          <span>OCR 供应商</span>
+          <span class="list-tip" title="点一条就切换过去。右键菜单只用选中的这一条">选中的那条约右键用</span>
+        </div>
+        <div id="ocr-list" class="list-body"></div>
+        <div class="list-foot">
+          <button id="btn-ocr-new" class="primary block">＋ 新建供应商</button>
+        </div>
+      </aside>
+
+      <div class="editor" id="ocr-editor">
+        <div class="setting">
+          <label class="switch">
+            <input type="checkbox" id="o-disabled">
+            <span>禁用外置 OCR（仅模型具有多模态时使用）</span>
+          </label>
+          <p class="hint">
+            勾上之后不再走下面的 OCR 供应商：截图会被<b>原样塞进「配置」里当前那条请求</b>，
+            由多模态模型自己看图 + 翻译，省一次来回。
+            <br>
+            <b>要写两段模板：</b>去「配置」那一栏，把
+            <b>「图片请求模板」</b>填成多模态的样子（普通那段继续翻文字），
+            截图直传时自动用图片那段 —— 比如：
+            <code>{"role":"user","content":[{"type":"image_url","image_url":{"url":"{{image}}"}},{"type":"text","text":"把图里的文字翻成{{target}}，只输出译文"}]}</code>
+            <br>
+            <b>也可以只写一段</b>解决：把 <code>content</code> 写成数组、末尾挂一个
+            <code>{{imagePart}}</code>（没图时它是空串，所以同一段模板照样能翻文字）。
+            详见「配置」栏里的说明。
+          </p>
+          <p class="hint wide" id="o-disabled-note" hidden>
+            现在是直传模式 —— 下面这条供应商不会被动用，取消勾选就回来。
+          </p>
+        </div>
+
+        <p class="hint wide">
+          用系统截图（Win + Shift + S 之类）截完图，图片就在剪切板里了；在任意网页上
+          <b>右键 →「翻译剪切板中的截图」</b>，这里<b>选中</b>的那条供应商会先把图认成文字，
+          再按「配置」里当前那条翻译出来。剪切板里第一项不是图片时会直接提示你。
+          <br>
+          外面（右键菜单）不给你选供应商 —— 用的是哪条只看这里，想换就得先切过来。
+        </p>
+
+        <div class="editor-head">
+          <div class="field grow">
+            <label for="o-name">名称</label>
+            <input id="o-name" type="text" placeholder="例如：硅基流动 PaddleOCR-VL" autocomplete="off">
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="o-endpoint">接口地址</label>
+          <input id="o-endpoint" type="text" spellcheck="false" autocomplete="off"
+            placeholder="https://api.siliconflow.cn/v1/chat/completions">
+          <p class="hint">
+            要 OpenAI 兼容的 <code>chat/completions</code>：截图会以 data URL 塞进
+            <code>messages[0].content</code> 的 <code>image_url</code> 里发过去，
+            文字从 <code>choices[0].message.content</code> 取。
+          </p>
+        </div>
+
+        <div class="field">
+          <label for="o-model">模型</label>
+          <input id="o-model" type="text" spellcheck="false" autocomplete="off"
+            placeholder="PaddlePaddle/PaddleOCR-VL-1.5">
+        </div>
+
+        <div class="field">
+          <label for="o-maxtokens">最大输出长度（max_tokens）</label>
+          <input id="o-maxtokens" type="number" min="0" step="256" autocomplete="off" placeholder="留空 = 不发送">
+          <p class="hint">
+            <b>建议留空</b>：不发送 <code>max_tokens</code>，由服务端按模型自己的上限来。
+            各家的上下文宽度差得很远，而这个上限是「提示词 + <code>max_tokens</code>」一起算的 ——
+            写死一个数会在上下文窄的模型上直接 400（比如 DeepSeek-OCR 的
+            <code>max_seq_len</code> 只有 8192）。
+            确实要限长再填，填的数要留出提示词的余量。
+          </p>
+        </div>
+
+        <div class="field">
+          <label for="o-key">API Key</label>
+          <input id="o-key" type="password" spellcheck="false" autocomplete="off" placeholder="sk-…">
+          <p class="hint">
+            和翻译配置里的 key 一样，明文存在浏览器本地。<b>导出配置文件时它也会被一起带走</b>，
+            分享导出文件前记得先清掉。
+          </p>
+        </div>
+
+        <div class="field">
+          <label for="o-prompt">提示词</label>
+          <input id="o-prompt" type="text" spellcheck="false" autocomplete="off" placeholder="OCR:">
+          <div class="chips" id="o-prompts"></div>
+          <p class="hint">
+            和图片一起发过去的那句话。PaddleOCR-VL 认的是上面这几个短指令（点一下就填）；
+            别的视觉模型直接写一句「请原样输出图片里的文字」也行。
+          </p>
+        </div>
+
+        <div class="field">
+          <label class="switch">
+            <input type="checkbox" id="o-direct">
+            <span>这条供应商强制直连（不经过系统代理）</span>
+          </label>
+          <p class="hint">
+            和配置里那个开关是同一套：发请求前把浏览器代理临时切成直连，拿到响应立刻切回来。
+            注意代理是 TUN / 虚拟网卡模式时没用。
+          </p>
+        </div>
+
+        <div class="field">
+          <label for="ocr-test-img">测试</label>
+          <div class="test-row">
+            <input id="ocr-test-img" type="file" accept="image/*">
+            <button id="btn-ocr-test" class="primary">测试</button>
+          </div>
+          <p class="hint">
+            不选文件就直接点「测试」的话，用<b>剪切板里的第一张图</b>：先系统截图（Win + Shift + S），
+            回这里点一下即可；也可以先选一张本地图片再点。
+            <br>
+            用的就是上面填的接口 / 模型 / Key / 提示词 —— 和外面右键时同一套，这里通了，实际用就是通的。
+          </p>
+          <div id="ocr-test-result" class="result" hidden></div>
+        </div>
+
+        <p class="hint wide" id="o-note"></p>
+
+        <div class="editor-foot">
+          <span class="spacer"></span>
+          <button id="btn-ocr-duplicate" class="ghost">复制一份</button>
+          <button id="btn-ocr-delete" class="danger">删除</button>
+        </div>
+      </div>
+
+      <div class="empty-hint" id="ocr-empty" hidden>左边新建一条 OCR 供应商开始吧</div>
+    </section>
+
+    <!-- ============================ 变量 ============================ -->
+    <section class="tabpanel" data-panel="vars">
+      <div class="page">
+        <h2>自定义变量</h2>
+        <p class="hint wide">
+          这里定义的值可以在请求模板里用 <code>{{名字}}</code> 引用，比如把 API Key 写成
+          <code>Bearer {{apiKey}}</code>，换 key 只改这一处。同名的话，下面这些会覆盖内置变量。
+        </p>
+
+        <table class="vars">
+          <thead>
+            <tr><th>名字</th><th>值</th><th></th></tr>
+          </thead>
+          <tbody id="vars-body"></tbody>
+        </table>
+        <button id="btn-add-var" class="ghost">＋ 添加变量</button>
+
+        <h2>内置变量</h2>
+        <table class="vars builtin">
+          <tbody id="builtin-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ============================ 设置 ============================ -->
+    <section class="tabpanel" data-panel="settings">
+      <div class="page">
+        <h2>划词行为</h2>
+
+        <div class="setting">
+          <label for="s-trigger">选中文字后</label>
+          <select id="s-trigger">
+            <option value="button">在选区旁边显示一个小圆点，点它才翻译</option>
+            <option value="auto">直接翻译</option>
+            <option value="off">什么都不做（只用右键菜单）</option>
+          </select>
+        </div>
+
+        <div class="setting">
+          <label for="s-ctx">右键菜单</label>
+          <div class="stack">
+            <label class="switch">
+              <input type="checkbox" id="s-ctx">
+              <span>加一项「用 RequestTranslate 翻译选中内容」（只在选中了文字时出现）</span>
+            </label>
+            <label class="switch">
+              <input type="checkbox" id="s-ocrmenu">
+              <span>加一项「翻译剪切板中的截图」（要先用系统截图把图截进剪切板，见「OCR」那一栏）</span>
+            </label>
+          </div>
+        </div>
+
+        <h2>翻译</h2>
+
+        <div class="setting">
+          <label for="s-lang">目标语言（<code>{{target}}</code> 的值）</label>
+          <input id="s-lang" type="text" placeholder="简体中文" autocomplete="off">
+        </div>
+
+        <div class="setting">
+          <label for="s-max">单次最多发送字数</label>
+          <input id="s-max" type="number" min="100" max="200000" step="100">
+        </div>
+
+        <h2>网络</h2>
+
+        <div class="setting">
+          <label for="s-direct">代理</label>
+          <div class="stack">
+            <label class="switch">
+              <input type="checkbox" id="s-direct">
+              <span>用内置适配器（Bing）时临时直连，绕过系统代理</span>
+            </label>
+            <p class="hint">
+              <b>默认关。</b>开着代理时 Bing 的翻译接口经常只回一个空 body —— 节点把它掐了，换节点也一样。
+              推荐先在代理客户端里给 <code>bing.com</code> 加一条直连规则
+              （mihomo / Clash 系：<code>DOMAIN-SUFFIX,bing.com,DIRECT</code>），
+              这样最干净：插件不用碰浏览器代理，权限里那条「读取和更改您的代理设置」也就闲置了。
+              改不了代理客户端、或者嫌麻烦，再把这里勾上 —— 扩展会在发请求前把浏览器代理临时切成直连，
+              拿到响应立刻切回来（通常几百毫秒），其余流量不受影响。
+              <br>注意：代理是 <b>TUN / 虚拟网卡</b>模式时这招没用，流量在网卡层就被抓走了，只能去代理软件里加规则。
+            </p>
+          </div>
+        </div>
+
+        <h2>翻译按钮</h2>
+
+        <div class="setting">
+          <label>按钮样式</label>
+          <div class="stack">
+            <div class="trig-row">
+              <div class="trig-styles" id="trig-styles"></div>
+              <div class="trig-preview-box">
+                <div class="trig-preview" id="trig-preview"></div>
+                <span>预览</span>
+              </div>
+            </div>
+            <p class="hint">
+              划词后出现在选区旁边那个小按钮长什么样。只影响按钮本身，不动结果面板。
+              地球和笔尖用的是线性图标，颜色跟着上面的<b>主题</b>走。
+              下面「自定义图标」里填了 SVG 的话，预览显示的就是它。
+            </p>
+          </div>
+        </div>
+
+        <div class="setting">
+          <label for="s-trigsize">按钮大小（px）</label>
+          <input id="s-trigsize" type="number" min="20" max="96" step="1">
+        </div>
+
+        <div class="setting">
+          <label for="s-trigsvg">自定义图标（SVG）</label>
+          <div class="stack">
+            <textarea id="s-trigsvg" spellcheck="false" rows="6" placeholder="&lt;svg viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;1.8&quot;&gt;&#10;  &lt;path d=&quot;M4 12h10M9 7l5 5-5 5&quot;/&gt;&#10;&lt;/svg&gt;"></textarea>
+            <p class="trig-svg-msg" id="s-trigsvg-msg" hidden></p>
+            <p class="hint">
+              粘一段 <code>&lt;svg&gt;…&lt;/svg&gt;</code> 进来，它会替换掉预设里的图标 /「译」字；
+              <b>底座（底色、圆角、大小）还是用上面选的那个预设</b>。
+              颜色写 <code>currentColor</code> 就跟着主题走（暗色浅紫 / 亮色深紫），写死颜色也行。
+              <br>
+              这段代码会被插进页面，所以要求以 <code>&lt;svg</code> 开头、<code>&lt;/svg&gt;</code> 结尾，
+              且不含 <code>&lt;script&gt;</code> / <code>onload=</code> / <code>href</code> /
+              <code>&lt;foreignObject&gt;</code> 这类东西 —— 通过时下面会绿字写一句「这段用上了」，
+              不通过时会说明卡在哪一条（内容不会被改，是整段不用）。
+            </p>
+            <div class="trig-examples">
+              <button type="button" id="btn-trigsvg-demo" class="trig-ex">插入示例图标</button>
+              <button type="button" id="btn-trigsvg-clear" class="trig-ex">清空</button>
+            </div>
+          </div>
+        </div>
+
+        <h2>面板</h2>
+
+        <div class="setting">
+          <label for="s-width">结果面板宽度（px）</label>
+          <input id="s-width" type="number" min="280" max="1600" step="10">
+        </div>
+
+        <div class="setting">
+          <label for="s-height">结果面板高度（px， 0 = 自适应）</label>
+          <input id="s-height" type="number" min="0" max="2000" step="20">
+        </div>
+
+        <div class="setting">
+          <label for="s-font">面板字号（px）</label>
+          <input id="s-font" type="number" min="11" max="48" step="1">
+        </div>
+
+        <div class="setting">
+          <label for="s-theme">主题</label>
+          <select id="s-theme">
+            <option value="auto">跟随系统</option>
+            <option value="dark">暗色</option>
+            <option value="light">亮色</option>
+          </select>
+        </div>
+
+        <div class="setting">
+          <label class="switch">
+            <input type="checkbox" id="s-showsrc">
+            <span>在面板里显示原文</span>
+          </label>
+        </div>
+
+        <div class="page-foot">
+          <button id="btn-reset" class="danger ghost">恢复全部默认配置</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script type="module" src="options.js"></script>
+</body>
+</html>

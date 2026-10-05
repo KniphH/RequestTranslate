@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>RequestTranslate · 剪切板</title>
+</head>
+<body>
+<!-- 一个不可见的扩展页面，只在「翻译剪切板中的截图」时被临时创建。
+     MV3 的 service worker 没有 navigator.clipboard，读剪切板这件事
+     只能在有 DOM 的地方做。读完就关掉（见 background.js 的 closeDocument）。 -->
+<script type="module" src="offscreen.js"></script>
+</body>
+</html>

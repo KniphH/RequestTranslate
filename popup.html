@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #0b0b0d;
+    --panel: #121216;
+    --panel-2: #16161a;
+    --line: #26262e;
+    --line-soft: #1e1e24;
+    --fg: #e8e8ea;
+    --fg-dim: #8a8a95;
+    --fg-faint: #5f5f6a;
+    --accent: #7c6cf5;
+
+    --hover: #24242b;
+    --hover-2: #1f1f26;
+    --hover-3: #1b1b21;
+    --input-bg: #0e0e11;
+    --scroll: #2c2c34;
+    --fg-bright: #f2f2f4;
+    --danger-fg: #f87171;
+  }
+
+  /* 亮色主题，跟随设置页里的「主题」选项 */
+  :root[data-theme="light"] {
+    --bg: #f4f4f7;
+    --panel: #ffffff;
+    --panel-2: #f8f8fb;
+    --line: #dcdce4;
+    --line-soft: #e9e9f0;
+    --fg: #1a1a22;
+    --fg-dim: #55555f;
+    --fg-faint: #82828f;
+    --accent: #6d5cf0;
+
+    --hover: #eeeef4;
+    --hover-2: #e7e7ef;
+    --hover-3: #eeeef4;
+    --input-bg: #ffffff;
+    --scroll: #c9c9d6;
+    --fg-bright: #12121a;
+    --danger-fg: #d02c2c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    width: 400px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 13px/1.6 -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  }
+
+  .head {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 11px 13px;
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--line);
+  }
+  .logo {
+    width: 24px; height: 24px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 7px;
+    background: linear-gradient(135deg, #6d5cf0, #a855f7);
+    color: #fff;
+    font-weight: 700;
+    font-size: 12px;
+    flex: none;
+  }
+  select {
+    flex: 1;
+    min-width: 0;
+    background: var(--input-bg);
+    color: var(--fg);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 5px 9px;
+    font: inherit;
+    font-size: 12.5px;
+    outline: none;
+    cursor: pointer;
+  }
+  select:focus { border-color: rgba(124,108,245,.65); }
+  select option { background: var(--panel-2); }
+
+  .icon-btn {
+    width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    color: var(--fg-dim);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 0;
+    flex: none;
+  }
+  .icon-btn:hover { background: var(--hover); color: var(--fg); }
+
+  .body { padding: 12px 13px; }
+
+  textarea {
+    width: 100%;
+    height: 74px;
+    resize: vertical;
+    background: var(--input-bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--fg);
+    padding: 9px 11px;
+    font: inherit;
+    font-size: 13px;
+    outline: none;
+  }
+  textarea:focus { border-color: rgba(124,108,245,.65); box-shadow: 0 0 0 3px rgba(124,108,245,.13); }
+
+  .row { display: flex; gap: 8px; margin-top: 9px; }
+
+  button {
+    font: inherit;
+    font-size: 12.5px;
+    border-radius: 8px;
+    padding: 7px 14px;
+    cursor: pointer;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+    color: var(--fg);
+    transition: .14s;
+  }
+  button:hover { background: var(--hover-2); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary {
+    flex: 1;
+    background: linear-gradient(135deg, #6d5cf0, #8b5cf6);
+    border-color: transparent;
+    color: #fff;
+    font-weight: 550;
+  }
+  button.primary:hover { filter: brightness(1.1); }
+  button.ghost { background: transparent; color: var(--fg-dim); }
+  button.ghost:hover { background: var(--hover-3); color: var(--fg); }
+
+  .out {
+    margin-top: 11px;
+    padding: 10px 11px;
+    min-height: 60px;
+    max-height: 240px;
+    overflow-y: auto;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.75;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--fg-bright);
+  }
+  .out.empty { color: var(--fg-faint); }
+
+  .foot {
+    display: flex;
+    align-items: center;
+    padding: 0 13px 11px;
+    font-size: 11px;
+    color: var(--fg-faint);
+  }
+  .foot .spacer { flex: 1; }
+  .foot a { color: var(--fg-dim); text-decoration: none; cursor: pointer; }
+  .foot a:hover { color: var(--accent); }
+  .foot .err { color: var(--danger-fg); }
+
+  ::-webkit-scrollbar { width: 9px; height: 9px; }
+  ::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 5px; border: 2px solid var(--bg); }
+</style>
+</head>
+<body>
+  <div class="head">
+    <span class="logo">译</span>
+    <select id="sel"></select>
+    <button id="btn-open" class="icon-btn" title="打开设置">&#9881;</button>
+  </div>
+
+  <div class="body">
+    <textarea id="txt" placeholder="输入或粘贴要翻译的内容（会自动带上当前页面选中的文字）"></textarea>
+    <div class="row">
+      <button id="btn-go" class="primary">翻译</button>
+      <button id="btn-copy" class="ghost">复制</button>
+      <button id="btn-clear" class="ghost">清空</button>
+    </div>
+    <div id="out" class="out empty">等待输入…</div>
+  </div>
+
+  <div class="foot">
+    <span id="status"></span>
+    <span class="spacer"></span>
+    <a id="link-options">打开完整设置</a>
+  </div>
+
+<script type="module" src="popup.js"></script>
+</body>
+</html>

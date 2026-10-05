@@ -1,0 +1,17 @@
+{
+  "name": "request-translate",
+  "private": true,
+  "type": "module",
+  "description": "Edge/Chromium 扩展：用一段可自由编辑的 HTTP 请求作为翻译配置。仅用于本地开发与测试脚本。",
+  "scripts": {
+    "check": "node tools/check-globals.mjs && node tools/check-dom.mjs",
+    "check:globals": "node tools/check-globals.mjs",
+    "check:dom": "node tools/check-dom.mjs",
+    "test": "node tools/check-globals.mjs && node tools/check-dom.mjs && node tools/test-lib.mjs && node tools/test-engine.mjs && node tools/e2e-ui.mjs",
+    "test:lib": "node tools/test-lib.mjs",
+    "test:engine": "node tools/test-engine.mjs",
+    "test:ui": "node tools/e2e-ui.mjs",
+    "perf": "node tools/perf-probe.mjs",
+    "icons": "python tools/make-icons.py"
+  }
+}
