@@ -403,6 +403,14 @@ ${TRIGGER_CSS}
 .rt-panel:not(.light) .rt-diag .d-v.warn { color: #fbbf24; }
 .rt-panel:not(.light) .rt-diag .d-v.err { color: #f87171; }
 
+/* 滚动条必须自己说了算。网页上继承下来的 scrollbar-color **能穿过 shadow DOM**
+   （它是继承属性，普通选择器挡不住），而只要它算出来不是 auto，浏览器就把下面
+   那套 ::-webkit-scrollbar 整段忽略 —— 面板里于是冒出一条网页配色的滚动条
+   （实测某站是浅蓝滑块 + 白轨道，杵在纯黑面板上格外扎眼）。
+   显式写回 auto 把继承掐断，自绘的 8px 灰滑块才生效；scrollbar-width 得一起
+   写回 —— 它俩是「任一非 auto 就废掉 ::-webkit-scrollbar」的同一对开关。 */
+.rt-out, .rt-src, .rt-diag { scrollbar-color: auto; scrollbar-width: auto; }
+
 .rt-out::-webkit-scrollbar, .rt-src::-webkit-scrollbar, .rt-diag::-webkit-scrollbar { width: 8px; }
 .rt-out::-webkit-scrollbar-thumb, .rt-src::-webkit-scrollbar-thumb, .rt-diag::-webkit-scrollbar-thumb {
   background: var(--rt-scroll); border-radius: 4px;

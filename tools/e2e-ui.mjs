@@ -2469,6 +2469,61 @@ try {
   await opt.close();
 
   /* ------------------------------------------------------------------ */
+  /* 13. 网页想给滚动条上色？面板不吃这一套                              */
+  /* ------------------------------------------------------------------ */
+
+  console.log('\n13. 网页把滚动条染成浅蓝，面板里那条还得是自己的灰滑块');
+
+  await page.bringToFront();
+  // 架一个「滚动条配色陷阱」：scrollbar-color 是**继承属性**，写在 html 上会一路
+  // 穿进我们的 shadow DOM（kniph 截图抓到的那条浅蓝滑块就是这么来的）。
+  // 一旦它在面板内部算出来不是 auto，浏览器就把我们自绘的 ::-webkit-scrollbar
+  // 整段忽略 —— 这条断言盯的就是「显式写回 auto」那两行还在不在。
+  await page.addStyleTag({ content: 'html { scrollbar-color: lightblue #eeeeee; }' });
+  await page.waitForTimeout(120);
+
+  const sb = await page.evaluate(() => {
+    const host = document.getElementById('request-translate-host');
+    const root = host && host.shadowRoot;
+    const cs = (s) => {
+      const el = root && root.querySelector(s);
+      return el ? getComputedStyle(el).scrollbarColor : null;
+    };
+    return {
+      supported: typeof CSS !== 'undefined' && CSS.supports('scrollbar-color', 'auto'),
+      body: getComputedStyle(document.body).scrollbarColor,
+      out: cs('.rt-out'),
+      src: cs('.rt-src'),
+      diag: cs('.rt-diag')
+    };
+  });
+
+  if (!sb.supported) {
+    console.log('     跳过：这个 Edge 还不认 scrollbar-color');
+  } else {
+    // 先证明陷阱真的架起来了，不然下面三条是空跑
+    check('测试页真把滚动条染成浅蓝了（陷阱生效）', /173,\s*216,\s*230/.test(sb.body || ''), sb.body);
+    check('正文区不吃网页的滚动条配色（auto = 自绘规则生效）', sb.out === 'auto', sb.out);
+    check('原文区不吃网页的滚动条配色', sb.src === 'auto', sb.src);
+    check('「…」诊断区不吃网页的滚动条配色', sb.diag === 'auto', sb.diag);
+
+    // 光写回 auto 只是「不挡着」—— 真正画滚动条的还是下面这条自绘规则。
+    // 两半缺一半都会退化（滑块变回系统灰、或干脆不生效），所以配对一起盯。
+    const thumb = await page.evaluate(() => {
+      const host = document.getElementById('request-translate-host');
+      const st = host && host.shadowRoot && host.shadowRoot.querySelector('style');
+      const rules = (st && st.sheet && st.sheet.cssRules) || [];
+      for (const r of Array.from(rules)) {
+        if (r.selectorText && r.selectorText.includes('-webkit-scrollbar-thumb')) {
+          return r.style.background || r.style.backgroundColor || '';
+        }
+      }
+      return null;
+    });
+    check('自绘滑块规则也还在（写在 auto 旁边的那半）', /rt-scroll/.test(thumb || ''), thumb);
+  }
+
+  /* ------------------------------------------------------------------ */
 
   console.log('\n' + '='.repeat(46));
   console.log(`UI 回归：${pass} 项通过，${fail} 项失败`);
