@@ -1097,28 +1097,33 @@ section('21. 模板转义：占位符落在几层引号里，就逐层转义');
 
 /* ------------------------------------------------------------------ */
 
-section('22. 目标语言：下拉给语言名，接口要的代码自动转');
+section('22. 目标语言：下拉挑语言，接口要的代码自动转');
 {
   const html = readFileSync(new URL('../options.html', import.meta.url), 'utf8');
   const js = readFileSync(new URL('../options.js', import.meta.url), 'utf8');
 
-  const tag = (html.match(/<input[^>]*id="s-lang"[^>]*>/) || [])[0];
-  check('目标语言那个输入框还在', !!tag, tag);
+  /* 早先是 <input list="…"> + datalist —— 输入框里已经有值时，
+     点开只列出「匹配当前文字」的那几项（默认「简体中文」就只剩一项），
+     看着像「下拉里没几个选项」。改成正经的 <select>。 */
+  const sel = (html.match(/<select[^>]*id="s-lang"[^>]*>/) || [])[0];
+  check('目标语言是个下拉框，不是输入框', !!sel, sel);
+  check('页面上不再拿 datalist 糊',
+    !html.includes('s-lang-presets') && !html.includes('<datalist'), 'datalist');
 
-  const listId = tag && (tag.match(/list="([^"]+)"/) || [])[1];
-  check('输入框挂上了预设列表（datalist）', !!listId, tag);
+  const selStart = sel ? html.indexOf(sel) : -1;
+  const selBody = selStart < 0 ? '' : html.slice(selStart, html.indexOf('</select>', selStart));
+  check('HTML 里那个下拉是空容器（不手抄第二份候选）',
+    !!sel && !/<option/i.test(selBody), selBody);
 
-  const dl = listId
-    ? (html.match(new RegExp(`<datalist id="${listId}"[\\s\\S]*?</datalist>`)) || [])[0]
-    : null;
-  check('对应 id 的 datalist 真的存在', !!dl, listId);
+  const other = (html.match(/<input[^>]*id="s-lang-other"[^>]*>/) || [])[0];
+  check('旁边有个「自己填」的输入框', !!other, other);
+  check('它默认是藏着的（挑了「其他」才露出来）', !!other && /\bhidden\b/.test(other), other);
 
-  /* 候选只有一处真相源：HTML 里是空容器，列表由设置页脚本从 TARGET_PRESETS 填。
-     以前这两份是分开手写的，结果「荷兰语 / 波兰语」挑得到却映射不出来。 */
-  check('HTML 里那个 datalist 是空容器（不手抄第二份）',
-    !!dl && !/<option/i.test(dl), dl);
-  check('设置页脚本确实把它填上了',
-    js.includes('TARGET_PRESETS') && js.includes('s-lang-presets'));
+  check('脚本把 TARGET_PRESETS 填进那个下拉',
+    js.includes('TARGET_PRESETS') && js.includes('els.langSelect.appendChild'));
+  check('「其他」那一项有哨兵 value', /LANG_OTHER\s*=\s*'__other__'/.test(js));
+  check('存档里不在预设里的值会还原成「其他」+ 输入框',
+    js.includes('function renderTargetLang') && js.includes('TARGET_PRESETS.includes(cur)'));
 
   const values = TARGET_PRESETS;
   check('列表不是空的', values.length > 0, values.length);

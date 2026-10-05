@@ -353,15 +353,11 @@
         <div class="setting">
           <label for="s-lang">目标语言（<code>{{target}}</code> 的值）</label>
           <div class="stack">
-            <input id="s-lang" type="text" placeholder="简体中文" autocomplete="off" list="s-lang-presets">
-            <p class="hint">
-              填语言名就行（比如「简体中文」）—— 只认代码的接口会自动转成 <code>ZH-HANS</code>。
-              要指定地区变体（英式英语、巴西葡语）才需要直接填代码。
-            </p>
+            <!-- 候选项由 options.js 从 lib/template.js 的 TARGET_PRESETS 填，
+                 别在这儿手抄一份（加语言只改 lib/template.js，两处同步由 test-lib 第 22 节盯着） -->
+            <select id="s-lang"></select>
+            <input id="s-lang-other" type="text" placeholder="填语言名或代码，比如「粤语」/ YUE" autocomplete="off" hidden>
           </div>
-          <!-- 候选列表由 options.js 从 lib/template.js 的 TARGET_PRESETS 填，
-               别在这儿手抄一份（加语言只改 lib/template.js，两处同步由 test-lib 第 22 节盯着） -->
-          <datalist id="s-lang-presets"></datalist>
         </div>
 
         <div class="setting">

@@ -89,6 +89,8 @@ const els = {
   varsBody: $('#vars-body'),
   builtinBody: $('#builtin-body'),
   fileImport: $('#file-import'),
+  langSelect: $('#s-lang'),
+  langOther: $('#s-lang-other'),
 
   // OCR
   ocrList: $('#ocr-list'),
@@ -1188,7 +1190,8 @@ const SETTING_MAP = {
   '#s-trigger': ['settings', 'trigger', 'value'],
   '#s-ctx': ['settings', 'contextMenu', 'checked'],
   '#s-ocrmenu': ['settings', 'ocrMenu', 'checked'],
-  '#s-lang': ['settings', 'targetLang', 'value'],
+  // '#s-lang'（目标语言）不在这儿 —— 它是「下拉 + 其他自己填」两个控件，
+  // 合起来才是一个值，见下面的 renderTargetLang / bindTargetLang
   '#s-max': ['settings', 'maxChars', 'number'],
   '#s-width': ['settings', 'panelWidth', 'number'],
   '#s-height': ['settings', 'panelHeight', 'number'],
@@ -1205,7 +1208,7 @@ function renderSettings() {
   $('#s-ctx').checked = !!state.settings.contextMenu;
   // 缺席按「开」算 —— 这条是新加的，老存档里没有这个字段
   $('#s-ocrmenu').checked = state.settings.ocrMenu !== false;
-  $('#s-lang').value = state.settings.targetLang;
+  renderTargetLang();
   $('#s-max').value = state.settings.maxChars;
   $('#s-width').value = state.settings.panelWidth;
   $('#s-height').value = state.settings.panelHeight;
@@ -1303,6 +1306,10 @@ function applyTheme() {
 }
 
 function bindSettings() {
+  // 选项要先填好，renderSettings 才摆得对（它靠 select.value 回填）
+  fillTargetLangOptions();
+  bindTargetLang();
+
   for (const [sel, [, key, kind]] of Object.entries(SETTING_MAP)) {
     const el = $(sel);
     el.addEventListener('input', () => {
@@ -1310,7 +1317,6 @@ function bindSettings() {
       else if (kind === 'number') state.settings[key] = Number(el.value) || 0;
       else state.settings[key] = el.value;
       scheduleSave();
-      if (key === 'targetLang') updatePreview();
       if (key === 'theme') applyTheme();
       // 按钮的大小 / 自定义图标都是即时可见的，改一下就刷一次预览
       if (key === 'triggerSize') renderPreview();
@@ -1445,19 +1451,69 @@ function flashSaved() {
 }
 
 /* ------------------------------------------------------------------ */
-/* 目标语言下拉：候选只有一处真相源（lib/template.js 的 TARGET_PRESETS）  */
-/* HTML 里那个 datalist 是空容器，列表在这儿填 —— 别再去 HTML 手抄一份   */
+/* 目标语言：下拉挑预设，「其他」自己填                                   */
+/* 候选只有一处真相源（lib/template.js 的 TARGET_PRESETS）                */
+/* HTML 里那个 select 是空容器，选项在这儿填 —— 别再去 HTML 手抄一份      */
 /* ------------------------------------------------------------------ */
 
-{
-  const list = $('#s-lang-presets');
-  if (list) {
-    for (const name of TARGET_PRESETS) {
-      const opt = document.createElement('option');
-      opt.value = name;
-      list.appendChild(opt);
-    }
+// 下拉里「自己填」那一项的 value。真语言名 / 代码都不可能是这个样子，
+// 所以拿它当哨兵很安全。
+const LANG_OTHER = '__other__';
+
+/** 选项：常用语言名 + 几个地区变体 + 末尾的「其他」 */
+function fillTargetLangOptions() {
+  for (const name of TARGET_PRESETS) {
+    els.langSelect.appendChild(newOption(name, name));
   }
+  els.langSelect.appendChild(newOption(LANG_OTHER, '其他（自己填）'));
+}
+
+function newOption(value, text) {
+  const opt = document.createElement('option');
+  opt.value = value;
+  opt.textContent = text;
+  return opt;
+}
+
+/** 把存档里的值摆到界面上：在预设里就选中它，不在就当「其他」放进输入框 */
+function renderTargetLang() {
+  const cur = String(state.settings.targetLang || '');
+  if (cur && !TARGET_PRESETS.includes(cur)) {
+    els.langSelect.value = LANG_OTHER;
+    els.langOther.value = cur;
+    els.langOther.hidden = false;
+  } else {
+    els.langSelect.value = cur || TARGET_PRESETS[0];
+    els.langOther.hidden = true;
+  }
+}
+
+function setTargetLang(value) {
+  state.settings.targetLang = value;
+  scheduleSave();
+  updatePreview();
+}
+
+function bindTargetLang() {
+  els.langSelect.addEventListener('input', () => {
+    if (els.langSelect.value === LANG_OTHER) {
+      els.langOther.hidden = false;
+      els.langOther.focus();
+      // 框里还留着上次填的就接着用；空着先不动存档 ——
+      // 等用户打第一个字再改（下面那个监听），免得 {{target}} 变成空串
+      const kept = els.langOther.value.trim();
+      if (kept) setTargetLang(kept);
+      return;
+    }
+    els.langOther.hidden = true;
+    setTargetLang(els.langSelect.value);
+  });
+
+  els.langOther.addEventListener('input', () => {
+    // 只敲了空格等于没填，别把存档里的语言冲掉
+    const v = els.langOther.value.trim();
+    if (v) setTargetLang(v);
+  });
 }
 
 window.addEventListener('beforeunload', () => {

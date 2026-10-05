@@ -660,6 +660,58 @@ try {
   });
   check('关掉后也写进了存储', savedOff === false, `directAdapter = ${JSON.stringify(savedOff)}`);
 
+  /* ---- 目标语言：真的是个下拉框，候选不是空的 ----------------------
+     早先是 <input list> + datalist，输入框里有值时点开只剩匹配的几项，
+     看着像「下拉里就两个选项」。这里量一下真实渲染出来的选项。 */
+  const langBox = await opt.evaluate(() => {
+    const sel = document.getElementById('s-lang');
+    const other = document.getElementById('s-lang-other');
+    const opts = sel ? Array.from(sel.options) : [];
+    return {
+      tag: sel ? sel.tagName : '',
+      count: opts.length,
+      lastValue: opts.length ? opts[opts.length - 1].value : '',
+      lastText: opts.length ? (opts[opts.length - 1].textContent || '').trim() : '',
+      hasJa: opts.some((o) => o.value === '日语'),
+      otherTag: other ? other.tagName : '',
+      otherHidden: other ? other.hidden : null
+    };
+  });
+  check('目标语言是个 <select>，不是输入框', langBox.tag === 'SELECT', langBox.tag);
+  check('下拉里真的有几十个候选（不是空的、也不是只剩两项）',
+    langBox.count >= 25, `options = ${langBox.count}`);
+  check('常用语言在里面（日语）', langBox.hasJa);
+  check('末尾是「其他（自己填）」', langBox.lastValue === '__other__', langBox.lastText);
+  check('「自己填」那个框默认藏着',
+    langBox.otherTag === 'INPUT' && langBox.otherHidden === true, `hidden = ${langBox.otherHidden}`);
+
+  await opt.selectOption('#s-lang', '日语');
+  await opt.waitForTimeout(1300);
+  const langSaved = await opt.evaluate(async () => {
+    const { state } = await chrome.storage.local.get('state');
+    return state.settings.targetLang;
+  });
+  check('挑「日语」之后落盘了', langSaved === '日语', String(langSaved));
+
+  await opt.selectOption('#s-lang', '__other__');
+  await opt.waitForTimeout(150);
+  const langOther = await opt.evaluate(() => {
+    const el = document.getElementById('s-lang-other');
+    const box = el ? el.getBoundingClientRect() : null;
+    return { hidden: el ? el.hidden : null, h: box ? box.height : 0 };
+  });
+  check('选「其他」时那个输入框才露出来', langOther.hidden === false && langOther.h > 0,
+    JSON.stringify(langOther));
+
+  // 收拾干净：后面几节要看到「简体中文」，别把语言留成日语
+  await opt.selectOption('#s-lang', '简体中文');
+  await opt.waitForTimeout(1300);
+  const langBack = await opt.evaluate(async () => {
+    const { state } = await chrome.storage.local.get('state');
+    return state.settings.targetLang;
+  });
+  check('改回「简体中文」，不留脏数据给后面几节', langBack === '简体中文', String(langBack));
+
   // 回到「配置」tab，切到一条「自定义请求」配置，勾上强制直连
   await opt.evaluate(() => {
     document.querySelector('.tab[data-tab="configs"]')?.click();
