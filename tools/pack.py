@@ -1,19 +1,32 @@
 #!/usr/bin/env python3
-"""把扩展打包成能传商店 / 挂 GitHub Release 的 zip。
+"""打包：出 zip（传商店 / 挂 Release）和 crx（拖进 edge://extensions/ 直接装）。
+
+用法：
+    python tools/pack.py            # 只出 dist/request-translate-<版本>.zip
+    python tools/pack.py --crx      # zip + crx 都出
 
 只收「运行时」文件：manifest 引用的那些 + lib/ + icons/ + _locales/ + 两个说明文件。
 tools/ docs/ .git/ 这些开发用的东西一个都不进包。
 
-用法：
-    python tools/pack.py                # 输出 dist/request-translate-<版本>.zip
-    python tools/pack.py --out X.zip    # 指定输出路径
+关于 crx：
+  * 用系统的 Edge 打包（`msedge --pack-extension=…`），不依赖任何第三方工具。
+  * 签名用的私钥存在 dist/key.pem。**这个文件别删、别丢** —— 扩展 ID 是公钥的指纹，
+    换一把钥匙就等于换一个扩展：老用户那边会变成「装了第二个 RequestTranslate」，
+    设置也不会继承。
+  * crx 版的 ID 和商店版**必然不一样**（商店的私钥在微软手里）。
+    所以两条路选一条走，别同时装 —— 会冒出两个图标、两份配置。
 
 为什么不用 tar：Git Bash 自带的 tar 不认 .zip，`tar -a -cf x.zip` 产出的是换了
 扩展名的 tar（魔数 mani 而不是 PK），商店会直接拒。所以老老实实用 zipfile 写。
 """
 
 import argparse
+import base64
+import hashlib
+import io
 import json
+import shutil
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -37,6 +50,11 @@ ROOT_FILES = [
 ]
 
 DIRS = ["lib", "_locales", "icons"]
+
+EDGE_CANDIDATES = [
+    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+]
 
 
 def collect():
@@ -62,26 +80,161 @@ def collect():
     return files
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=None, help="输出路径，默认 dist/request-translate-<版本>.zip")
-    args = ap.parse_args()
-
-    version = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))["version"]
-    out = Path(args.out) if args.out else ROOT / "dist" / f"request-translate-{version}.zip"
-    out.parent.mkdir(parents=True, exist_ok=True)
-
-    files = collect()
+def make_zip(files, out):
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for name in files:
             z.write(ROOT / name, name)
-
-    size = out.stat().st_size
-    print(f"版本 {version} → {out}")
-    print(f"{len(files)} 个文件，{size:,} 字节（{size / 1024:.1f} KB）")
     if out.read_bytes()[:2] != b"PK":
         sys.exit("写出来的不是 zip（魔数不对）！")
-    print("魔数 PK ✓")
+
+
+# ------------------------------------------------------------------ crx
+
+
+def read_len(buf, i):
+    b = buf[i]
+    i += 1
+    if b < 0x80:
+        return b, i
+    n = b & 0x7F
+    return int.from_bytes(buf[i : i + n], "big"), i + n
+
+
+def tlv(buf, i):
+    """读一个 TLV，返回 (tag, value, 下一个位置)。只认简单长度。"""
+    tag = buf[i]
+    ln, j = read_len(buf, i + 1)
+    return tag, buf[j : j + ln], j + ln
+
+
+def der_len(n):
+    if n < 0x80:
+        return bytes([n])
+    b = n.to_bytes((n.bit_length() + 7) // 8, "big")
+    return bytes([0x80 | len(b)]) + b
+
+
+def der_int(v):
+    b = v.to_bytes((v.bit_length() + 7) // 8 or 1, "big")
+    if b[0] & 0x80:
+        b = b"\x00" + b
+    return b"\x02" + der_len(len(b)) + b
+
+
+def ext_id_from_pem(pem_path):
+    """从 PKCS#8 私钥反推扩展 ID —— 就是公钥 SHA256 的前 16 字节，0-15 映射成 a-p。
+
+    跟 Chromium 的算法一致；首次打包时也用它确认「这把钥匙还在，ID 没变」。
+    """
+    text = pem_path.read_text(encoding="ascii")
+    der = base64.b64decode("".join(l for l in text.splitlines() if "-----" not in l))
+
+    _, seq, _ = tlv(der, 0)  # PrivateKeyInfo
+    _, _ver, idx = tlv(seq, 0)  # version（别跳过它，否则后面全错位）
+    _, _algo, idx = tlv(seq, idx)  # AlgorithmIdentifier
+    _, octets, _ = tlv(seq, idx)  # privateKey OCTET STRING
+    _, rsa, _ = tlv(octets, 0)  # RSAPrivateKey
+
+    pos = 0
+    _, _ver, pos = tlv(rsa, pos)
+    _, n, pos = tlv(rsa, pos)
+    _, e, pos = tlv(rsa, pos)
+    n = int.from_bytes(n, "big")
+    e = int.from_bytes(e, "big")
+
+    pub = der_int(n) + der_int(e)
+    pub = b"\x30" + der_len(len(pub)) + pub
+    alg = bytes.fromhex("300d06092a864886f70d0101010500")
+    bits = b"\x03" + der_len(len(pub) + 1) + b"\x00" + pub
+    spki = b"\x30" + der_len(len(alg) + len(bits)) + alg + bits
+
+    digest = hashlib.sha256(spki).digest()[:16]
+    return "".join(chr(97 + (b >> 4)) + chr(97 + (b & 0x0F)) for b in digest)
+
+
+def crx_inner_zip(crx_path):
+    data = crx_path.read_bytes()
+    if data[:4] != b"Cr24":
+        sys.exit("打出来的不是 crx（魔数不对）！")
+    ver = int.from_bytes(data[4:8], "little")
+    if ver == 3:
+        hdr = int.from_bytes(data[8:12], "little")
+        return data[12 + hdr :]
+    pk = int.from_bytes(data[8:12], "little")
+    sig = int.from_bytes(data[12:16], "little")
+    return data[16 + pk + sig :]
+
+
+def make_crx(files, version, out_dir):
+    edge = next((p for p in EDGE_CANDIDATES if Path(p).is_file()), None)
+    if not edge:
+        sys.exit("没找到 Edge，没法打 crx（zip 已经出好了）")
+
+    staging = out_dir / "staging"
+    profile = out_dir / ".pack-profile"
+    key = out_dir / "key.pem"
+
+    shutil.rmtree(staging, ignore_errors=True)
+    for name in files:
+        dst = staging / name
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / name, dst)
+
+    cmd = [edge, f"--pack-extension={staging}", "--no-message-box", f"--user-data-dir={profile}"]
+    if key.is_file():
+        cmd.append(f"--pack-extension-key={key}")
+    subprocess.run(cmd, check=True, timeout=300)
+
+    produced = staging.with_suffix(".crx")  # Edge 按目录名命名
+    if not produced.is_file():
+        sys.exit("Edge 没吐出 crx，看看上面有没有报错")
+    out = out_dir / f"request-translate-{version}.crx"
+    produced.replace(out)
+
+    fresh_pem = staging.with_suffix(".pem")
+    if fresh_pem.is_file() and not key.is_file():
+        fresh_pem.replace(key)
+        print(f"新生成签名私钥 → {key}（**别删别丢**，换钥匙就等于换一个扩展）")
+    fresh_pem.unlink(missing_ok=True)
+
+    shutil.rmtree(staging, ignore_errors=True)
+    shutil.rmtree(profile, ignore_errors=True)
+
+    # 拆开验一遍：内嵌 zip 的 CRC 全过才算真的好
+    inner = zipfile.ZipFile(io.BytesIO(crx_inner_zip(out)))
+    bad = inner.testzip()
+    print(f"crx 版本 3，内嵌 {len(inner.infolist())} 个条目，CRC {'全通过' if bad is None else '有坏文件 ' + str(bad)}")
+    if bad is not None:
+        sys.exit("crx 内容坏了")
+
+    eid = ext_id_from_pem(key)
+    print(f"crx 版扩展 ID：{eid}")
+    print("（和商店版的 ID 不一样，这是正常的 —— 商店的私钥在微软手里。两条路选一条走。）")
+    return out
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--out", default=None, help="zip 输出路径，默认 dist/request-translate-<版本>.zip")
+    ap.add_argument("--crx", action="store_true", help="顺便打一个 crx")
+    args = ap.parse_args()
+
+    version = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))["version"]
+    # 一定要 resolve 成绝对路径 —— Edge 的 --pack-extension 不认相对路径（直接退 22）
+    out = Path(args.out) if args.out else ROOT / "dist" / f"request-translate-{version}.zip"
+    out = out.resolve()
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    files = collect()
+    make_zip(files, out)
+    size = out.stat().st_size
+    print(f"版本 {version} → {out}")
+    print(f"zip：{len(files)} 个文件，{size:,} 字节（{size / 1024:.1f} KB），魔数 PK ✓")
+
+    if args.crx:
+        crx = make_crx(files, version, out.parent)
+        csize = crx.stat().st_size
+        print(f"crx：{crx}，{csize:,} 字节（{csize / 1024:.1f} KB）")
 
 
 if __name__ == "__main__":

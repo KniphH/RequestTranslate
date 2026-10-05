@@ -13,6 +13,7 @@
     "test:ui": "node tools/e2e-ui.mjs",
     "perf": "node tools/perf-probe.mjs",
     "icons": "python tools/make-icons.py",
-    "pack": "python tools/pack.py"
+    "pack": "python tools/pack.py",
+    "pack:crx": "python tools/pack.py --crx"
   }
 }
