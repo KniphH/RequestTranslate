@@ -1,0 +1,8 @@
+{
+  "extName": {
+    "message": "RequestTranslate: request-based translator"
+  },
+  "extDesc": {
+    "message": "Translate selected text with your own HTTP request — paste a curl, swap in {{text}}, done. Any OpenAI-compatible API."
+  }
+}

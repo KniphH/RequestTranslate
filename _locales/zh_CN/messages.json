@@ -1,0 +1,8 @@
+{
+  "extName": {
+    "message": "RequestTranslate · 请求式划词翻译"
+  },
+  "extDesc": {
+    "message": "划词翻译，但配置是你自己的 HTTP 请求。直接写 curl 或原始请求报文，可保存多个命名配置。"
+  }
+}
