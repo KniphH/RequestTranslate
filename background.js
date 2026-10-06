@@ -304,7 +304,9 @@ chrome.runtime.onConnect.addListener((port) => {
 
       let out;
       try {
-        out = await runOcr({ provider, dataUrl: shot.dataUrl });
+        // vars 里带用户变量（{{apiKey}} 这类）。image / imageBase64 / imageUrlEncoded
+        // 由 fillOcrTemplate 用真截图覆盖，这里的空串不起作用
+        out = await runOcr({ provider, dataUrl: shot.dataUrl, vars: buildVars(state, '', {}) });
       } catch (err) {
         if (mySeq === ocrSeq) {
           safePost({ type: 'ocr-error', message: (err && err.message) || String(err) });

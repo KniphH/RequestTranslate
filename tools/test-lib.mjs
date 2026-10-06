@@ -31,7 +31,8 @@ const {
   DEFAULT_OCR_PROMPT,
   normalizeOcrProvider, normalizeOcrState, defaultOcrState, activeOcrProvider,
   buildOcrBody, pickOcrText, describeOcrError, ocrErrorHint,
-  normalizeMaxTokens, previewOcrRequest, runOcr, shotMenuItem
+  normalizeMaxTokens, previewOcrRequest, runOcr, shotMenuItem,
+  fillOcrTemplate, ocrProviderToTemplate
 } = await import('../lib/ocr.js');
 const {
   isImageMime, pickImageMime, sniffImageMime, bytesToBase64, toDataUrl, NO_IMAGE_MESSAGE
@@ -471,10 +472,15 @@ section('10. 老存档迁移：开关归位 / 补预设 / OCR 供应商换模型
     }
   });
   const v4sf = v4ocr.ocr.providers.find((p) => p.id === 'builtin-siliconflow');
-  eq('老存档那条硅基流动换成了 DeepSeek-OCR', v4sf.model, 'deepseek-ai/DeepSeek-OCR');
-  eq('提示词跟着换成 DeepSeek-OCR 的预设', v4sf.prompt, 'Free OCR.');
-  eq('名称也归位成新的', v4sf.name, '硅基流动');
-  eq('说明也换成新内置的那份', v4sf.note, OCR_PROVIDERS[0].note);
+  /* v7 起模板化：老字段不再被强制换成 DeepSeek-OCR，而是**无损转成等价模板** ——
+     用户手里的 PaddleOCR 原样保留成一段可编辑的请求文本，想换模型自己改。 */
+  eq('老存档那条的模型原样留着（不强制换 DeepSeek-OCR）',
+    v4sf.model, 'PaddlePaddle/PaddleOCR-VL-1.5');
+  eq('提示词也原样', v4sf.prompt, 'OCR:');
+  eq('名称没动', v4sf.name, '硅基流动 · PaddleOCR-VL');
+  check('request 模板里带着原来的模型和提示词',
+    v4sf.request.includes('PaddlePaddle/PaddleOCR-VL-1.5') && v4sf.request.includes('OCR:'),
+    v4sf.request);
   eq('用户自己填的 key 一点没动', v4sf.apiKey, 'sk-keep-me');
   eq('选中的还是那条', v4ocr.ocr.activeId, 'builtin-siliconflow');
 
@@ -528,7 +534,7 @@ section('10. 老存档迁移：开关归位 / 补预设 / OCR 供应商换模型
     }
   });
   const v4namedP = v4named.ocr.providers.find((p) => p.id === 'builtin-siliconflow');
-  eq('模型和提示词归位了', v4namedP.prompt, 'Free OCR.');
+  eq('模型和提示词原样留着（v7 起不再强制换模型，转成模板）', v4namedP.prompt, 'OCR:');
   eq('但用户自己起的名字留着', v4namedP.name, '我的硅基');
 
   /* 用户把这条删了（记在 hidden 里）→ 迁移也别把它变出来 */
@@ -759,8 +765,9 @@ section('15. 截图 OCR：供应商状态 / 请求体 / 取文字');
     d.providers.map((p) => p.id));
   eq('默认选中硅基流动那条', d.activeId, 'builtin-siliconflow');
   eq('全新的供应商没有 key', d.providers[0].apiKey, '');
-  check('内置条目都带接口地址和模型名',
-    d.providers.every((p) => p.endpoint && p.model));
+  check('内置条目都带 request 模板（模板化之后的形状）',
+    d.providers.every((p) => String(p.request).trim() !== ''),
+    d.providers.map((p) => [p.id, p.request]));
 
   /* 老存档（压根没有 ocr 字段）走的就是这条路 */
   const saved = normalizeOcrState({
@@ -773,7 +780,9 @@ section('15. 截图 OCR：供应商状态 / 请求体 / 取文字');
   const sf = saved.providers.find((p) => p.id === 'builtin-siliconflow');
   check('改过的内置条目：改了的字段保住了',
     sf.endpoint === 'https://my.proxy/v1/chat/completions' && sf.apiKey === 'sk-abc', sf);
-  eq('改过的内置条目：没动的字段还是默认', sf.model, 'deepseek-ai/DeepSeek-OCR');
+  check('老形状条目就地转成等价模板（Key 原样进模板，不能被内置默认的 {{apiKey}} 顶掉）',
+    sf.request.includes('https://my.proxy/v1/chat/completions') && sf.request.includes('sk-abc'),
+    sf.request);
   check('内置没被删的那条也补齐了', saved.providers.some((p) => p.id === 'builtin-openai-vl'));
   eq('自己新建的排在内置后面', saved.providers[saved.providers.length - 1].id, 'my-own');
   eq('activeId 指向自己新建的那条', saved.activeId, 'my-own');
@@ -835,6 +844,32 @@ section('15. 截图 OCR：供应商状态 / 请求体 / 取文字');
   eq('预览：接口地址没填时 url 是空串（设置页据此写「还没填」）',
     previewOcrRequest({ model: 'm' }, 'data:x').url, '');
 
+  /* ---- 模板路径（v7）：三个图片占位符 ---- */
+  const ft = fillOcrTemplate('{{image}}|{{imageBase64}}|{{imageUrlEncoded}}', 'data:image/png;base64,A+b/c', {});
+  eq('{{image}} 是 data URL 原文', ft.text.split('|')[0], 'data:image/png;base64,A+b/c');
+  eq('{{imageBase64}} 是裸 base64', ft.text.split('|')[1], 'A+b/c');
+  eq('{{imageUrlEncoded}} 过了 URL 编码（+ 不转会叫服务端当空格）', ft.text.split('|')[2], 'A%2Bb%2Fc');
+  check('提示词不是占位符，原样留在模板里',
+    fillOcrTemplate('{"text":"请原样输出图片里的文字"}', 'data:x').text,
+    '{"text":"请原样输出图片里的文字"}');
+
+  /* ---- 老字段 → 模板的无损搬家 ---- */
+  const legacy = { endpoint: 'https://api.x.cn/v1/chat/completions', model: 'm-1', apiKey: 'sk-k', prompt: 'OCR:', maxTokens: 2048 };
+  const tplReq = parseRequest(fillOcrTemplate(ocrProviderToTemplate(legacy), 'data:image/png;base64,AAA', {}).text);
+  eq('搬家：地址一致', tplReq.url, legacy.endpoint);
+  eq('搬家：body 和老 buildOcrBody 逐字节一致（键序 / 引号转义都不漂）',
+    tplReq.body, JSON.stringify(buildOcrBody(legacy, 'data:image/png;base64,AAA')));
+
+  /* ---- 模板路径预览：Authorization 照样打码 ---- */
+  const pvT = previewOcrRequest(
+    { request: "curl https://x/y \\\n  -H \"Authorization: Bearer {{apiKey}}\" \\\n  -d '{\"model\":\"m\"}'" },
+    'data:x',
+    { apiKey: 'sk-secret123456' }
+  );
+  check('模板路径的 Authorization 也打码了（设置页截图不至于泄 key）',
+    !pvT.headers.Authorization.includes('sk-secret123456'), pvT.headers.Authorization);
+  eq('模板路径预览的 body 就是解析出来的那份', pvT.body, '{"model":"m"}');
+
   /* ---- max_tokens：默认**不发**这个字段 ---- */
   /* 写死一个数会在上下文窄的模型上直接 400：
      DeepSeek-OCR 的 max_seq_len 只有 8192，而「提示词 + max_tokens」是加在一起算的
@@ -869,8 +904,8 @@ section('15. 截图 OCR：供应商状态 / 请求体 / 取文字');
 
   /* 撞过的几种 400，要说出「接下来改哪儿」，不是只丢一句原始报文 */
   const eMax = describeOcrError(400, '{"code":20015,"message":"max_tokens (8192) have exceeded max_seq_len (8192) limit."}');
-  check('max_seq_len 那种 400 会提示去清空最大输出长度',
-    eMax.includes('最大输出长度'), eMax);
+  check('max_seq_len 那种 400 会提示去模板里删 max_tokens',
+    eMax.includes('max_tokens'), eMax);
   check('认不出来的报错不动手，原样给用户看', ocrErrorHint('{"message":"boom"}') === '');
   check('模型名不对时提示去核对模型名',
     /模型名/.test(ocrErrorHint('{"error":{"message":"Model does not exist"}}')));
@@ -933,6 +968,51 @@ section('15. 截图 OCR：供应商状态 / 请求体 / 取文字');
     globalThis.fetch = realFetch;
   }
 
+  /* ---- 模板路径真跑一次（百度形状：token 挂 URL + form 体 + 行数组响应）---- */
+  try {
+    let sentT = null;
+    globalThis.fetch = async (url, init) => {
+      sentT = { url: String(url), init };
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ words_result: [{ words: '你好' }, { words: '世界' }], log_id: 1 })
+      };
+    };
+    const baidu = normalizeOcrProvider(
+      OCR_PROVIDERS.find((p) => p.id === 'builtin-baidu-ocr')
+    );
+    const token = baidu.request.replace('把access_token粘到这里', 'TOKEN-1');
+    const okT = await runOcr({ provider: { ...baidu, request: token }, dataUrl: 'data:image/png;base64,AAA', vars: {} });
+    eq('百度模板：token 在 URL 上', sentT.url, 'https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic?access_token=TOKEN-1');
+    eq('百度模板：form 体就是 urlencode 过的 base64', sentT.init.body, 'image=AAA');
+    eq('百度模板：Content-Type 是表单', sentT.init.headers['Content-Type'], 'application/x-www-form-urlencoded');
+    eq('行数组响应按 \\n 拼成一段', okT.text, '你好\n世界');
+    check('模板路径也带原始响应和状态', okT.status === 200 && String(okT.raw).includes('words_result'));
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+
+  /* ---- 模板路径：OpenAI 形状 + 变量里的 Key ---- */
+  try {
+    let sentV = null;
+    globalThis.fetch = async (url, init) => {
+      sentV = { url: String(url), init };
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ choices: [{ message: { content: '认出来的字' } }] })
+      };
+    };
+    const vl = normalizeOcrProvider(OCR_PROVIDERS.find((p) => p.id === 'builtin-openai-vl'));
+    const okV = await runOcr({ provider: vl, dataUrl: 'data:image/png;base64,AAA', vars: { apiKey: 'sk-vars' } });
+    eq('内置 OpenAI 模板：Key 从用户变量进来', sentV.init.headers.Authorization, 'Bearer sk-vars');
+    eq('图片占位符填进 image_url.url', sentV.init.body.includes('"url": "data:image/png;base64,AAA"'), true);
+    eq('走 choices 提取', okV.text, '认出来的字');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+
   /* ---- 右键菜单那一条 ---- */
   eq('菜单 id', OCR_MENU_ID, 'rt-ocr-clipboard');
   eq('菜单文案', OCR_MENU_TITLE, '翻译剪切板中的截图');
@@ -946,8 +1026,11 @@ section('15. 截图 OCR：供应商状态 / 请求体 / 取文字');
   check('框选菜单关掉时返回 null（background 就不建它）',
     shotMenuItem({ shotMenu: false }) === null);
   check('两条截图菜单的 id 不一样（并存才不会互相顶掉）', SHOT_MENU_ID !== OCR_MENU_ID);
-  check('内置那条默认是硅基流动的 DeepSeek-OCR',
-    OCR_PROVIDERS[0].model === 'deepseek-ai/DeepSeek-OCR', OCR_PROVIDERS[0].model);
+  check('内置那条默认还是硅基流动的 DeepSeek-OCR（在模板里）',
+    String(OCR_PROVIDERS[0].request).includes('deepseek-ai/DeepSeek-OCR'),
+    OCR_PROVIDERS[0].request);
+  check('内置多了百度那条（模板化之后 form 协议也是一段模板）',
+    OCR_PROVIDERS.some((p) => p.id === 'builtin-baidu-ocr' && p.request.includes('access_token=')));
   check('默认提示词是 DeepSeek-OCR 认的那句（不是 PaddleOCR-VL 的 OCR:）',
     DEFAULT_OCR_PROMPT === 'Free OCR.', DEFAULT_OCR_PROMPT);
   /* 提示词**不内置成预设**：各家格式互不相通（DeepSeek-OCR 认 `Free OCR.`、

@@ -108,13 +108,14 @@ Bing 网页版翻译是**两步**：先 GET `bing.com/translator`，从 630KB �
 
 ## OCR 的几个实现点
 
-- **`previewOcrRequest()` 是组装请求的唯一真相源**，`runOcr` 直接拿它的 `body` 发（单测钉着）。`.preview` 必须写 `flex: none`。
+- **OCR 供应商也是一段可编辑的请求模板**（v7，和配置栏同一套管线）：`fillOcrTemplate` 填 `{{image}}` / `{{imageBase64}}` / `{{imageUrlEncoded}}` → `parseRequest` 解析 → fetch → `extractContent(json, responsePath, '\n')`。提示词**不是占位符**，直接写在模板文本里。`request` 留空才走老字段路径兜底（`buildOcrBody`，只为异常存档留着）。
+- **`buildOcrRequest()`（内部）+ `previewOcrRequest()`（打码层）是组装的唯一真相源**，`runOcr` 发的和设置页预览的是同一份。Authorization 在展示层打码（`maskAuthHeaders`），真请求别拿打码那份发。`.preview` 必须写 `flex: none`。
+- **老字段 → 模板的无损搬家**在 `normalizeOcrProvider` 一处完成（`ocrProviderToTemplate`）：渲染后与旧 `buildOcrBody` 逐字节一致（键序 model→messages→max_tokens?→temperature；`{{image}}` 落在 shell 单引号 + JSON 双引号两层，data URL 两层转义恒等）。**老形状存档（没有 request 字段）整体优先**，不然内置模板里的 `{{apiKey}}` 会顶掉用户存在字段里的真 Key。
+- **百度 OCR 是模板化的直接收益**：token 挂 URL 查询参数、`x-www-form-urlencoded` body、`words_result` 行数组 —— 以前这种协议得写适配器，现在就是一段模板（`builtin-baidu-ocr`）。`extractContent` 的自动探测加了 `words_result`。
 - **剪切板只能在 offscreen 文档里读**：content script 读不到（拿不到焦点、没有权限），所以临时开一个 `offscreen.html`，读完就关（省内存），不是常驻。
 - **不猜 `blob.type`**：Windows 截图工具丢出来的那一项类型可能是**空串**，直接用会拼出 `data:;base64,…`，接口那边直接拒。所以按**文件头**认 MIME（PNG / JPEG / GIF / BMP / WEBP 魔数）。
 - **大图的 base64 要分块转**：几十万字节一次性 `String.fromCharCode.apply` 会把调用栈撑爆。
 - **「机制坏了」和「里面没图」分开报**：读不到剪切板（浏览器没放开权限）不会冒充「剪切板里没有图片」。
-- **模型和提示词绑在一起**：内置是硅基流动 `deepseek-ai/DeepSeek-OCR`，提示词默认 `Free OCR.`。**提示词不给预设按钮**（各家格式互不相通），也不加 `<image>` 前缀。
-- `max_tokens` 默认不发（`normalizeTokenLimit` 归零），因为上限是「提示词 + `max_tokens`」**加在一起**算的。
 
 ---
 
@@ -124,7 +125,7 @@ Bing 网页版翻译是**两步**：先 GET `bing.com/translator`，从 630KB �
 - 一条配置带两段模板：`config.request` 翻文字、`config.imageRequest` 翻图。挑哪段只认 `requestTemplateFor(config, context)`，别在别处再判一次。`{{imagePart}}` 是「一段模板两用」的备选，必须裸写、只能放最后。
 - **配置级新字段**走 `normalizeConfig` 补默认，**不用迁移**；全新存档走 `freshConfigs()`。
 - **新增一条内置配置**才要 `STORAGE_VERSION +1` + 迁移（v3→v4 补 `builtin-deepl`，插在内置 DeepSeek 后面，找不到锚点就 append，用户自己排的顺序一概不动）。
-- **改「已有内置项」的默认值同样要迁移**（v4→v5 换内置 OCR）：`{...默认, ...stored}` 救不了，只能显式归位。判据是「这些字段是否**逐字还等于老默认值**」，是才动。要归位的字段直接 `delete`，后面 normalize 补新默认；迁移里那几个老值必须是**冻死的字面量**。
+- **改「已有内置项」的默认值**要迁移的前提是「字段还单独存在」。v7 起 OCR 供应商整体模板化，老字段转换收在 `normalizeOcrProvider` 单一真相源里，v4→v5 那套「逐字比对老默认值再归位」的字段手术已随之删除 —— 老用户的 PaddleOCR 原样转成模板，不再强制换模型。
 - 新增设置项 `{...默认, ...stored}` 合并即可，不用迁移；但**改已有字段的默认值**要迁移。
 - **导出 / 导入**：`kind` / `version` / `exportedAt` 三个元字段必须写在 `...state` **之后** —— 顺序反了导进来的旧 `exportedAt` 会顶掉这次新写的（`version` 是**文件格式**版本，不是 `STORAGE_VERSION`）。`importState` 返回的 `exportedAt` 在 `options.js` 里用解构单独拎出来，别 spread 进 state。
 
@@ -159,7 +160,7 @@ Bing 网页版翻译是**两步**：先 GET `bing.com/translator`，从 630KB �
 ## 开发与验证
 
 ```bash
-npm test              # 静态检查 + 单元 + 端到端 + 真实浏览器 UI（760 项）
+npm test              # 静态检查 + 单元 + 端到端 + 真实浏览器 UI（785 项）
 npm run check         # 只跑两项静态检查
 npm run test:lib      # 解析器 / 模板 / 提取
 npm run test:engine   # 本地 mock 服务器，验证各类响应格式
@@ -171,7 +172,7 @@ npm run pack          # 出 dist/request-translate-<版本>.zip（传商店 / �
 
 `npm run perf` 只跑指定档位可以快很多：`PERF_ONLY=heavy npm run perf`（可选档位 `normal` / `fewLong` / `manyShort` / `heavy`）。
 
-拆开看是 `test-lib` 451 项、`test-engine` 75 项、`e2e-ui` 232 项，另加两项静态检查。各层补的盲区不同：
+拆开看是 `test-lib` 474 项、`test-engine` 75 项、`e2e-ui` 236 项，另加两项静态检查。各层补的盲区不同：
 
 - **`check-globals`** — 语法检查看不出 `bindConfigList()` 这种「调用了但没写」，只有运行时才炸。它把注释、字符串、正则字面量剥掉之后逐个比对调用与声明。也可以指定文件：`node tools/check-globals.mjs lib/engine.js`。新增 `lib/*.js` 记得加进目标清单（含 `offscreen.js`）。
 - **`check-dom`** — 比对 JS 里的 `$('#id')` / `querySelector('.x')` / `closest('.x')`，和「HTML 里写死的**加上** JS 里拼出来的」类名，防的是「选择器指向不存在的元素，启动时炸在 null 上」。正则里的坑：`querySelectorAll?` 那个 `?` 只管最后一个 `l`，**所有 `querySelector('.x')` 从来没被扫到**，得写 `querySelector(?:All)?`。

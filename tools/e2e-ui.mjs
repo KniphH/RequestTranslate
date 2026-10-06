@@ -1485,6 +1485,24 @@ try {
 
   console.log('\n10. 翻译截图（OCR）：真剪切板图片走一遍全链路');
 
+  /* 模板化之后 OCR 编辑器就是一个大文本框（和配置栏同款）——
+     e2e 用这一段当「用户手写」的模板，指到本地假接口。 */
+  const ocrTpl = (url) => [
+    'curl ' + url + ' \\',
+    '  -H "Content-Type: application/json" \\',
+    '  -H "Authorization: Bearer sk-e2e" \\',
+    "  -d '{",
+    '  "model": "e2e-ocr-model",',
+    '  "messages": [',
+    '    {"role": "user", "content": [',
+    '      {"type": "image_url", "image_url": {"url": "{{image}}"}},',
+    '      {"type": "text", "text": "Free OCR."}',
+    '    ]}',
+    '  ],',
+    '  "temperature": 0.01',
+    "}'"
+  ].join('\n');
+
   /* ---- 设置页的 OCR 那一栏 ---- */
   await opt.evaluate(() => document.querySelector('.tab[data-tab="ocr"]')?.click());
   await opt.waitForTimeout(250);
@@ -1492,35 +1510,23 @@ try {
   const ocrShape = await opt.evaluate(() => ({
     rows: [...document.querySelectorAll('#ocr-list .cfg-item')].map((b) => b.dataset.id),
     active: (document.querySelector('#ocr-list .cfg-item.is-active') || { dataset: {} }).dataset.id || '',
-    promptChips: document.querySelectorAll('#o-prompts').length,
-    promptHint: (document.querySelector('#o-prompt').closest('.field').querySelector('.hint') || {}).textContent || '',
-    preview: (document.querySelector('#o-preview') || {}).textContent || '',
-    endpoint: document.querySelector('#o-endpoint').value,
-    model: document.querySelector('#o-model').value,
-    hasMaxTokensField: !!document.querySelector('#o-maxtokens'),
-    maxTokens: document.querySelector('#o-maxtokens').value
+    chipCount: document.querySelectorAll('#ocr-chips .chip').length,
+    request: (document.querySelector('#o-request') || {}).value || '',
+    preview: (document.querySelector('#o-preview') || {}).textContent || ''
   }));
-  check('列表里内置的那两条都在', ocrShape.rows.length >= 2, ocrShape.rows.join(','));
+  check('列表里内置的三条都在', ocrShape.rows.length >= 3, ocrShape.rows.join(','));
   check('默认选中硅基流动那条', ocrShape.active === 'builtin-siliconflow', ocrShape.active);
   check(
-    '编辑器显示的就是选中那条的接口与模型',
-    ocrShape.endpoint === 'https://api.siliconflow.cn/v1/chat/completions' &&
-      ocrShape.model === 'deepseek-ai/DeepSeek-OCR',
-    `${ocrShape.endpoint} / ${ocrShape.model}`
+    '编辑器里就是选中那条的请求模板（地址 / 模型 / 图片占位符 / 提示词都在文本里）',
+    ocrShape.request.includes('https://api.siliconflow.cn/v1/chat/completions') &&
+      ocrShape.request.includes('deepseek-ai/DeepSeek-OCR') &&
+      ocrShape.request.includes('{{image}}') &&
+      ocrShape.request.includes('Free OCR.'),
+    ocrShape.request.slice(0, 120)
   );
-  /* 提示词不再做成「点一下就填」的预设 —— 各家格式互不相通，摆一排只对某一家有效的
-     按钮会误导。改成说明里写清「不同模型不一样」并举 DeepSeek-OCR 那套当例子。 */
-  check(
-    '不再摆提示词预设，改成说明里举例子',
-    ocrShape.promptChips === 0 &&
-      /不同模型的提示词不一样/.test(ocrShape.promptHint) &&
-      /Free OCR\./.test(ocrShape.promptHint) &&
-      /grounding/.test(ocrShape.promptHint) &&
-      /PaddleOCR/.test(ocrShape.promptHint),
-    `chips=${ocrShape.promptChips}｜${ocrShape.promptHint.slice(0, 80)}`
-  );
-  /* OCR 栏也要贯彻那条理念：**整条请求摊开给用户看**，别让他猜扩展发了什么。
-     OCR 这条路形状固定（不开放手写模板），但地址 / 模型 / 提示词都是用户填的。 */
+  check('占位符标签四个（image / imageBase64 / imageUrlEncoded / apiKey）',
+    ocrShape.chipCount === 4, String(ocrShape.chipCount));
+  /* OCR 栏也要贯彻那条理念：**整条请求摊开给用户看**，别让他猜扩展发了什么。 */
   check(
     'OCR 栏把整条请求摊开（方法 / 地址 / 请求头 / 请求体）',
     /方法：POST/.test(ocrShape.preview) &&
@@ -1537,9 +1543,9 @@ try {
     ocrShape.preview.slice(0, 120)
   );
   check(
-    '还没填 key 时预览直说还差什么（不用等他点了测试才知道）',
-    /还差：[\s\S]*API Key/.test(ocrShape.preview),
-    ocrShape.preview.split('\n').slice(-3).join(' ｜ ')
+    '还没填 Key 时预览直说「还没填」（不用等他点了测试才知道）',
+    ocrShape.preview.includes('Bearer （还没填）'),
+    ocrShape.preview.split('\n').slice(-4).join(' ｜ ')
   );
   /* 编辑器是一列 flex：预览块曾经被当成**可压缩项**，被压成几十像素高、
      再被 .preview 的 overflow:hidden 剪掉大半 —— 屏幕上只剩「方法 / 地址」两行，
@@ -1557,11 +1563,6 @@ try {
     '预览块没被 flex 压扁（框比内容矮 = 被剪掉了）',
     pvBox.box >= pvBox.need - 2,
     `框 ${pvBox.box} / 需要 ${pvBox.need}`
-  );
-  check(
-    '「最大输出长度」默认显示为空 = 不发送（写死一个数会在上下文窄的模型上 400）',
-    ocrShape.hasMaxTokensField && ocrShape.maxTokens === '',
-    JSON.stringify(ocrShape)
   );
 
   // 点另一条 → 切过去 + 落盘
@@ -1584,74 +1585,39 @@ try {
     JSON.stringify(switched)
   );
 
-  // 把选中那条指到本地假 OCR 接口
-  await opt.evaluate(async (url) => {
-    const set = (sel, v) => {
-      const el = document.querySelector(sel);
-      el.value = v;
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-    };
-    set('#o-endpoint', url);
-    set('#o-model', 'e2e-ocr-model');
-    set('#o-key', 'sk-e2e');
-    set('#o-prompt', 'Free OCR.');
+  // 把选中那条的请求模板指到本地假 OCR 接口
+  await opt.evaluate(async (tpl) => {
+    const el = document.querySelector('#o-request');
+    el.value = tpl;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
     await new Promise((r) => setTimeout(r, 1000));
-  }, `http://127.0.0.1:${port}/ocr`);
+  }, ocrTpl(`http://127.0.0.1:${port}/ocr`));
   await opt.waitForTimeout(1300);
 
   const ocrSaved = await opt.evaluate(async () => {
     const { state } = await chrome.storage.local.get('state');
     const p = state.ocr.providers.find((x) => x.id === state.ocr.activeId);
-    return { endpoint: p.endpoint, model: p.model, key: p.apiKey, prompt: p.prompt };
+    return { request: p.request, responsePath: p.responsePath };
   });
   check(
-    '改过的 OCR 供应商落盘了',
-    ocrSaved.endpoint.includes('/ocr') && ocrSaved.model === 'e2e-ocr-model' &&
-      ocrSaved.key === 'sk-e2e' && ocrSaved.prompt === 'Free OCR.',
-    JSON.stringify(ocrSaved)
+    '改过的 OCR 模板落盘了（原样一字不改）',
+    ocrSaved.request.includes(`127.0.0.1:${port}/ocr`) && ocrSaved.request.includes('e2e-ocr-model') &&
+      ocrSaved.request.includes('sk-e2e') && ocrSaved.request.includes('Free OCR.'),
+    ocrSaved.request.slice(0, 120)
   );
 
-  /* 预览是跟着输入框实时刷的 —— 改了模型/地址就该当场看到新的那条请求 */
+  /* 预览是跟着输入框实时刷的 —— 改了模板就该当场看到新的那条请求 */
   const ocrPreview2 = await opt.evaluate(() => document.querySelector('#o-preview').textContent);
   check(
-    '改了字段预览跟着变（模型名和接口地址都是刚填的那份）',
+    '改了模板预览跟着变（模型名和接口地址都是刚写的那份）',
     ocrPreview2.includes('e2e-ocr-model') && ocrPreview2.includes(`127.0.0.1:${port}/ocr`),
     ocrPreview2.slice(0, 100)
   );
   check(
     '预览里头的 key 是打码的（短的 → Bearer ***，别把整把 key 印在屏幕上）',
-    !ocrPreview2.includes('sk-e2e') && /Authorization: Bearer \*+/.test(ocrPreview2),
+    !ocrPreview2.includes('Bearer sk-e2e') && /Authorization: Bearer \*+/.test(ocrPreview2),
     (ocrPreview2.match(/Authorization: .*/) || [''])[0]
   );
-  check('填齐之后就不再提「还差」', !/还差：/.test(ocrPreview2), ocrPreview2.split('\n').slice(-2).join(' ｜ '));
-
-  /* ---- 最大输出长度：填了才发，清空就不发 ---- */
-  await opt.evaluate(async () => {
-    const el = document.querySelector('#o-maxtokens');
-    el.value = '2048';
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    await new Promise((r) => setTimeout(r, 1000));
-  });
-  const maxSaved = await opt.evaluate(async () => {
-    const { state } = await chrome.storage.local.get('state');
-    const p = state.ocr.providers.find((x) => x.id === state.ocr.activeId);
-    return { maxTokens: p.maxTokens, field: document.querySelector('#o-maxtokens').value };
-  });
-  check('填了 2048 就按数字存下来（不是字符串）',
-    maxSaved.maxTokens === 2048 && maxSaved.field === '2048', JSON.stringify(maxSaved));
-
-  await opt.evaluate(async () => {
-    const el = document.querySelector('#o-maxtokens');
-    el.value = '';
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    await new Promise((r) => setTimeout(r, 1000));
-  });
-  const maxCleared = await opt.evaluate(async () => {
-    const { state } = await chrome.storage.local.get('state');
-    const p = state.ocr.providers.find((x) => x.id === state.ocr.activeId);
-    return p.maxTokens;
-  });
-  check('清空之后存的是 0（= 不发送这个字段）', maxCleared === 0, String(maxCleared));
 
   // 新建 / 删除
   const beforeNew = await opt.evaluate(() => document.querySelectorAll('#ocr-list .cfg-item').length);
@@ -1736,12 +1702,12 @@ try {
     JSON.stringify(Object.keys(sentOcrBody)));
 
   /* ---- 撞过的那个 400：提示得说出改哪儿，不能只丢一句原始报文 ---- */
-  await opt.evaluate(async (url) => {
-    const el = document.querySelector('#o-endpoint');
-    el.value = url;
+  await opt.evaluate(async (tpl) => {
+    const el = document.querySelector('#o-request');
+    el.value = tpl;
     el.dispatchEvent(new Event('input', { bubbles: true }));
     await new Promise((r) => setTimeout(r, 900));
-  }, `http://127.0.0.1:${port}/ocr-reject`);
+  }, ocrTpl(`http://127.0.0.1:${port}/ocr-reject`));
   await opt.click('#btn-ocr-test');
   await opt
     .waitForFunction(
@@ -1756,16 +1722,16 @@ try {
   const rejectOut = await opt.evaluate(() => document.querySelector('#ocr-test-result').textContent);
   check('max_seq_len 那种 400 原样摊出来了', /HTTP 400/.test(rejectOut) && /max_seq_len/.test(rejectOut),
     rejectOut.slice(0, 160));
-  check('并且直接说了改哪儿（去清空「最大输出长度」）',
-    rejectOut.includes('最大输出长度'), rejectOut.slice(0, 200));
+  check('并且直接说了改哪儿（去模板里删 max_tokens 那行）',
+    rejectOut.includes('max_tokens'), rejectOut.slice(0, 200));
 
   // 把地址还原回能出结果的假接口，后面那节还要用
-  await opt.evaluate(async (url) => {
-    const el = document.querySelector('#o-endpoint');
-    el.value = url;
+  await opt.evaluate(async (tpl) => {
+    const el = document.querySelector('#o-request');
+    el.value = tpl;
     el.dispatchEvent(new Event('input', { bubbles: true }));
     await new Promise((r) => setTimeout(r, 900));
-  }, `http://127.0.0.1:${port}/ocr`);
+  }, ocrTpl(`http://127.0.0.1:${port}/ocr`));
 
   // 清掉选的图 → 回到「读剪切板」那条路。无头窗口的剪切板是桩实现，拿不到图，
   // 正好验一下「拿不到图」是不是给了一句人话（而不是静默什么都不做）
@@ -1869,21 +1835,22 @@ try {
           else state.configs.push(cfg);
           state.activeConfigId = 'e2e-local';
           state.settings = { ...state.settings, showOriginal: true };
+          // v7 起 OCR 供应商是模板形状 —— 老字段（endpoint/model/…）不再驱动请求，
+          // 直接把选中那条的 request 换成指向本地假接口的模板
           const p = state.ocr.providers.find((x) => x.id === state.ocr.activeId);
-          p.endpoint = u.ocr;
-          p.model = 'e2e-ocr-model';
-          p.apiKey = 'sk-e2e';
-          p.prompt = 'Free OCR.';
+          p.request = u.ocrTpl;
           await chrome.storage.local.set({ state });
 
           const back = await read();
           if (back && back.activeConfigId === 'e2e-local' &&
-              back.configs.some((c) => c.id === 'e2e-local')) return;
+              back.configs.some((c) => c.id === 'e2e-local') &&
+              String((state.ocr.providers.find((x) => x.id === state.ocr.activeId) || {}).request || '')
+                .includes('/ocr')) return;
           state = back || state;
           await new Promise((r) => setTimeout(r, 100));
         }
         throw new Error('改好的 state 一直被打回（有别的上下文在并发写 storage）');
-      }, { text: `http://127.0.0.1:${port}/text`, ocr: `http://127.0.0.1:${port}/ocr` });
+      }, { text: `http://127.0.0.1:${port}/text`, ocrTpl: ocrTpl(`http://127.0.0.1:${port}/ocr`) });
 
       await cpage.goto(`http://127.0.0.1:${port}/`);
       await cpage.bringToFront();
@@ -2133,25 +2100,22 @@ try {
          绿灯那两条断言在上一节的 ocrOut 里（那次是真翻成功了）。
          注意要把上一小节留下的 ocr.disabled 复位 —— 留着 true 就走「截图直传」
          了，压根不会去打 OCR 接口，这里也就采不到失败态。 */
-      await csw.evaluate(async (u) => {
+      await csw.evaluate(async (tpl) => {
         const { state } = await chrome.storage.local.get('state');
         const p = state.ocr.providers.find((x) => x.id === state.ocr.activeId);
-        p.endpoint = u;
-        p.model = 'e2e-ocr-model';
-        p.apiKey = 'sk-e2e';
-        p.prompt = 'Free OCR.';
+        p.request = tpl;
         state.ocr.disabled = false;
         await chrome.storage.local.set({ state });
-      }, `http://127.0.0.1:${port}/slow`);
+      }, ocrTpl(`http://127.0.0.1:${port}/slow`));
 
       const slowScaffold = await csw.evaluate(async () => {
         const { state } = await chrome.storage.local.get('state');
         const p = state.ocr.providers.find((x) => x.id === state.ocr.activeId);
-        return { endpoint: p.endpoint, disabled: state.ocr.disabled };
+        return { request: p.request, disabled: state.ocr.disabled };
       });
       check('（脚手架）OCR 接口指到了 /slow，而且没开着「禁用外置 OCR」',
-        slowScaffold.endpoint.includes('/slow') && slowScaffold.disabled === false,
-        JSON.stringify(slowScaffold));
+        slowScaffold.request.includes('/slow') && slowScaffold.disabled === false,
+        JSON.stringify(slowScaffold).slice(0, 80));
 
       const dotState = () =>
         cpage.evaluate(() => {
@@ -2195,12 +2159,12 @@ try {
          上一小节把 OCR 接口指到了 /slow（测紫灯超时用的），这里先指回 /ocr，
          别让这一节继承上一节的 endpoint。 */
       console.log('   框选截图：拖一块区域，裁出来的图走同一条 OCR 链');
-      await csw.evaluate(async (ocr) => {
+      await csw.evaluate(async (tpl) => {
         const { state } = await chrome.storage.local.get('state');
         const p = state.ocr.providers.find((x) => x.id === state.ocr.activeId);
-        p.endpoint = ocr;
+        p.request = tpl;
         await chrome.storage.local.set({ state });
-      }, `http://127.0.0.1:${port}/ocr`);
+      }, ocrTpl(`http://127.0.0.1:${port}/ocr`));
       const shotDataUrl = await cpage.evaluate(() => {
         const c = document.createElement('canvas');
         c.width = 300;

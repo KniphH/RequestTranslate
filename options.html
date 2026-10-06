@@ -200,57 +200,34 @@
         </div>
 
         <div class="field">
-          <label for="o-endpoint">接口地址</label>
-          <input id="o-endpoint" type="text" spellcheck="false" autocomplete="off"
-            placeholder="https://api.siliconflow.cn/v1/chat/completions">
+          <div class="field-head">
+            <label for="o-request">请求模板</label>
+            <div class="chips" id="ocr-chips">
+              <button type="button" class="chip" data-ins="{{image}}" title="截图的 data URL（OpenAI 兼容接口用这个）">image</button>
+              <button type="button" class="chip" data-ins="{{imageBase64}}" title="裸 base64（不带 data: 前缀），给要纯 base64 的接口">imageBase64</button>
+              <button type="button" class="chip" data-ins="{{imageUrlEncoded}}" title="base64 再过一遍 URL 编码（百度这类表单接口要这种）">imageUrlEncoded</button>
+              <button type="button" class="chip" data-ins="{{apiKey}}" title="「变量」页签里的 apiKey，和翻译配置共用">apiKey</button>
+            </div>
+          </div>
+          <textarea id="o-request" spellcheck="false" wrap="off"
+            placeholder="在这里粘贴 curl，或者写原始 HTTP 报文"></textarea>
           <p class="hint">
-            要 OpenAI 兼容的 <code>chat/completions</code>：截图会以 data URL 塞进
-            <code>messages[0].content</code> 的 <code>image_url</code> 里发过去，
-            文字从 <code>choices[0].message.content</code> 取。
+            和「配置」栏同一套规矩：curl / 原始 HTTP 报文都行，除占位符外一字不改地发出去。
+            <b>提示词不是占位符</b> —— 直接写在请求文本里。
+            <code>{{image}}</code> 是截图的 data URL；<code>{{imageBase64}}</code> 是裸 base64；
+            <code>{{imageUrlEncoded}}</code> 是 base64 再过一遍 URL 编码
+            （百度这类表单接口要这种，base64 里的 <code>+</code> 不转成 <code>%2B</code> 会被服务端当空格）。
+            写在模板里的 Key（含 <code>{{apiKey}}</code> 解出来的值）同样明文存本地，导出配置文件会被一起带走。
           </p>
         </div>
 
         <div class="field">
-          <label for="o-model">模型</label>
-          <input id="o-model" type="text" spellcheck="false" autocomplete="off"
-            placeholder="deepseek-ai/DeepSeek-OCR">
-        </div>
-
-        <div class="field">
-          <label for="o-maxtokens">最大输出长度（max_tokens）</label>
-          <input id="o-maxtokens" type="number" min="0" step="256" autocomplete="off" placeholder="留空 = 不发送">
+          <label for="o-path">响应提取路径（留空自动识别）</label>
+          <input id="o-path" type="text" spellcheck="false" autocomplete="off"
+            placeholder="choices[0].message.content">
           <p class="hint">
-            <b>建议留空</b>：不发送 <code>max_tokens</code>，由服务端按模型自己的上限来。
-            各家的上下文宽度差得很远，而这个上限是「提示词 + <code>max_tokens</code>」一起算的 ——
-            写死一个数会在上下文窄的模型上直接 400（比如 DeepSeek-OCR 的
-            <code>max_seq_len</code> 只有 8192）。
-            确实要限长再填，填的数要留出提示词的余量。
-          </p>
-        </div>
-
-        <div class="field">
-          <label for="o-key">API Key</label>
-          <input id="o-key" type="password" spellcheck="false" autocomplete="off" placeholder="sk-…">
-          <p class="hint">
-            和翻译配置里的 key 一样，明文存在浏览器本地。<b>导出配置文件时它也会被一起带走</b>，
-            分享导出文件前记得先清掉。
-          </p>
-        </div>
-
-        <div class="field">
-          <label for="o-prompt">提示词</label>
-          <input id="o-prompt" type="text" spellcheck="false" autocomplete="off" placeholder="Free OCR.">
-          <p class="hint">
-            和图片一起发过去的那句话。<b>不同模型的提示词不一样</b> —— 填它文档里给的那句，
-            或者照抄官方示例；换了模型就把这里一起换掉（这类接口对提示词大多是
-            <b>不认也不报错</b>，只表现为认出来的东西不对）。
-            <br>
-            例：DeepSeek-OCR 的提示词是 <code>Free OCR.</code>（即上面的默认值，
-            只提文字、不带版式，喂给翻译最干净）；它还有几个带
-            <code>&lt;|grounding|&gt;</code> 的写法（如
-            <code>&lt;|grounding|&gt;Convert the document to markdown.</code>），
-            那些会在结果里夹带 <code>&lt;|ref|&gt;</code> 之类的<b>位置标记</b>。
-            换成别的模型（PaddleOCR-VL 认 <code>OCR:</code>）就填它自己那一套。
+            点号 + 下标，例如百度的 <code>words_result</code>（一行一个对象，会按行拼成一段）。
+            留空时依次尝试各家常见的返回结构。
           </p>
         </div>
 
@@ -269,7 +246,7 @@
             不选文件就直接点「测试」的话，用<b>剪切板里的第一张图</b>：先系统截图（Win + Shift + S），
             回这里点一下即可；也可以先选一张本地图片再点。
             <br>
-            用的就是上面填的接口 / 模型 / Key / 提示词 —— 和外面右键时同一套，这里通了，实际用就是通的。
+            用的就是上面那段请求模板 —— 和外面右键时同一套，这里通了，实际用就是通的。
           </p>
           <div id="ocr-test-result" class="result" hidden></div>
         </div>

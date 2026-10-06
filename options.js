@@ -32,10 +32,7 @@ import {
 import {
   OCR_PROVIDERS,
   BUILTIN_OCR_IDS,
-  DEFAULT_OCR_PROMPT,
   normalizeOcrProvider,
-  normalizeOcrState,
-  normalizeMaxTokens,
   previewOcrRequest,
   runOcr
 } from './lib/ocr.js';
@@ -93,11 +90,9 @@ const els = {
   ocrEditor: $('#ocr-editor'),
   ocrEmpty: $('#ocr-empty'),
   oName: $('#o-name'),
-  oEndpoint: $('#o-endpoint'),
-  oModel: $('#o-model'),
-  oMaxTokens: $('#o-maxtokens'),
-  oKey: $('#o-key'),
-  oPrompt: $('#o-prompt'),
+  oRequest: $('#o-request'),
+  oPath: $('#o-path'),
+  ocrChips: $('#ocr-chips'),
   oPreview: $('#o-preview'),
   oNote: $('#o-note'),
   oDisabled: $('#o-disabled'),
@@ -506,7 +501,8 @@ function bindEditor() {
   els.chips.addEventListener('click', (e) => {
     const chip = e.target.closest('.chip');
     if (!chip) return;
-    insertAtCursor(focusedTemplate || els.request, chip.dataset.ins);
+    // 只认配置栏自己的两个框（OCR 那个框也走 bindTemplateBox，但别让标签插过去）
+    insertAtCursor(focusedTemplate === els.imageRequest ? els.imageRequest : els.request, chip.dataset.ins);
   });
 
   $('#btn-duplicate').addEventListener('click', () => {
@@ -824,12 +820,12 @@ function currentOcrProvider() {
   return state.ocr.providers.find((p) => p.id === editingOcrId) || null;
 }
 
-/** 列表里那行小字：接口地址 + 模型名，够认人就行 */
+/** 列表里那行小字：请求模板里第一个 URL，够认人就行 */
 function summarizeOcr(p) {
-  const host = String(p.endpoint || '').replace(/^https?:\/\//, '');
-  if (!host) return '(还没填接口地址)';
-  const short = host.length > 34 ? host.slice(0, 34) + '…' : host;
-  return p.model ? short + ' · ' + p.model : short;
+  const m = String(p.request || '').match(/https?:\/\/[^\s'"\\]+/);
+  if (!m) return '(还没填请求模板)';
+  const url = m[0].replace(/^https?:\/\//, '');
+  return url.length > 40 ? url.slice(0, 40) + '…' : url;
 }
 
 function renderOcrList() {
@@ -881,19 +877,12 @@ function renderOcrEditor() {
   els.ocrEmpty.hidden = true;
 
   els.oName.value = p.name || '';
-  els.oEndpoint.value = p.endpoint || '';
-  els.oModel.value = p.model || '';
-  // 0 = 不发送这个字段，输入框里显示成空（不然会出现一个孤零零的 0）
-  els.oMaxTokens.value = p.maxTokens > 0 ? String(p.maxTokens) : '';
-  els.oKey.value = p.apiKey || '';
-  els.oPrompt.value = p.prompt || '';
+  els.oRequest.value = p.request || '';
+  els.oPath.value = p.responsePath || '';
   els.oNote.textContent = p.note || '';
 
   // 换了一条供应商，上一次的测试结果就不是这条的了 —— 收起来，免得看岔
   els.ocrTestResult.hidden = true;
-
-  // 提示词故意**不给预设按钮**：各家格式互不相通（DeepSeek-OCR 认 `Free OCR.`、
-  // PaddleOCR-VL 认 `OCR:`），摆一排只对某一家有效的按钮反而误导。说明写在 HTML 里。
 
   renderOcrPreview();
 
@@ -905,8 +894,7 @@ function renderOcrEditor() {
 /* OCR 的「完整请求」预览                                              */
 /* ------------------------------------------------------------------ */
 /* 和配置栏那个「渲染预览」一个意思：**别让人猜扩展到底发了什么**。
-   OCR 这条路虽然不开放手写模板（形状是固定的，见 lib/ocr.js 顶部注释），
-   但接口地址 / 模型 / 提示词 / max_tokens 都是用户填的 —— 摊出来才看得清。
+   OCR 也是一段可编辑的模板了 —— 摊出来才看得清。
    图片位置塞一张**假的**小图：真截图是几十万字符的 data URL，摊出来没法读。 */
 
 const OCR_SAMPLE_IMAGE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
@@ -915,17 +903,19 @@ function renderOcrPreview() {
   const p = currentOcrProvider();
   if (!p) return;
 
-  // 组装和真发出去的是同一个函数（lib/ocr.js 的 previewOcrRequest）
-  const req = previewOcrRequest(p, OCR_SAMPLE_IMAGE);
-
-  const missing = [];
-  if (!String(p.endpoint || '').trim()) missing.push('接口地址');
-  if (!String(p.model || '').trim()) missing.push('模型');
-  if (!String(p.apiKey || '').trim()) missing.push('API Key');
+  // 组装和真发出去的是同一个函数（lib/ocr.js 的 previewOcrRequest）。
+  // vars 用真的用户变量 —— {{apiKey}} 解出来的值会在这里被打码，别慌
+  let vars;
+  try {
+    vars = buildVars(state, '', { image: OCR_SAMPLE_IMAGE });
+  } catch {
+    vars = {};
+  }
+  const req = previewOcrRequest(p, OCR_SAMPLE_IMAGE, vars);
 
   const lines = [];
   lines.push('方法：' + req.method);
-  lines.push('地址：' + (req.url || '(还没填)'));
+  lines.push('地址：' + (req.url || '(模板里没有 URL)'));
   lines.push('请求头：');
   for (const [k, v] of Object.entries(req.headers)) lines.push('  ' + k + ': ' + v);
   lines.push('');
@@ -935,23 +925,14 @@ function renderOcrPreview() {
     // 从**同一份** body 反序列化再缩进，保证屏幕上这段就是真发出去的那段
     lines.push(JSON.stringify(JSON.parse(req.body), null, 2));
   } catch {
-    lines.push(req.body);
+    lines.push(String(req.body ?? '(空)'));
   }
   lines.push('');
-  lines.push('（上面 image_url 里是一张假的示例图，真截图换成一整段 data URL；');
-  lines.push('  「测试」跑完后的「原始请求」里是那一份真的，Key 同样打码）');
-  if (!String(p.prompt || '').trim()) {
+  lines.push('（上面 {{image}} 的位置是一张假的示例图，真截图是一整段 data URL；');
+  lines.push('  「测试」跑完后的「实际请求」里是那一份真的，Key 同样打码）');
+  if ((req.warnings || []).length) {
     lines.push('');
-    lines.push('提示词留空 → 会发默认的那句：' + DEFAULT_OCR_PROMPT);
-  }
-  const mt = normalizeMaxTokens(p.maxTokens);
-  if (mt > 0) {
-    lines.push('');
-    lines.push('「最大输出长度」填了 ' + mt + ' → 这次会带上 max_tokens（注意它和提示词一起占上下文）');
-  }
-  if (missing.length) {
-    lines.push('');
-    lines.push('还差：' + missing.join(' / ') + ' —— 补齐之前发出去会失败');
+    lines.push('注意：' + req.warnings.join('；'));
   }
   els.oPreview.textContent = lines.join('\n');
 }
@@ -961,11 +942,8 @@ function collectOcrEditor() {
   const p = currentOcrProvider();
   if (!p) return null;
   p.name = els.oName.value.trim() || '未命名供应商';
-  p.endpoint = els.oEndpoint.value.trim();
-  p.model = els.oModel.value.trim();
-  p.maxTokens = normalizeMaxTokens(els.oMaxTokens.value);
-  p.apiKey = els.oKey.value;
-  p.prompt = els.oPrompt.value;
+  p.request = els.oRequest.value;
+  p.responsePath = els.oPath.value.trim();
   return p;
 }
 
@@ -980,28 +958,31 @@ function selectOcr(id) {
 
 function bindOcr() {
   const fields = [
-    [els.oName, 'name', false],
-    [els.oEndpoint, 'endpoint', false],
-    [els.oModel, 'model', false],
-    [els.oMaxTokens, 'maxTokens', false],
-    [els.oKey, 'apiKey', false],
-    [els.oPrompt, 'prompt', false]
+    [els.oName, 'name'],
+    [els.oRequest, 'request'],
+    [els.oPath, 'responsePath']
   ];
 
-  for (const [el, key, isCheck] of fields) {
+  for (const [el, key] of fields) {
     el.addEventListener('input', () => {
       const p = currentOcrProvider();
       if (!p) return;
-      if (isCheck) p[key] = el.checked;
-      else if (key === 'maxTokens') p[key] = normalizeMaxTokens(el.value); // 数字字段，空 = 0 = 不发送
-      else p[key] = el.value;
-      // 名称 / 地址 / 模型都会出现在列表那行小字里，改了就顺手刷一下
-      if (key === 'name' || key === 'endpoint' || key === 'model') renderOcrList();
-      // 除了名称，其它几个都会进请求体（地址 / 模型 / key / 提示词 / max_tokens）
+      p[key] = el.value;
+      // 名称出现在列表那行；模板里的第一个 URL 也出现在那行
+      if (key === 'name' || key === 'request') renderOcrList();
       if (key !== 'name') renderOcrPreview();
       scheduleSave();
     });
   }
+
+  // 请求模板框也吃 Tab 缩进；那排标签永远插进 OCR 自己的框
+  //（不进 focusedTemplate 那套 —— 那是配置栏两个框共用的，别串台）
+  bindTemplateBox(els.oRequest);
+  els.ocrChips.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    insertAtCursor(els.oRequest, chip.dataset.ins);
+  });
 
   els.oDisabled.addEventListener('input', () => {
     state.ocr.disabled = els.oDisabled.checked;
@@ -1013,14 +994,28 @@ function bindOcr() {
     collectOcrEditor();
     const p = normalizeOcrProvider({
       name: '新供应商',
-      prompt: DEFAULT_OCR_PROMPT,
-      note: '自己填接口地址和模型名 —— 任何按 OpenAI 格式收图的接口都行。'
+      note: '照着内置那条改：换地址、模型名、提示词，占位符别动。',
+      request: [
+        'curl https://api.siliconflow.cn/v1/chat/completions \\',
+        '  -H "Content-Type: application/json" \\',
+        '  -H "Authorization: Bearer {{apiKey}}" \\',
+        "  -d '{",
+        '  "model": "deepseek-ai/DeepSeek-OCR",',
+        '  "messages": [',
+        '    {"role": "user", "content": [',
+        '      {"type": "image_url", "image_url": {"url": "{{image}}"}},',
+        '      {"type": "text", "text": "Free OCR."}',
+        '    ]}',
+        '  ],',
+        '  "temperature": 0.01',
+        "}'"
+      ].join('\n')
     });
     state.ocr.providers.push(p);
     editingOcrId = state.ocr.activeId = p.id;
     renderOcrList();
     renderOcrEditor();
-    els.oEndpoint.focus();
+    els.oRequest.focus();
     scheduleSave();
   });
 
@@ -1150,7 +1145,7 @@ async function runOcrTest() {
   let r = null;
   let err = null;
   try {
-    r = await runOcr({ provider: p, dataUrl: shot.dataUrl });
+    r = await runOcr({ provider: p, dataUrl: shot.dataUrl, vars: buildVars(state, '', { image: shot.dataUrl }) });
   } catch (e) {
     err = e;
   }
