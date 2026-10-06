@@ -161,29 +161,6 @@
       </aside>
 
       <div class="editor" id="ocr-editor">
-        <div class="setting">
-          <label class="switch">
-            <input type="checkbox" id="o-disabled">
-            <span>禁用外置 OCR（仅模型具有多模态时使用）</span>
-          </label>
-          <p class="hint">
-            勾上之后不再走下面的 OCR 供应商：截图会被<b>原样塞进「配置」里当前那条请求</b>，
-            由多模态模型自己看图 + 翻译，省一次来回。
-            <br>
-            <b>要写两段模板：</b>去「配置」那一栏，把
-            <b>「图片请求模板」</b>填成多模态的样子（普通那段继续翻文字），
-            截图直传时自动用图片那段 —— 比如：
-            <code>{"role":"user","content":[{"type":"image_url","image_url":{"url":"{{image}}"}},{"type":"text","text":"把图里的文字翻成{{target}}，只输出译文"}]}</code>
-            <br>
-            <b>也可以只写一段</b>解决：把 <code>content</code> 写成数组、末尾挂一个
-            <code>{{imagePart}}</code>（没图时它是空串，所以同一段模板照样能翻文字）。
-            详见「配置」栏里的说明。
-          </p>
-          <p class="hint wide" id="o-disabled-note" hidden>
-            现在是直传模式 —— 下面这条供应商不会被动用，取消勾选就回来。
-          </p>
-        </div>
-
         <p class="hint wide">
           用系统截图（Win + Shift + S 之类）截完图，图片就在剪切板里了；在任意网页上
           <b>右键 →「翻译剪切板中的截图」</b>，这里<b>选中</b>的那条供应商会先把图认成文字，
@@ -252,6 +229,29 @@
         </div>
 
         <p class="hint wide" id="o-note"></p>
+
+        <div class="setting">
+          <label class="switch">
+            <input type="checkbox" id="o-disabled">
+            <span>禁用外置 OCR（仅模型具有多模态时使用）</span>
+          </label>
+          <p class="hint">
+            勾上之后不再走上面的 OCR 供应商：截图会被<b>原样塞进「配置」里当前那条请求</b>，
+            由多模态模型自己看图 + 翻译，省一次来回。
+            <br>
+            <b>要写两段模板：</b>去「配置」那一栏，把
+            <b>「图片请求模板」</b>填成多模态的样子（普通那段继续翻文字），
+            截图直传时自动用图片那段 —— 比如：
+            <code>{"role":"user","content":[{"type":"image_url","image_url":{"url":"{{image}}"}},{"type":"text","text":"把图里的文字翻成{{target}}，只输出译文"}]}</code>
+            <br>
+            <b>也可以只写一段</b>解决：把 <code>content</code> 写成数组、末尾挂一个
+            <code>{{imagePart}}</code>（没图时它是空串，所以同一段模板照样能翻文字）。
+            详见「配置」栏里的说明。
+          </p>
+          <p class="hint wide" id="o-disabled-note" hidden>
+            现在是直传模式 —— 上面的供应商不会被动用，取消勾选就回来。
+          </p>
+        </div>
 
         <div class="editor-foot">
           <span class="spacer"></span>

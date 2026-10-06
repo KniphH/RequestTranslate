@@ -336,7 +336,8 @@ input:focus, select:focus, textarea:focus {
 select { cursor: pointer; }
 select option { background: var(--panel-2); }
 
-#f-request {
+#f-request,
+#o-request {
   font-family: var(--mono);
   font-size: 12.5px;
   line-height: 1.65;
@@ -347,7 +348,7 @@ select option { background: var(--panel-2); }
   tab-size: 2;
 }
 
-#f-path { font-family: var(--mono); font-size: 12.5px; }
+#f-path, #o-path { font-family: var(--mono); font-size: 12.5px; }
 
 .hint {
   margin: 0;
@@ -547,7 +548,7 @@ button.danger:disabled { opacity: .35; cursor: default; background: transparent;
 
 /* 「禁用外置 OCR」勾上时，下面那些用不上的字段压暗（说明文字不动，
    它正好在解释现在是什么状态） */
-#ocr-editor.is-off > *:not(.setting:first-child):not(.hint) { opacity: .4; }
+#ocr-editor.is-off > *:not(.setting):not(.hint) { opacity: .4; }
 
 button.block { width: 100%; }
 
