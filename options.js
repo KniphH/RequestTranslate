@@ -572,6 +572,31 @@ function bindTemplateBox(el) {
 
 let previewTimer = null;
 
+/**
+ * 两栏（配置 / OCR）预览共用的骨架 —— 功能一样，长相就必须一样：
+ *   方法 / 地址 / 请求头（Key 已打码）/ 请求体（原文，所见即所发）/ 备注
+ * body 展示**原文**（不反序列化缩进）：用户写的转义（\n、\"）原样可见，
+ * 而且这就是真发出去的字节，比美化过的 JSON 更诚实。
+ */
+function formatPreview(req, notes = []) {
+  const lines = [];
+  lines.push('方法：' + (req.method || 'GET'));
+  lines.push('地址：' + (req.url || '(没有 URL)'));
+  lines.push('');
+  lines.push('请求头：');
+  for (const [k, v] of Object.entries(req.headers || {})) lines.push('  ' + k + ': ' + v);
+  lines.push('');
+  lines.push('—— 实际会发出的请求体 ——');
+  lines.push('');
+  lines.push(req.body == null || req.body === '' ? '(这条请求没有请求体)' : String(req.body));
+  if (notes.length) {
+    lines.push('');
+    lines.push('—— 备注 ——');
+    for (const n of notes) lines.push('· ' + n);
+  }
+  return lines.join('\n');
+}
+
 function updatePreview() {
   clearTimeout(previewTimer);
   previewTimer = setTimeout(() => {
@@ -598,37 +623,18 @@ function updatePreview() {
     }
 
     const info = previewRequest(text, vars, els.path.value.trim());
-
-    const lines = [];
-    lines.push('写法：' + (info.request.style === 'raw' ? '原始 HTTP 报文' : 'curl'));
-    lines.push('方法：' + info.request.method);
-    lines.push('地址：' + info.request.url);
-    lines.push('');
-
+    const notes = [`写法：${info.request.style === 'raw' ? '原始 HTTP 报文' : 'curl'}（自动识别）`];
     if (info.missing.length) {
-      lines.push('未定义的变量：' + info.missing.map((m) => '{{' + m + '}}').join(' '));
-      lines.push('');
+      notes.push('未定义的变量（按空串替换）：' + info.missing.map((m) => '{{' + m + '}}').join(' '));
     }
-    if (info.problems.length) {
-      lines.push('问题：' + info.problems.join('；'));
-      lines.push('');
-    }
-    if (info.notes.length) {
-      lines.push('修正：' + info.notes.join('；'));
-      lines.push('');
-    }
+    for (const p of info.problems) notes.push('问题：' + p);
+    for (const n of info.notes) notes.push('修正：' + n);
 
-    lines.push('—— 实际会发出的内容 ——');
-    lines.push('');
-    lines.push(info.rendered);
+    let out = formatPreview(info.request, notes);
 
-    // 图片请求模板顺手也渲一遍。{{image}} 给一张假图，不然这里看着跟空的一样。
+    // 图片请求模板也摊一遍。{{image}} 给一张假图，不然这里看着跟空的一样。
     const imgTpl = els.imageRequest.value.trim();
     if (imgTpl) {
-      lines.push('');
-      lines.push('══════ 图片请求模板（截图直传那一次用它）══════');
-      lines.push('（下面 {{image}} 是一张假的示例图，实际是一整段 data URL）');
-      lines.push('');
       let ivars;
       try {
         ivars = buildVars(state, '', {
@@ -640,21 +646,17 @@ function updatePreview() {
         ivars = { image: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==' };
       }
       const iinfo = previewRequest(imgTpl, ivars, els.path.value.trim());
-      lines.push('写法：' + (iinfo.request.style === 'raw' ? '原始 HTTP 报文' : 'curl'));
-      lines.push('方法：' + iinfo.request.method);
-      lines.push('地址：' + iinfo.request.url);
+      const inotes = [];
       if (iinfo.missing.length) {
-        lines.push('未定义的变量：' + iinfo.missing.map((m) => '{{' + m + '}}').join(' '));
+        inotes.push('未定义的变量（按空串替换）：' + iinfo.missing.map((m) => '{{' + m + '}}').join(' '));
       }
-      if (iinfo.problems.length) lines.push('问题：' + iinfo.problems.join('；'));
-      if (iinfo.notes.length) lines.push('修正：' + iinfo.notes.join('；'));
-      lines.push('');
-      lines.push('—— 实际会发出的内容 ——');
-      lines.push('');
-      lines.push(iinfo.rendered);
+      for (const p of iinfo.problems) inotes.push('问题：' + p);
+      for (const n of iinfo.notes) inotes.push('修正：' + n);
+      out += '\n\n══════ 图片请求模板（截图直传那一次用它）══════\n\n' +
+        formatPreview(iinfo.request, inotes);
     }
 
-    els.preview.textContent = lines.join('\n');
+    els.preview.textContent = out;
   }, 180);
 }
 
@@ -917,28 +919,13 @@ function renderOcrPreview() {
   }
   const req = previewOcrRequest(p, OCR_SAMPLE_IMAGE, vars);
 
-  const lines = [];
-  lines.push('方法：' + req.method);
-  lines.push('地址：' + (req.url || '(模板里没有 URL)'));
-  lines.push('请求头：');
-  for (const [k, v] of Object.entries(req.headers)) lines.push('  ' + k + ': ' + v);
-  lines.push('');
-  lines.push('—— 实际会发出的请求体 ——');
-  lines.push('');
-  try {
-    // 从**同一份** body 反序列化再缩进，保证屏幕上这段就是真发出去的那段
-    lines.push(JSON.stringify(JSON.parse(req.body), null, 2));
-  } catch {
-    lines.push(String(req.body ?? '(空)'));
+  // 骨架和配置栏那份共用（formatPreview）；备注放模板特有的提醒
+  const notes = [...(req.warnings || [])];
+  if (req.style) notes.unshift(`写法：${req.style === 'raw' ? '原始 HTTP 报文' : 'curl'}（自动识别）`);
+  if (/{{image(Base64|UrlEncoded)?}}/.test(String(p.request || ''))) {
+    notes.push('上面 {{image}} 的位置是一张假的示例图，真截图是一整段 data URL；「测试」跑完后的「实际请求」里是那一份真的');
   }
-  lines.push('');
-  lines.push('（上面 {{image}} 的位置是一张假的示例图，真截图是一整段 data URL；');
-  lines.push('  「测试」跑完后的「实际请求」里是那一份真的，Key 同样打码）');
-  if ((req.warnings || []).length) {
-    lines.push('');
-    lines.push('注意：' + req.warnings.join('；'));
-  }
-  els.oPreview.textContent = lines.join('\n');
+  els.oPreview.textContent = formatPreview(req, notes);
 }
 
 /** 把编辑框里的东西写回当前那条供应商。切走之前必须调一次 */

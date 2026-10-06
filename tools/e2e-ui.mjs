@@ -1549,10 +1549,12 @@ try {
   );
   /* 编辑器是一列 flex：预览块曾经被当成**可压缩项**，被压成几十像素高、
      再被 .preview 的 overflow:hidden 剪掉大半 —— 屏幕上只剩「方法 / 地址」两行，
-     看着像没渲染出来。量一下框高必须装得下 summary + pre。 */
+     看着像没渲染出来。量一下框高必须装得下 summary + pre。
+     （预览现在默认收起，量之前先展开。） */
   const pvBox = await opt.evaluate(() => {
     const pre = document.querySelector('#o-preview');
     const d = pre.closest('details');
+    d.open = true;
     const sum = d.querySelector('summary');
     return {
       box: Math.round(d.getBoundingClientRect().height),

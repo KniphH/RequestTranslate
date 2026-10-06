@@ -290,6 +290,9 @@ section('7. 提示词渲染后的实际样子');
   check('提示词里出现了三引号', content.includes('"""'), content);
   check('提示词里出现了换行', content.includes('\n'), content);
   check('原文被放进三引号之间', content.includes('"""\nGood morning, world!\n"""'), content);
+  check('预览的请求头是打码的（设置页会把 headers 摊开显示）',
+    !String(info.request.headers.Authorization).includes('sk-test'),
+    info.request.headers.Authorization);
   console.log('\n--- 模型实际收到的 content ---');
   console.log(content);
   console.log('------------------------------');
