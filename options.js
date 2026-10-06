@@ -89,6 +89,8 @@ const els = {
   ocrList: $('#ocr-list'),
   ocrEditor: $('#ocr-editor'),
   ocrEmpty: $('#ocr-empty'),
+  ocrHint: $('#o-hint'),
+  btnOcrHintHide: $('#o-hint-hide'),
   oName: $('#o-name'),
   oRequest: $('#o-request'),
   oPath: $('#o-path'),
@@ -856,6 +858,8 @@ function renderOcrDisabled() {
   const off = !!state.ocr.disabled;
   els.oDisabled.checked = off;
   els.oDisabledNote.hidden = !off;
+  // 顶栏那句说明点过「不再显示」就收起来（settings.ocrHintHidden，全局一次性）
+  els.ocrHint.hidden = !!state.settings.ocrHintHidden;
   // 关掉之后下面那些供应商字段都用不上了，压暗一点省得看岔
   els.ocrEditor.classList.toggle('is-off', off);
   // 直传模式下这条供应商根本不会被动用，测试也就没意义了
@@ -988,6 +992,13 @@ function bindOcr() {
     state.ocr.disabled = els.oDisabled.checked;
     renderOcrDisabled();
     scheduleSave();
+  });
+
+  // 「不再显示」：记进 settings，永久收起那句说明
+  els.btnOcrHintHide.addEventListener('click', () => {
+    state.settings.ocrHintHidden = true;
+    els.ocrHint.hidden = true;
+    persist();
   });
 
   els.btnOcrNew.addEventListener('click', () => {

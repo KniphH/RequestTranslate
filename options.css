@@ -358,6 +358,19 @@ select option { background: var(--panel-2); }
 }
 .hint.wide { font-size: 12.5px; margin-bottom: 18px; }
 
+/* hint 里那句「不再显示」：看着像个行内链接，不是正经按钮 */
+.hint-hide {
+  background: none;
+  border: none;
+  padding: 0 0 0 6px;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--fg-faint);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.hint-hide:hover { color: var(--fg-dim); }
+
 .chips { display: flex; gap: 5px; flex-wrap: wrap; }
 
 .chip {

@@ -161,12 +161,10 @@
       </aside>
 
       <div class="editor" id="ocr-editor">
-        <p class="hint wide">
-          用系统截图（Win + Shift + S 之类）截完图，图片就在剪切板里了；在任意网页上
-          <b>右键 →「翻译剪切板中的截图」</b>，这里<b>选中</b>的那条供应商会先把图认成文字，
-          再按「配置」里当前那条翻译出来。剪切板里第一项不是图片时会直接提示你。
-          <br>
-          外面（右键菜单）不给你选供应商 —— 用的是哪条只看这里，想换就得先切过来。
+        <p class="hint wide" id="o-hint">
+          当<b>「翻译剪切板中的截图」</b>或<b>「框选截图翻译」</b>时，这里<b>选中</b>的供应商把图转文字，
+          再通过「配置」翻译。
+          <button type="button" id="o-hint-hide" class="hint-hide">不再显示</button>
         </p>
 
         <div class="editor-head">
