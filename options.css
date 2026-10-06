@@ -614,7 +614,30 @@ button.block { width: 100%; }
 .setting select { max-width: 330px; }
 
 .switch { display: flex; align-items: center; gap: 9px; cursor: pointer; font-size: 13px; }
-.switch input { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+/* 复选框自绘：原生控件由主题层按设备像素对齐绘制，各行行高带小数、落点相位不同，
+   会画出 15/16/17px 三种观感（实测缩放 400% 相位变整才一致）。
+   appearance:none 让全部开关走同一条 CSS 绘制路径，任何缩放都一样大；
+   <input> 进不了伪元素，勾用 SVG 底图画。 */
+.switch input {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--input-bg);
+  cursor: pointer;
+  transition: border-color .15s;
+}
+.switch input:hover { border-color: var(--accent); }
+.switch input:checked {
+  border-color: var(--accent);
+  background: var(--accent)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5 7 12l5.5-7' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    center / 12px 12px no-repeat;
+}
 
 /* 一个开关 + 一段说明，竖着排 */
 .stack { display: flex; flex-direction: column; gap: 7px; min-width: 0; flex: 1; }
