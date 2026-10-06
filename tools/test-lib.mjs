@@ -27,10 +27,11 @@ const { previewRequest } = await import('../lib/engine.js');
 const { toBingLang, hasAdapter } = await import('../lib/adapters.js');
 const {
   OCR_MENU_ID, OCR_MENU_TITLE, OCR_PROVIDERS, BUILTIN_OCR_IDS,
+  SHOT_MENU_ID, SHOT_MENU_TITLE,
   DEFAULT_OCR_PROMPT,
   normalizeOcrProvider, normalizeOcrState, defaultOcrState, activeOcrProvider,
   buildOcrBody, pickOcrText, describeOcrError, ocrErrorHint,
-  normalizeMaxTokens, previewOcrRequest, runOcr
+  normalizeMaxTokens, previewOcrRequest, runOcr, shotMenuItem
 } = await import('../lib/ocr.js');
 const {
   isImageMime, pickImageMime, sniffImageMime, bytesToBase64, toDataUrl, NO_IMAGE_MESSAGE
@@ -936,6 +937,15 @@ section('15. 截图 OCR：供应商状态 / 请求体 / 取文字');
   eq('菜单 id', OCR_MENU_ID, 'rt-ocr-clipboard');
   eq('菜单文案', OCR_MENU_TITLE, '翻译剪切板中的截图');
   check('右键菜单开关默认开', DEFAULT_SETTINGS.ocrMenu === true);
+  /* ---- 右键菜单「框选截图翻译」那条：和剪切板那条并存，各自独立开关 ---- */
+  eq('框选菜单 id', SHOT_MENU_ID, 'rt-shot-translate');
+  eq('框选菜单文案', SHOT_MENU_TITLE, '框选截图翻译');
+  check('框选菜单开关默认开', DEFAULT_SETTINGS.shotMenu === true);
+  check('框选菜单开着时给一条能直接 create 的描述',
+    (() => { const it = shotMenuItem(DEFAULT_SETTINGS); return !!it && it.id === SHOT_MENU_ID && it.title === SHOT_MENU_TITLE; })());
+  check('框选菜单关掉时返回 null（background 就不建它）',
+    shotMenuItem({ shotMenu: false }) === null);
+  check('两条截图菜单的 id 不一样（并存才不会互相顶掉）', SHOT_MENU_ID !== OCR_MENU_ID);
   check('内置那条默认是硅基流动的 DeepSeek-OCR',
     OCR_PROVIDERS[0].model === 'deepseek-ai/DeepSeek-OCR', OCR_PROVIDERS[0].model);
   check('默认提示词是 DeepSeek-OCR 认的那句（不是 PaddleOCR-VL 的 OCR:）',

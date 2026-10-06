@@ -2188,6 +2188,107 @@ try {
       check('失败之后灯变红（不是把灯灭掉）',
         /(^|\s)err(\s|$)/.test(dotFail.cls), `${dotFail.cls}｜${dotFail.msg}｜${lastPath}`);
       check('红灯悬停给的是「翻译失败」', dotFail.title === '翻译失败', dotFail.title);
+
+      /* ---- 「框选截图翻译」：菜单点下去后 background 截好图发来，页面负责框选 ----
+         captureVisibleTab 那一步在 e2e 里绕开（要真实手势），直接把 content
+         会收到的那条消息塞进去：dataUrl 现画一张，拖框后送同一条 OCR 链。
+         上一小节把 OCR 接口指到了 /slow（测紫灯超时用的），这里先指回 /ocr，
+         别让这一节继承上一节的 endpoint。 */
+      console.log('   框选截图：拖一块区域，裁出来的图走同一条 OCR 链');
+      await csw.evaluate(async (ocr) => {
+        const { state } = await chrome.storage.local.get('state');
+        const p = state.ocr.providers.find((x) => x.id === state.ocr.activeId);
+        p.endpoint = ocr;
+        await chrome.storage.local.set({ state });
+      }, `http://127.0.0.1:${port}/ocr`);
+      const shotDataUrl = await cpage.evaluate(() => {
+        const c = document.createElement('canvas');
+        c.width = 300;
+        c.height = 150;
+        c.getContext('2d').fillStyle = '#ffffff';
+        c.getContext('2d').fillRect(0, 0, 300, 150);
+        return c.toDataURL('image/png');
+      });
+      const shotHitBefore = ocrHits;
+      const shotMsg = (dataUrl) =>
+        csw.evaluate(async (d) => {
+          const tabs = await chrome.tabs.query({});
+          const t = tabs.find((x) => x.url && x.url.includes('127.0.0.1'));
+          if (t) await chrome.tabs.sendMessage(t.id, { type: 'rt-shot-translate', dataUrl: d });
+        }, dataUrl);
+      const shotOverlay = () => cpage.evaluate(() => !!document.querySelector('[data-rt-shot]'));
+      const shotDrag = (pts) =>
+        cpage.evaluate((p) => {
+          const h = document.querySelector('[data-rt-shot]');
+          if (!h) return '遮罩不在';
+          const img = h.shadowRoot.querySelector('.img');
+          if (!img.complete || !img.naturalWidth) return '底图没加载出来';
+          const fire = (type, x, y) =>
+            img.dispatchEvent(new PointerEvent(type, {
+              bubbles: true, composed: true, clientX: x, clientY: y, button: 0
+            }));
+          fire('pointerdown', p[0][0], p[0][1]);
+          for (let i = 1; i < p.length - 1; i++) fire('pointermove', p[i][0], p[i][1]);
+          fire('pointerup', p[p.length - 1][0], p[p.length - 1][1]);
+          return null;
+        }, pts);
+
+      await shotMsg(shotDataUrl);
+      await cpage.waitForFunction(() => !!document.querySelector('[data-rt-shot]'), null, { timeout: 8000 })
+        .catch(() => {});
+      check('框选那条消息送到了：遮罩盖上来等着框选', await shotOverlay(), String(await shotOverlay()));
+
+      const dragErr = await shotDrag([[60, 40], [120, 80], [180, 120]]);
+      check('（脚手架）拖框事件发进去了', dragErr === null, String(dragErr));
+
+      // 遮罩收掉 + 假 OCR 接口挨了一发 + 面板出译文 —— 按结果等，别按元素在不在等
+      // （面板从上一节就开着，.rt-out 一直都在，等元素等于不等）
+      await cpage.waitForFunction(() => !document.querySelector('[data-rt-shot]'), null, { timeout: 8000 })
+        .catch(() => {});
+      await cpage.waitForFunction((needle) => {
+        const root = document.getElementById('request-translate-host')?.shadowRoot;
+        return !!root && root.querySelector('.rt-out')?.textContent.includes(needle);
+      }, '本地假译文', { timeout: 30000 }).catch(() => {});
+      const shotOut = await cpage.evaluate(() => {
+        const root = document.getElementById('request-translate-host')?.shadowRoot;
+        return {
+          overlay: !!document.querySelector('[data-rt-shot]'),
+          out: root?.querySelector('.rt-out')?.textContent || '',
+          src: root?.querySelector('.rt-src')?.textContent || '',
+          msg: root?.querySelector('.rt-msg')?.textContent || '',
+          dot: root?.querySelector('.rt-dot')?.className || ''
+        };
+      });
+      check('框完遮罩收掉了（不会一直糊在页面上）', shotOut.overlay === false, String(shotOut.overlay));
+      check('框选裁出的图送去了 OCR（假接口挨了一发）', ocrHits === shotHitBefore + 1,
+        `${ocrHits}（之前 ${shotHitBefore}）｜${lastPath}`);
+      check('识别结果进了原文区并照常翻了出来',
+        shotOut.src.includes("Pixeldrain's") && shotOut.out.includes('本地假译文'),
+        `${shotOut.msg}｜${shotOut.src.slice(0, 40)}`);
+      check('状态栏标了「截图 OCR」（框选和剪切板同一条链）', shotOut.msg.includes('截图 OCR'), shotOut.msg);
+
+      /* Esc 取消：遮罩收掉、不发请求 */
+      await shotMsg(shotDataUrl);
+      await cpage.waitForFunction(() => !!document.querySelector('[data-rt-shot]'), null, { timeout: 8000 })
+        .catch(() => {});
+      await cpage.evaluate(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      });
+      const escClosed = await shotOverlay();
+      check('Esc 收掉遮罩、不发请求', escClosed === false && ocrHits === shotHitBefore + 1,
+        `overlay=${escClosed}｜ocrHits=${ocrHits}`);
+
+      /* 空点（没拖动）当误触：遮罩收掉、不发请求 */
+      await shotMsg(shotDataUrl);
+      await cpage.waitForFunction(() => !!document.querySelector('[data-rt-shot]'), null, { timeout: 8000 })
+        .catch(() => {});
+      const tapErr = await shotDrag([[100, 100], [101, 101]]);
+      await cpage.waitForFunction(() => !document.querySelector('[data-rt-shot]'), null, { timeout: 8000 })
+        .catch(() => {});
+      const tapClosed = await shotOverlay();
+      check('空点（没怎么拖）当误触，整个取消、不发请求',
+        tapErr === null && tapClosed === false && ocrHits === shotHitBefore + 1,
+        `err=${tapErr}｜overlay=${tapClosed}｜ocrHits=${ocrHits}`);
     } catch (err) {
       fail += 1;
       console.log(`  FAIL 有头那段跑挂了：${err && err.message ? err.message : String(err)}`);

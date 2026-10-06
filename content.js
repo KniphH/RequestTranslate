@@ -1270,14 +1270,13 @@ ${TRIGGER_CSS}
   }
 
   /**
-   * 截图翻译的入口（右键菜单里那条「翻译剪切板中的截图」）。
-   *
-   * 面板先开出来、状态先写上 —— 读剪切板加 OCR 要好几秒，中间什么都不显示
-   * 的话用户会以为没反应，然后再点一次。
-   * 真正的活在 background 那边：content script 读不到剪切板（CORS 也好、
-   * 权限也好，都不在它手里），识别完再把文字送回来。
+   * 「等一张图来翻译」的公共开场：面板先开出来、状态先写上 —— 读剪切板加
+   * OCR 要好几秒，中间什么都不显示的话用户会以为没反应，然后再点一次。
+   * 真正的活在 background 那边（content script 读不到剪切板），识别完再把
+   * 文字送回来。框选截图和剪切板截图两条路共用这一段。
+   * 返回端口（可能为 null —— 扩展刚更新过，页面还是旧脚本）。
    */
-  function startOcr(anchor) {
+  function beginOcrPanel(anchor, statusText) {
     mount();
     showPanel(anchor);
     hideTrigger();
@@ -1294,18 +1293,192 @@ ${TRIGGER_CSS}
     outBox.dataset.placeholder = '等待识别…';
     srcBox.textContent = '';
     resetDiag();
-    setStatus('正在读取剪切板…');
+    setStatus(statusText);
     setDot('on');
 
-    const p = ensurePort();
+    return ensurePort();
+  }
+
+  /** 端口连不上（扩展更新过、页面还是旧脚本）时的统一收场 */
+  function portGone() {
+    busy = false;
+    retryBtn.disabled = false;
+    setStatus('扩展已更新，请刷新页面后重试', 'err');
+    setDot('err');
+  }
+
+  /** 剪切板那条路的入口：图从剪切板来，background 负责读 */
+  function startOcr(anchor) {
+    const p = beginOcrPanel(anchor, '正在读取剪切板…');
     if (!p) {
-      busy = false;
-      retryBtn.disabled = false;
-      setStatus('扩展已更新，请刷新页面后重试', 'err');
-      setDot('err');
+      portGone();
       return;
     }
     p.postMessage({ type: 'ocr' });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* 框选截图                                                            */
+  /* ------------------------------------------------------------------ */
+  /* 右键「框选截图翻译」：background 已经把视口截成一张图发过来（截图必须
+     赶在菜单点击那次手势里做），这里盖一层遮罩让用户拖框，框完把选区从图上
+     裁下来，走和剪切板截图同一条 OCR 链。
+     遮罩里铺的就是那张截图：框里是定格画面、框外压暗，所见即所选。
+     Esc / 右键 / 空点（没拖动）都是取消，不发请求。
+     缩放与高分屏不用单独换算：截图是「CSS 视口 × 页面缩放 × 设备像素比」
+     那么大，按 naturalWidth / 渲染宽度算一个比例一次到位。 */
+
+  let shotHost = null;
+
+  function closeShot() {
+    if (shotHost) {
+      if (typeof shotHost.__rtFinish === 'function') shotHost.__rtFinish();
+      else shotHost.remove();
+      shotHost = null;
+    }
+  }
+
+  function startShot(dataUrl, error) {
+    closeShot();
+
+    // 截图那一步就失败了（chrome://、商店页这类页面截不了）。面板照开，把原因写进状态栏
+    if (error) {
+      mount();
+      showPanel(null);
+      hideTrigger();
+      busy = false;
+      retryBtn.disabled = false;
+      resetDiag();
+      setStatus('截图失败：' + error, 'err');
+      setDot('err');
+      return;
+    }
+    if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return;
+
+    const hostEl = document.createElement('div');
+    hostEl.setAttribute('data-rt-shot', '');
+    hostEl.style.cssText = 'position:fixed;inset:0;z-index:2147483647;';
+    const root = hostEl.attachShadow({ mode: 'open' });
+    root.innerHTML = `
+<style>
+  * { box-sizing: border-box; }
+  .img {
+    position: fixed; inset: 0; width: 100%; height: 100%;
+    object-fit: fill; user-select: none; -webkit-user-drag: none;
+  }
+  .sel {
+    position: fixed; display: none;
+    box-shadow: 0 0 0 100000px rgba(0, 0, 0, .45);
+    border: 1px solid #a855f7;
+    pointer-events: none;
+  }
+  .tip {
+    position: fixed; top: 14px; left: 50%; transform: translateX(-50%);
+    background: rgba(15, 15, 17, .92); color: #e8e8ea;
+    border: 1px solid #2b2b33; border-radius: 8px;
+    padding: 7px 14px; font: 13px/1.4 system-ui, sans-serif;
+    pointer-events: none; white-space: nowrap;
+  }
+</style>
+<img class="img" alt="">
+<div class="sel"></div>
+<div class="tip">拖动框选要翻译的区域 · Esc 或右键取消</div>
+`;
+    const img = root.querySelector('.img');
+    const sel = root.querySelector('.sel');
+    img.src = dataUrl;
+
+    const finish = () => {
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('contextmenu', onCtx, true);
+      hostEl.remove();
+      if (shotHost === hostEl) shotHost = null;
+    };
+    hostEl.__rtFinish = finish;
+
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        finish();
+      }
+    };
+    // 遮罩上右键 = 取消；这会儿弹浏览器菜单没有意义
+    const onCtx = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      finish();
+    };
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('contextmenu', onCtx, true);
+
+    const normRect = (a, b) => ({
+      left: Math.min(a.x, b.x),
+      top: Math.min(a.y, b.y),
+      width: Math.abs(a.x - b.x),
+      height: Math.abs(a.y - b.y)
+    });
+    const moveSel = (cur) => {
+      const r = normRect(start, cur);
+      sel.style.left = r.left + 'px';
+      sel.style.top = r.top + 'px';
+      sel.style.width = r.width + 'px';
+      sel.style.height = r.height + 'px';
+    };
+
+    let start = null;
+
+    root.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      if (!img.complete || !img.naturalWidth) return;
+      start = { x: e.clientX, y: e.clientY };
+      sel.style.display = 'block';
+      moveSel({ x: start.x, y: start.y });
+      e.preventDefault();
+    });
+    root.addEventListener('pointermove', (e) => {
+      if (start) moveSel({ x: e.clientX, y: e.clientY });
+    });
+    root.addEventListener('pointerup', (e) => {
+      if (!start || e.button !== 0) return;
+      const rect = normRect(start, { x: e.clientX, y: e.clientY });
+      start = null;
+      // 没怎么拖就松手：当误触，整个取消
+      if (rect.width < 4 || rect.height < 4) {
+        finish();
+        return;
+      }
+
+      const k = img.naturalWidth / Math.max(1, img.clientWidth || window.innerWidth);
+      const sx = Math.round(rect.left * k);
+      const sy = Math.round(rect.top * k);
+      const sw = Math.max(1, Math.round(rect.width * k));
+      const sh = Math.max(1, Math.round(rect.height * k));
+      const canvas = document.createElement('canvas');
+      canvas.width = sw;
+      canvas.height = sh;
+      canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+      const cropped = canvas.toDataURL('image/png');
+
+      const anchorRect = {
+        left: rect.left,
+        top: rect.top,
+        right: rect.left + rect.width,
+        bottom: rect.top + rect.height,
+        width: rect.width,
+        height: rect.height
+      };
+      finish();
+
+      const p = beginOcrPanel(anchorRect, '正在识别截图…');
+      if (!p) {
+        portGone();
+        return;
+      }
+      p.postMessage({ type: 'ocr', dataUrl: cropped });
+    });
+
+    (document.documentElement || document.body).appendChild(hostEl);
+    shotHost = hostEl;
   }
 
   /* ------------------------------------------------------------------ */
@@ -1601,6 +1774,10 @@ ${TRIGGER_CSS}
       // 右键菜单里那条「翻译剪切板中的截图」
       if (msg.type === 'rt-ocr-clipboard') {
         startOcr(lastRightClick ? pointRect(lastRightClick.x, lastRightClick.y) : null);
+      }
+      // 右键菜单里那条「框选截图翻译」：图已经截好了，这里负责框选
+      if (msg.type === 'rt-shot-translate') {
+        startShot(msg.dataUrl, msg.error);
       }
       return;
     }

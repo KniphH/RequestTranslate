@@ -1218,6 +1218,7 @@ const SETTING_MAP = {
   '#s-trigger': ['settings', 'trigger', 'value'],
   '#s-ctx': ['settings', 'contextMenu', 'checked'],
   '#s-ocrmenu': ['settings', 'ocrMenu', 'checked'],
+  '#s-shotmenu': ['settings', 'shotMenu', 'checked'],
   // '#s-lang'（目标语言）不在这儿 —— 它是「下拉 + 其他自己填」两个控件，
   // 合起来才是一个值，见下面的 renderTargetLang / bindTargetLang
   '#s-max': ['settings', 'maxChars', 'number'],
@@ -1235,6 +1236,7 @@ function renderSettings() {
   $('#s-ctx').checked = !!state.settings.contextMenu;
   // 缺席按「开」算 —— 这条是新加的，老存档里没有这个字段
   $('#s-ocrmenu').checked = state.settings.ocrMenu !== false;
+  $('#s-shotmenu').checked = state.settings.shotMenu !== false;
   renderTargetLang();
   $('#s-max').value = state.settings.maxChars;
   $('#s-width').value = state.settings.panelWidth;

@@ -25,6 +25,8 @@ import { runRequest } from './lib/engine.js';
 import {
   OCR_MENU_ID,
   ocrMenuItem,
+  SHOT_MENU_ID,
+  shotMenuItem,
   activeOcrProvider,
   runOcr
 } from './lib/ocr.js';
@@ -57,6 +59,10 @@ async function ensureMenu() {
     // 描述由 lib/ocr.js 出（那条文案和 id 只有一份，测试也照它断言）。
     const ocrItem = ocrMenuItem(state.settings);
     if (ocrItem) chrome.contextMenus.create(ocrItem);
+
+    // 「框选截图翻译」同样独立开关（settings.shotMenu），和剪切板那条可以同时开。
+    const shotItem = shotMenuItem(state.settings);
+    if (shotItem) chrome.contextMenus.create(shotItem);
   } catch {
     /* 忽略 */
   }
@@ -88,6 +94,21 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     chrome.tabs.sendMessage(tab.id, { type: 'rt-ocr-clipboard' }).catch(() => {
       /* 同上 */
     });
+    return;
+  }
+
+  // 「框选截图翻译」：先把当前视口截下来发给页面，框选和裁剪都在页面那边做。
+  // 截图必须赶在这次点击里做 —— 对没有 <all_urls> 的页面，captureVisibleTab
+  // 靠的是这次手势授予的 activeTab，拖完框再截就晚了。
+  if (info.menuItemId === SHOT_MENU_ID) {
+    chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' })
+      .then((dataUrl) => chrome.tabs.sendMessage(tab.id, { type: 'rt-shot-translate', dataUrl }))
+      .catch((err) => {
+        // chrome://、商店页这类截不了；页面多半也没有 content script，报得过就报
+        chrome.tabs
+          .sendMessage(tab.id, { type: 'rt-shot-translate', error: String((err && err.message) || err) })
+          .catch(() => {});
+      });
   }
 });
 
@@ -233,7 +254,8 @@ chrome.runtime.onConnect.addListener((port) => {
       return;
     }
 
-    /* 截图转文字。读取剪切板、调 OCR 都在这里做，页面只管显示。
+    /* 截图转文字。图片有两个来源：框选截图（页面裁好了把 dataUrl 带过来）、
+       剪切板（这里借 offscreen 文档读）。识别/直传的后半段两条路共用。
        设置里勾了「禁用外置 OCR」时改成「直传」：不做识别，
        把图片原样送回去，由页面塞进当前那条翻译请求（模型自己会看图）。 */
     if (msg.type === 'ocr') {
@@ -247,13 +269,18 @@ chrome.runtime.onConnect.addListener((port) => {
         return;
       }
 
-      safePost({ type: 'ocr-status', message: '正在读取剪切板…' });
-
+      // 框选来的图：页面已经裁好，直接用。bytes 按 base64 比例估算，够诊断用
+      const passed = typeof msg.dataUrl === 'string' && msg.dataUrl.startsWith('data:image/');
       let shot;
-      try {
-        shot = await readClipboardImage();
-      } catch (err) {
-        shot = { ok: false, reason: 'unavailable', error: String((err && err.message) || err) };
+      if (passed) {
+        shot = { ok: true, dataUrl: msg.dataUrl, bytes: Math.round(msg.dataUrl.length * 3 / 4) };
+      } else {
+        safePost({ type: 'ocr-status', message: '正在读取剪切板…' });
+        try {
+          shot = await readClipboardImage();
+        } catch (err) {
+          shot = { ok: false, reason: 'unavailable', error: String((err && err.message) || err) };
+        }
       }
       if (mySeq !== ocrSeq) return;
 
