@@ -10,6 +10,7 @@ import {
   exportState,
   importState,
   moveItem,
+  moveVisibleItem,
   dropIndex
 } from './lib/store.js';
 import { runRequest, previewRequest } from './lib/engine.js';
@@ -34,12 +35,11 @@ import {
   BUILTIN_OCR_IDS,
   normalizeOcrProvider,
   previewOcrRequest,
-  runOcr
+  runOcr,
+  runImageTranslate
 } from './lib/ocr.js';
 
-/* ------------------------------------------------------------------ */
-/* 状态                                                                */
-/* ------------------------------------------------------------------ */
+/* ---- 状态 ---- */
 
 let state = null;
 let editingId = '';
@@ -87,6 +87,11 @@ const els = {
 
   // OCR
   ocrList: $('#ocr-list'),
+  // 勾了「禁用外置 OCR」时，左栏换成这个 —— 列的是「填了图片请求模板」的配置
+  imgcfgList: $('#imgcfg-list'),
+  imgcfgFoot: $('#imgcfg-foot'),
+  imgcfgHint: $('#imgcfg-hint'),
+  ocrListTitle: $('#ocr-list-title'),
   ocrEditor: $('#ocr-editor'),
   ocrEmpty: $('#ocr-empty'),
   ocrHint: $('#o-hint'),
@@ -98,13 +103,16 @@ const els = {
   oPreview: $('#o-preview'),
   oNote: $('#o-note'),
   oDisabled: $('#o-disabled'),
-  oDisabledNote: $('#o-disabled-note'),
   btnOcrNew: $('#btn-ocr-new'),
   btnOcrDuplicate: $('#btn-ocr-duplicate'),
   btnOcrDelete: $('#btn-ocr-delete'),
   ocrTestImg: $('#ocr-test-img'),
   ocrTestBtn: $('#btn-ocr-test'),
-  ocrTestResult: $('#ocr-test-result')
+  ocrTestResult: $('#ocr-test-result'),
+  oPreviewSummary: $('#o-preview-summary'),
+  oTestLabel: $('#o-test-label'),
+  ocrTestHint: $('#ocr-test-hint'),
+  imgcfgTestHint: $('#imgcfg-test-hint')
 };
 
 function escapeHtml(s) {
@@ -115,9 +123,7 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
-/* ------------------------------------------------------------------ */
-/* 启动                                                                */
-/* ------------------------------------------------------------------ */
+/* ---- 启动 ---- */
 
 init().catch((err) => {
   document.body.innerHTML =
@@ -146,9 +152,7 @@ async function init() {
   renderSettings();
 }
 
-/* ------------------------------------------------------------------ */
-/* Tab                                                                 */
-/* ------------------------------------------------------------------ */
+/* ---- Tab ---- */
 
 function bindTabs() {
   document.querySelectorAll('.tab').forEach((btn) => {
@@ -157,13 +161,17 @@ function bindTabs() {
       document.querySelectorAll('.tabpanel').forEach((p) => {
         p.classList.toggle('is-active', p.dataset.panel === btn.dataset.tab);
       });
+      // 「图片配置」那个列表是配置栏那份数据的**过滤视图**：刚在配置栏填过 / 清空过
+      // 图片模板的话，切回来得重算一次，不然这边还停在上一版（预览同理）
+      if (btn.dataset.tab === 'ocr' && state.ocr && state.ocr.disabled) {
+        renderImageConfigList();
+        renderOcrPreview();
+      }
     });
   });
 }
 
-/* ------------------------------------------------------------------ */
-/* 配置列表                                                            */
-/* ------------------------------------------------------------------ */
+/* ---- 配置列表 ---- */
 
 /* 拖动手柄的图标（两列三点）。真正的手柄只有一个 10×14 的 svg，
    点上去别的地方不响应 —— 见下面 .cfg-grip 的说明 */
@@ -174,71 +182,105 @@ const GRIP_SVG =
   '<circle cx="3" cy="12" r="1.15"/><circle cx="7" cy="12" r="1.15"/>' +
   '</svg>';
 
+/* 变量值那一列的眼睛（睁眼 = 点一下显示，划斜杠 = 点一下藏回去）。
+   用 SVG 不用 emoji：这几个字号的 emoji 在 Windows 上会被渲染成彩色的。 */
+const EYE_SVG =
+  '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" ' +
+  'stroke-width="1.3" stroke-linecap="round" aria-hidden="true">' +
+  '<path d="M1.6 8s2.5-4.3 6.4-4.3S14.4 8 14.4 8s-2.5 4.3-6.4 4.3S1.6 8 1.6 8Z"/>' +
+  '<circle cx="8" cy="8" r="1.8"/></svg>';
+const EYE_OFF_SVG =
+  '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" ' +
+  'stroke-width="1.3" stroke-linecap="round" aria-hidden="true">' +
+  '<path d="M1.6 8s2.5-4.3 6.4-4.3S14.4 8 14.4 8s-2.5 4.3-6.4 4.3S1.6 8 1.6 8Z"/>' +
+  '<circle cx="8" cy="8" r="1.8"/><path d="M3.2 12.8 12.8 3.2"/></svg>';
+
 function renderConfigList() {
   const total = state.configs.length;
   els.cfgList.innerHTML = '';
 
   state.configs.forEach((cfg, idx) => {
-    const row = document.createElement('div');
-    row.className = 'cfg-row';
-    row.dataset.id = cfg.id;
-
-    // 一整行 = 手柄 + 可点的主体 + 上下移。
-    // 只有手柄是拖拽源：整行可拖会跟「点一下选中」抢鼠标，点一下都可能变成拖。
-    const grip = document.createElement('span');
-    grip.className = 'cfg-grip';
-    grip.title = '按住拖动，调整顺序';
-    grip.setAttribute('aria-hidden', 'true'); // 键盘走右边的 ↑ ↓
-    grip.innerHTML = GRIP_SVG;
-
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'cfg-item' + (cfg.id === editingId ? ' is-active' : '');
-
-    const name = document.createElement('div');
-    name.className = 'name';
-    name.textContent = cfg.name || '(未命名)';
-
-    const sub = document.createElement('div');
-    sub.className = 'sub';
-    sub.textContent = summarizeRequest(cfg.request);
-
-    btn.append(name, sub);
-    btn.addEventListener('click', () => selectConfig(cfg.id));
-
-    const mv = document.createElement('div');
-    mv.className = 'cfg-mv';
-    mv.append(moveButton(cfg, idx, -1, total), moveButton(cfg, idx, 1, total));
-
-    row.append(grip, btn, mv);
-    els.cfgList.appendChild(row);
+    els.cfgList.appendChild(sortableRow({
+      id: cfg.id,
+      name: cfg.name,
+      sub: summarizeRequest(cfg.request),
+      active: cfg.id === editingId,
+      index: idx,
+      total,
+      listEl: els.cfgList,
+      onSelect: () => selectConfig(cfg.id),
+      onMove: moveConfig
+    }));
   });
 }
 
+/**
+ * 列表里的一行 = 手柄 + 可点的主体 + 上下移。
+ *
+ * **两个列表共用**（「配置」栏和「图片配置」）—— 长得一样、操作也一样，各写一套迟早长歪。
+ * 只有手柄是拖拽源：整行可拖会跟「点一下选中」抢鼠标。
+ */
+function sortableRow({ id, name, sub, active, index, total, listEl, onSelect, onMove }) {
+  const row = document.createElement('div');
+  row.className = 'cfg-row';
+  row.dataset.id = id;
+
+  const grip = document.createElement('span');
+  grip.className = 'cfg-grip';
+  grip.title = '按住拖动，调整顺序';
+  grip.setAttribute('aria-hidden', 'true'); // 键盘走右边的 ↑ ↓
+  grip.innerHTML = GRIP_SVG;
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'cfg-item' + (active ? ' is-active' : '');
+
+  const nameEl = document.createElement('div');
+  nameEl.className = 'name';
+  nameEl.textContent = name || '(未命名)';
+
+  const subEl = document.createElement('div');
+  subEl.className = 'sub';
+  subEl.textContent = sub;
+
+  btn.append(nameEl, subEl);
+  btn.addEventListener('click', onSelect);
+
+  const mv = document.createElement('div');
+  mv.className = 'cfg-mv';
+  mv.append(
+    moveButton({ listEl, id, name, index, delta: -1, total, onMove }),
+    moveButton({ listEl, id, name, index, delta: 1, total, onMove })
+  );
+
+  row.append(grip, btn, mv);
+  return row;
+}
+
 /** 上移 / 下移按钮。头尾各禁用一边，省得点了没反应还不知道为什么 */
-function moveButton(cfg, idx, delta, total) {
+function moveButton({ listEl, id, name, index, delta, total, onMove }) {
   const b = document.createElement('button');
   b.type = 'button';
   b.className = 'cfg-mv-btn';
   b.dataset.mv = String(delta);
   b.textContent = delta < 0 ? '↑' : '↓';
-  b.disabled = delta < 0 ? idx === 0 : idx === total - 1;
+  b.disabled = delta < 0 ? index === 0 : index === total - 1;
   const label = delta < 0 ? '上移' : '下移';
   b.title = label;
-  b.setAttribute('aria-label', `${label}「${cfg.name || '未命名'}」`);
+  b.setAttribute('aria-label', `${label}「${name || '未命名'}」`);
 
   b.addEventListener('click', () => {
-    moveConfig(cfg.id, idx + delta);
+    onMove(id, index + delta);
     // 重渲染之后把焦点还给同一个按钮 —— 连着按 ↑ 才不要每按一次就去找鼠标
-    const again = els.cfgList.querySelector(
-      `.cfg-row[data-id="${cfg.id}"] .cfg-mv-btn[data-mv="${delta}"]`
+    const again = listEl.querySelector(
+      `.cfg-row[data-id="${id}"] .cfg-mv-btn[data-mv="${delta}"]`
     );
     if (again && !again.disabled) again.focus();
   });
   return b;
 }
 
-/** 把一条配置挪到新位置（`to` 是移除后的坐标），重渲染 + 落盘 */
+/** 把一条配置挪到新位置（`to` 是**完整数组**里、移除之后的坐标），重渲染 + 落盘 */
 function moveConfig(id, to) {
   flushEditor();
   const from = state.configs.findIndex((c) => c.id === id);
@@ -253,8 +295,8 @@ function moveConfig(id, to) {
 
 /** 指针落在哪一行、上半区还是下半区。用坐标算，不做命中测试 ——
     拖动时指针是「抓」在手柄上的，elementFromPoint 只会把手柄自己还回来 */
-function dropSpot(y) {
-  const rows = [...els.cfgList.querySelectorAll('.cfg-row')];
+function dropSpot(listEl, y) {
+  const rows = [...listEl.querySelectorAll('.cfg-row')];
   if (!rows.length) return null;
   for (const row of rows) {
     const b = row.getBoundingClientRect();
@@ -265,22 +307,22 @@ function dropSpot(y) {
 }
 
 /**
- * 拖动排序。
+ * 拖动排序（两个列表共用）。
  *
- * 用 pointer 事件而不是 HTML5 的 draggable —— 后者在触屏上压根不触发，
- * 而且原生拖影在设置页里很脏。代价是插入指示线得自己画（见 options.css）。
+ * 用 pointer 事件而不是 HTML5 的 `draggable` —— 后者在触屏上不触发，原生拖影也脏；
+ * 代价是插入指示线得自己画（见 options.css）。
+ * `applyMove(id, to)` 的 `to` 是**屏幕上这个列表**里的下标（「图片配置」是过滤视图的，自己再换算）。
  */
-function bindConfigSort() {
-  const list = els.cfgList;
+function bindSortDrag(listEl, applyMove) {
   let drag = null; // { id, pointerId, y0, y, moved }
 
   const clearMarks = () => {
-    for (const row of list.querySelectorAll('.cfg-row')) {
+    for (const row of listEl.querySelectorAll('.cfg-row')) {
       row.classList.remove('dragging', 'drop-before', 'drop-after');
     }
   };
 
-  list.addEventListener('pointerdown', (e) => {
+  listEl.addEventListener('pointerdown', (e) => {
     const grip = e.target instanceof Element ? e.target.closest('.cfg-grip') : null;
     if (!grip || e.button !== 0) return;
     e.preventDefault(); // 别顺手选中文字，也别触发浏览器自己的选择 / 拖拽
@@ -298,21 +340,21 @@ function bindConfigSort() {
     }
   });
 
-  list.addEventListener('pointermove', (e) => {
+  listEl.addEventListener('pointermove', (e) => {
     if (!drag || e.pointerId !== drag.pointerId) return;
     drag.y = e.clientY;
     // 先给个抖动阈值：只是点了一下手柄、手晃了 2px，不该算拖动
     if (!drag.moved) {
       if (Math.abs(e.clientY - drag.y0) < 4) return;
       drag.moved = true;
-      list.classList.add('is-dragging');
+      listEl.classList.add('is-dragging');
     }
 
-    const spot = dropSpot(e.clientY);
+    const spot = dropSpot(listEl, e.clientY);
     clearMarks();
     if (!spot) return;
     spot.row.classList.add(spot.after ? 'drop-after' : 'drop-before');
-    const self = list.querySelector(`.cfg-row[data-id="${drag.id}"]`);
+    const self = listEl.querySelector(`.cfg-row[data-id="${drag.id}"]`);
     if (self) self.classList.add('dragging');
   });
 
@@ -320,29 +362,29 @@ function bindConfigSort() {
     if (!drag) return;
     const d = drag;
     drag = null;
-    list.classList.remove('is-dragging');
+    listEl.classList.remove('is-dragging');
     clearMarks();
     if (!d.moved) return; // 只是点了一下手柄，什么都没发生
 
-    const spot = dropSpot(d.y);
+    const spot = dropSpot(listEl, d.y);
     if (!spot) return;
-    const ids = [...list.querySelectorAll('.cfg-row')].map((r) => r.dataset.id);
+    const ids = [...listEl.querySelectorAll('.cfg-row')].map((r) => r.dataset.id);
     const to = dropIndex(ids, d.id, spot.row.dataset.id, spot.after);
     if (to < 0) return;
-    moveConfig(d.id, to);
+    applyMove(d.id, to);
   };
 
-  list.addEventListener('pointerup', finish);
+  listEl.addEventListener('pointerup', finish);
   // 指针拖到列表外面才松手时也要收尾 —— 万一 setPointerCapture 没成功，
-  // 事件就落不到 list 上了，drag 会一直挂着，下一次 pointermove 会接着上次的拖
+  // 事件就落不到 listEl 上了，drag 会一直挂着，下一次 pointermove 会接着上次的拖
   window.addEventListener('pointerup', finish);
   const abort = () => {
     if (!drag) return;
     drag = null;
-    list.classList.remove('is-dragging');
+    listEl.classList.remove('is-dragging');
     clearMarks();
   };
-  list.addEventListener('pointercancel', abort);
+  listEl.addEventListener('pointercancel', abort);
   window.addEventListener('pointercancel', abort);
 }
 
@@ -361,9 +403,7 @@ function selectConfig(id) {
   persist(false);
 }
 
-/* ------------------------------------------------------------------ */
-/* 编辑器                                                              */
-/* ------------------------------------------------------------------ */
+/* ---- 编辑器 ---- */
 
 function currentConfig() {
   return state.configs.find((c) => c.id === editingId) || null;
@@ -433,7 +473,9 @@ function collectEditor() {
 }
 
 function bindConfigList() {
-  bindConfigSort();
+  // 「配置」栏和 OCR 栏那份「图片配置」共用同一套拖动 —— 逻辑一样，只是挪动落到哪不同
+  bindSortDrag(els.cfgList, moveConfig);
+  bindSortDrag(els.imgcfgList, moveImageConfig);
 
   $('#btn-new').addEventListener('click', () => {
     flushEditor();
@@ -566,17 +608,14 @@ function bindTemplateBox(el) {
   });
 }
 
-/* ------------------------------------------------------------------ */
-/* 预览                                                                */
-/* ------------------------------------------------------------------ */
+/* ---- 预览 ---- */
 
 let previewTimer = null;
 
 /**
- * 两栏（配置 / OCR）预览共用的骨架 —— 功能一样，长相就必须一样：
- *   方法 / 地址 / 请求头（Key 已打码）/ 请求体（原文，所见即所发）/ 备注
- * body 展示**原文**（不反序列化缩进）：用户写的转义（\n、\"）原样可见，
- * 而且这就是真发出去的字节，比美化过的 JSON 更诚实。
+ * 两栏（配置 / OCR）预览共用的骨架 —— 功能一样，长相就必须一样。
+ *
+ * body 展示**原文**（不反序列化缩进）：用户写的转义原样可见，而且这就是真发出去的字节。
  */
 function formatPreview(req, notes = []) {
   const lines = [];
@@ -660,9 +699,7 @@ function updatePreview() {
   }, 180);
 }
 
-/* ------------------------------------------------------------------ */
-/* 测试请求                                                            */
-/* ------------------------------------------------------------------ */
+/* ---- 测试请求 ---- */
 
 async function runTest() {
   collectEditor();
@@ -744,9 +781,7 @@ function renderTestResult(r) {
     `<div class="result-head">${badges.join('')}</div><div class="result-body">${rows.join('')}</div>`;
 }
 
-/* ------------------------------------------------------------------ */
-/* 变量                                                                */
-/* ------------------------------------------------------------------ */
+/* ---- 变量 ---- */
 
 function bindVars() {
   $('#btn-add-var').addEventListener('click', () => {
@@ -780,17 +815,41 @@ function renderVars() {
     nameTd.appendChild(nameInput);
 
     const valueTd = document.createElement('td');
+    const valWrap = document.createElement('div');
+    valWrap.className = 'val-wrap';
+
     const valueInput = document.createElement('input');
     valueInput.type = 'text';
     valueInput.value = v.value;
     valueInput.placeholder = '值';
     valueInput.spellcheck = false;
+    valueInput.autocomplete = 'off';
+    valueInput.dataset.kind = 'value';
+    /* 默认打码。这是**防肩窥**（截图、录屏、旁边有人），不是加密：值仍是明文存的，
+       导出的配置文件里也照样有 —— 只是没道理在界面上明晃晃摆着。 */
+    valueInput.classList.add('masked');
     valueInput.addEventListener('input', () => {
       state.vars[idx].value = valueInput.value;
       scheduleSave();
       updatePreview();
     });
-    valueTd.appendChild(valueInput);
+
+    const eye = document.createElement('button');
+    eye.type = 'button';
+    eye.className = 'row-eye';
+    eye.innerHTML = EYE_SVG;
+    eye.title = '显示';
+    eye.setAttribute('aria-label', '显示');
+    eye.addEventListener('click', () => {
+      const masked = valueInput.classList.toggle('masked');
+      eye.innerHTML = masked ? EYE_SVG : EYE_OFF_SVG;
+      eye.classList.toggle('on', !masked);
+      eye.title = masked ? '显示' : '隐藏';
+      eye.setAttribute('aria-label', eye.title);
+    });
+
+    valWrap.append(valueInput, eye);
+    valueTd.appendChild(valWrap);
 
     const delTd = document.createElement('td');
     const del = document.createElement('button');
@@ -814,9 +873,7 @@ function renderVars() {
     .join('');
 }
 
-/* ------------------------------------------------------------------ */
-/* OCR 供应商                                                          */
-/* ------------------------------------------------------------------ */
+/* ---- OCR 供应商 ---- */
 /* 结构刻意和配置列表一样（点一条就切过去），少一套心智模型。
    区别只有一个：OCR 不做拖动排序 —— 顺序没有意义，只有「选中哪条」有意义。 */
 
@@ -855,25 +912,146 @@ function renderOcrList() {
   }
 }
 
+/* ---- 图片配置 ---- */
+/* **不是另一份配置**：数据还是 state.configs，这里只是把「填了图片请求模板」
+   的那些滤出来，外加一个自己的选中项（state.ocr.imageConfigId）。
+   这样翻图前不用先回顶栏把配置切成支持视觉的那条，也不会把图发给纯文字接口。
+   **新建 / 删除 / 改名一概回「配置」栏**（那是内容，两处都能编辑迟早打架）；
+   但**排序在这儿也能做**，因为顺序本来就只有一个地方存 —— `state.configs` 的先后，
+   所以在这儿拖完「配置」栏会跟着变（kniph 要的：逻辑和配置列表一样）。 */
+
+/** 能翻图的配置 = 填了图片请求模板的那些（判据就这一个，不用额外加标记） */
+function imageConfigs() {
+  return state.configs.filter((c) => String(c.imageRequest || '').trim());
+}
+
+/* 直传模式下左栏「选中的那条」——「测试」和「请求预览」都以它为准。
+   选中项失效（那条被删了 / 图片模板被清空了）时和列表一样落回第一条，别让测试悬空。 */
+function imageTestConfig() {
+  const list = imageConfigs();
+  if (!list.length) return null;
+  return list.find((c) => c.id === state.ocr.imageConfigId) || list[0];
+}
+
+function renderImageConfigList() {
+  const list = imageConfigs();
+  els.imgcfgList.innerHTML = '';
+
+  // 一条都没有：把引导摊在列表里，别只留个空框
+  if (!list.length) {
+    const empty = document.createElement('p');
+    empty.className = 'hint';
+    empty.innerHTML =
+      '还没有任何配置填过「图片请求模板」。<br>' +
+      '去<b>「配置」</b>栏挑一条能看图的那个模型，把「图片请求模板」填上，它就会出现在这里。';
+    els.imgcfgList.appendChild(empty);
+    if (state.ocr.imageConfigId) {
+      state.ocr.imageConfigId = '';
+      scheduleSave();
+    }
+    return;
+  }
+
+  // 选中的那条被删了 / 图片模板被清空了：挑回第一条，别让选中项悬空
+  // （background 那边也有兜底 —— 找不到就退回顶栏那条）
+  if (!list.some((c) => c.id === state.ocr.imageConfigId)) {
+    state.ocr.imageConfigId = list[0].id;
+    scheduleSave();
+  }
+
+  for (let i = 0; i < list.length; i++) {
+    const c = list[i];
+    els.imgcfgList.appendChild(sortableRow({
+      id: c.id,
+      name: c.name,
+      sub: summarizeRequest(c.imageRequest),
+      active: c.id === state.ocr.imageConfigId,
+      index: i,
+      total: list.length,
+      listEl: els.imgcfgList,
+      onSelect: () => {
+        state.ocr.imageConfigId = c.id;
+        renderImageConfigList();
+        // 换了对象：预览跟着换，上次的测试结果也不再是这条的了 —— 收起来免得看岔
+        renderOcrPreview();
+        els.ocrTestResult.hidden = true;
+        persist(false);
+      },
+      onMove: moveImageConfig
+    }));
+  }
+}
+
+/**
+ * 在「图片配置」列表里挪一条。
+ *
+ * 那份列表是 `state.configs` 的**过滤视图**，排序动的还是 `state.configs` 本身
+ * （`moveVisibleItem` 换算下标）—— 另存一份顺序就是第二个真相源。
+ * 副作用是「配置」栏的先后跟着一起变，所以两个列表都要重画。
+ *
+ * `to` 是**过滤视图**里的下标，别和 `moveConfig` 那个完整数组下标混了。
+ */
+function moveImageConfig(id, to) {
+  flushEditor();
+  const vis = imageConfigs().map((c) => c.id);
+  const from = vis.indexOf(id);
+  if (from < 0) return false;
+  const next = moveVisibleItem(state.configs, vis, from, to);
+  if (next === state.configs) return false; // 原地没动
+  state.configs = next;
+  renderConfigList();
+  renderImageConfigList();
+  persist();
+  return true;
+}
+
 /** 「禁用外置 OCR」是全局开关，不属于任何一条供应商 */
 function renderOcrDisabled() {
   const off = !!state.ocr.disabled;
   els.oDisabled.checked = off;
-  els.oDisabledNote.hidden = !off;
   // 顶栏那句说明点过「不再显示」就收起来（settings.ocrHintHidden，全局一次性）
   els.ocrHint.hidden = !!state.settings.ocrHintHidden;
-  // 关掉之后下面那些供应商字段都用不上了，压暗一点省得看岔
-  els.ocrEditor.classList.toggle('is-off', off);
-  // 直传模式下这条供应商根本不会被动用，测试也就没意义了
-  els.ocrTestBtn.disabled = off;
-  els.ocrTestBtn.title = off ? '现在勾了「禁用外置 OCR」，截图直接交给多模态模型，这条供应商不会被用到' : '';
+
+  /* 左栏整个换掉：直传时列「图片配置」（填了图片模板的那些），否则列 OCR 供应商。
+     右边供应商那套字段跟着收起来 —— 见 CSS 里的 #ocr-editor.is-imgcfg。
+     用不上的字段是**直接藏掉**（不是压暗）：压暗会连「测试」「请求预览」一起染上，
+     而那两块在直传模式下还在用，看着像被禁用。 */
+  els.ocrList.hidden = off;
+  els.imgcfgList.hidden = !off;
+  els.ocrListTitle.textContent = off ? '图片配置' : 'OCR 供应商';
+  // 图片配置不能在 OCR 栏新建 —— 数据只有一份，维护入口也只留一个
+  els.btnOcrNew.hidden = off;
+  els.imgcfgFoot.hidden = !off;
+  els.imgcfgHint.hidden = !off;
+  els.ocrEditor.classList.toggle('is-imgcfg', off);
+  // 先画列表（里面会把失效的选中项落回第一条），再决定测试按钮的状态
+  if (off) renderImageConfigList();
+
+  /* 那块「测试」在直传模式下**不关掉，换个对象**：不测这条 OCR 供应商，
+     改测左边选中的那条图片配置的「图片请求模板」—— 不然勾上之后这条路就没法试了
+     （右键截一张图才知道对不对，太贵）。一条图片配置都没填时才禁用。 */
+  const imgForTest = off ? imageTestConfig() : null;
+  els.ocrTestBtn.disabled = off && !imgForTest;
+  els.ocrTestBtn.title = off
+    ? (imgForTest
+        ? '用的是左边选中的那条「图片配置」的图片请求模板'
+        : '还没有配置填过「图片请求模板」—— 去「配置」栏给能看图的那条填上')
+    : '';
+  els.oTestLabel.textContent = off ? '测试图片配置' : '测试';
+  els.ocrTestHint.hidden = off;
+  els.imgcfgTestHint.hidden = !off;
+  els.oPreviewSummary.textContent = off
+    ? '这次会发出去的请求（示例图 · Key 已打码）'
+    : '这次会发出去的请求（Key 已打码）';
 }
 
 function renderOcrEditor() {
   renderOcrDisabled();
   const p = currentOcrProvider();
 
-  if (!p) {
+  /* 一条供应商都没有时才显示那个空态 —— 但「图片直传」模式下右边只剩说明 + 预览，
+     和有没有供应商无关，别被空态顶掉（顶掉了 #imgcfg-hint / 预览就没了）。 */
+  if (!p && !state.ocr.disabled) {
     els.ocrEditor.hidden = true;
     els.ocrEmpty.hidden = false;
     return;
@@ -881,6 +1059,10 @@ function renderOcrEditor() {
 
   els.ocrEditor.hidden = false;
   els.ocrEmpty.hidden = true;
+  if (!p) {
+    renderOcrPreview(); // 直传模式 + 没有供应商：只留 #imgcfg-hint 和那份预览
+    return;
+  }
 
   els.oName.value = p.name || '';
   els.oRequest.value = p.request || '';
@@ -896,9 +1078,7 @@ function renderOcrEditor() {
   els.btnOcrDelete.disabled = state.ocr.providers.length <= 1;
 }
 
-/* ------------------------------------------------------------------ */
-/* OCR 的「完整请求」预览                                              */
-/* ------------------------------------------------------------------ */
+/* ---- OCR 的「完整请求」预览 ---- */
 /* 和配置栏那个「渲染预览」一个意思：**别让人猜扩展到底发了什么**。
    OCR 也是一段可编辑的模板了 —— 摊出来才看得清。
    图片位置塞一张**假的**小图：真截图是几十万字符的 data URL，摊出来没法读。 */
@@ -906,8 +1086,21 @@ function renderOcrEditor() {
 const OCR_SAMPLE_IMAGE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
 
 function renderOcrPreview() {
-  const p = currentOcrProvider();
-  if (!p) return;
+  /* 直传模式下预览的是**左边那条图片配置的图片请求模板**（用一张示例图），
+     不然勾上之后完全看不到扩展会发什么 —— 而预览和真发的是同一处组装。 */
+  const off = !!state.ocr.disabled;
+  const p = off
+    ? (() => {
+        const c = imageTestConfig();
+        return c ? { request: c.imageRequest, responsePath: c.responsePath } : null;
+      })()
+    : currentOcrProvider();
+  if (!p) {
+    els.oPreview.textContent = off
+      ? '左边还没有能翻图的配置。去「配置」栏给能看图的那条填上「图片请求模板」，这里就会摊出来。'
+      : '';
+    return;
+  }
 
   // 组装和真发出去的是同一个函数（lib/ocr.js 的 previewOcrRequest）。
   // vars 用真的用户变量 —— {{apiKey}} 解出来的值会在这里被打码，别慌
@@ -978,6 +1171,9 @@ function bindOcr() {
   els.oDisabled.addEventListener('input', () => {
     state.ocr.disabled = els.oDisabled.checked;
     renderOcrDisabled();
+    // 预览换对象了（供应商 ↔ 图片配置），上次的测试结果也不再是这一套的了
+    renderOcrPreview();
+    els.ocrTestResult.hidden = true;
     scheduleSave();
   });
 
@@ -1002,7 +1198,7 @@ function bindOcr() {
         '  "messages": [',
         '    {"role": "user", "content": [',
         '      {"type": "image_url", "image_url": {"url": "{{image}}"}},',
-        '      {"type": "text", "text": "Free OCR."}',
+        '      {"type": "text", "text": "<image>\\nFree OCR."}',
         '    ]}',
         '  ],',
         '  "temperature": 0.01',
@@ -1061,9 +1257,7 @@ function bindOcr() {
   });
 }
 
-/* ------------------------------------------------------------------ */
-/* OCR 测试                                                            */
-/* ------------------------------------------------------------------ */
+/* ---- OCR 测试 ---- */
 /* 和配置栏那个「测试」同构：发一次真请求，把结果摊开看。
    区别只在输入 —— 那边是一段文本，这边是一张图片：默认拿**剪切板里的第一张图**
    （就是你平时右键要翻的那张），也可以先挑一张本地图片再点。 */
@@ -1110,11 +1304,20 @@ async function fileImage(file) {
 }
 
 async function runOcrTest() {
-  collectOcrEditor();
-  await persist(false);
-
-  const p = currentOcrProvider();
-  if (!p) return;
+  /* 两块活儿共用一个按钮：
+       * 平时——测当前这条 OCR 供应商（走 runOcr）；
+       * 勾了「禁用外置 OCR」——测左边选中的那条**图片配置**的图片请求模板（走 runImageTranslate），
+         这条路在右键截图之前没有别的地方能试。 */
+  const off = !!state.ocr.disabled;
+  let target = null;
+  if (off) {
+    target = imageTestConfig();
+  } else {
+    collectOcrEditor();
+    await persist(false);
+    target = currentOcrProvider();
+  }
+  if (!target) return;
 
   const btn = els.ocrTestBtn;
   const box = els.ocrTestResult;
@@ -1126,7 +1329,7 @@ async function runOcrTest() {
   } catch (err) {
     box.innerHTML =
       '<div class="result-head"><span class="badge err">没拿到图片</span>' +
-      `<span class="badge">${escapeHtml(p.name)}</span></div>` +
+      `<span class="badge">${escapeHtml(target.name)}</span></div>` +
       '<div class="result-body"><div class="row"><div class="row-title">原因</div>' +
       `<pre class="err-text">${escapeHtml((err && err.message) || err)}</pre></div></div>`;
     return;
@@ -1134,26 +1337,35 @@ async function runOcrTest() {
 
   const srcLabel = shot.source + ' · ' + formatBytes(shot.bytes);
   btn.disabled = true;
-  btn.textContent = '识别中…';
+  btn.textContent = off ? '翻译中…' : '识别中…';
   box.innerHTML =
     '<div class="result-head"><span class="badge">请求中…</span>' +
-    `<span class="badge">${escapeHtml(p.name)}</span>` +
+    `<span class="badge">${escapeHtml(target.name)}</span>` +
     `<span class="badge">${escapeHtml(srcLabel)}</span></div>`;
 
   let r = null;
   let err = null;
   try {
-    r = await runOcr({ provider: p, dataUrl: shot.dataUrl, vars: buildVars(state, '', { image: shot.dataUrl }) });
+    const vars = buildVars(state, '', { image: shot.dataUrl });
+    r = off
+      ? await runImageTranslate({ config: target, dataUrl: shot.dataUrl, vars })
+      : await runOcr({ provider: target, dataUrl: shot.dataUrl, vars });
   } catch (e) {
     err = e;
   }
 
   btn.disabled = false;
   btn.textContent = '测试';
-  renderOcrTestResult({ name: p.name, srcLabel, r, err });
+  renderOcrTestResult({
+    name: target.name,
+    srcLabel,
+    r,
+    err,
+    textTitle: off ? '译文' : '识别到的文字'
+  });
 }
 
-function renderOcrTestResult({ name, srcLabel, r, err }) {
+function renderOcrTestResult({ name, srcLabel, r, err, textTitle = '识别到的文字' }) {
   const status = err ? (err.status || '失败') : r.status;
   const ms = err ? err.ms : r.ms;
 
@@ -1172,7 +1384,7 @@ function renderOcrTestResult({ name, srcLabel, r, err }) {
   }
   if (r && r.text) {
     rows.push(
-      `<div class="row"><div class="row-title">识别到的文字</div><pre class="translated">${escapeHtml(
+      `<div class="row"><div class="row-title">${escapeHtml(textTitle)}</div><pre class="translated">${escapeHtml(
         r.text
       )}</pre></div>`
     );
@@ -1203,9 +1415,7 @@ function renderOcrTestResult({ name, srcLabel, r, err }) {
     `<div class="result-head">${badges.join('')}</div><div class="result-body">${rows.join('')}</div>`;
 }
 
-/* ------------------------------------------------------------------ */
-/* 设置                                                                */
-/* ------------------------------------------------------------------ */
+/* ---- 设置 ---- */
 
 const SETTING_MAP = {
   '#s-trigger': ['settings', 'trigger', 'value'],
@@ -1217,6 +1427,7 @@ const SETTING_MAP = {
   '#s-max': ['settings', 'maxChars', 'number'],
   '#s-width': ['settings', 'panelWidth', 'number'],
   '#s-height': ['settings', 'panelHeight', 'number'],
+  '#s-maxh': ['settings', 'panelMaxHeight', 'number'],
   '#s-font': ['settings', 'fontSize', 'number'],
   '#s-theme': ['settings', 'theme', 'value'],
   '#s-showsrc': ['settings', 'showOriginal', 'checked'],
@@ -1234,6 +1445,8 @@ function renderSettings() {
   $('#s-max').value = state.settings.maxChars;
   $('#s-width').value = state.settings.panelWidth;
   $('#s-height').value = state.settings.panelHeight;
+  // 缺席按 46 算 —— 这条是新加的，老存档里没有这个字段（46 就是原来写死的那个值）
+  $('#s-maxh').value = state.settings.panelMaxHeight ?? 46;
   $('#s-font').value = state.settings.fontSize;
   $('#s-theme').value = state.settings.theme;
   $('#s-showsrc').checked = !!state.settings.showOriginal;
@@ -1245,7 +1458,7 @@ function renderSettings() {
   applyTheme();
 }
 
-/* ---- 翻译按钮：样式卡 / 自定义 SVG / 实时预览 ---------------------- */
+/* ---- 翻译按钮 ---- */
 
 function renderTriggerStyles() {
   // 用 getTriggerStyle 归一过一次：存档里留着已经删掉的预设（比如原来的「笔尖」）时，
@@ -1403,9 +1616,7 @@ function bindSettings() {
   });
 }
 
-/* ------------------------------------------------------------------ */
-/* 导入导出                                                            */
-/* ------------------------------------------------------------------ */
+/* ---- 导入导出 ---- */
 
 function bindImportExport() {
   /** 2026-10-05 —— 带日期，多台设备来回导出不至于互相覆盖下载 */
@@ -1464,9 +1675,7 @@ function bindImportExport() {
   });
 }
 
-/* ------------------------------------------------------------------ */
-/* 保存                                                                */
-/* ------------------------------------------------------------------ */
+/* ---- 保存 ---- */
 
 function scheduleSave() {
   clearTimeout(saveTimer);
@@ -1507,11 +1716,9 @@ function flashSaved() {
   savedTimer = setTimeout(() => setSaveStatus(''), 2500);
 }
 
-/* ------------------------------------------------------------------ */
 /* 目标语言：下拉挑预设，「其他」自己填                                   */
 /* 候选只有一处真相源（lib/template.js 的 TARGET_PRESETS）                */
 /* HTML 里那个 select 是空容器，选项在这儿填 —— 别再去 HTML 手抄一份      */
-/* ------------------------------------------------------------------ */
 
 // 下拉里「自己填」那一项的 value。真语言名 / 代码都不可能是这个样子，
 // 所以拿它当哨兵很安全。

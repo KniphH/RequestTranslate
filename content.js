@@ -1,6 +1,5 @@
 /**
  * content script：划词 → 小圆点 → 结果面板
- * ------------------------------------------------------------------
  * 全部 UI 放在 Shadow DOM 里，页面样式进不来，我们也不污染页面。
  * 真正的请求交给 background 发（页面里 fetch 会被 CORS 拦）。
  */
@@ -12,9 +11,7 @@
   const HOST_ID = 'request-translate-host';
   if (document.getElementById(HOST_ID)) return;
 
-  /* ------------------------------------------------------------------ */
-  /* 状态                                                                */
-  /* ------------------------------------------------------------------ */
+  /* ---- 状态 ---- */
 
   let prefs = {
     trigger: 'button',
@@ -23,6 +20,7 @@
     triggerSvg: '',
     panelWidth: 460,
     panelHeight: 0,
+    panelMaxHeight: 46,
     fontSize: 20,
     theme: 'auto',
     showOriginal: true,
@@ -53,6 +51,22 @@
   /** 发出去的那条请求用的是哪个配置 —— 结果回来时按它归档（用户可能已经切走了） */
   let pendingConfigId = '';
 
+  /* ---- 「图片直传」那一屏顶栏列哪一份配置 ---------------------------------
+     勾了「禁用外置 OCR」之后，截图不再过 OCR，图片直接交给多模态模型翻。
+     这时顶栏那个下拉必须**换成「能翻图的那些配置」**，不能还列着一堆纯文字接口
+     （那些选上去只会把图发给看不懂图的接口）。它和设置页 OCR 栏的「图片配置」是
+     **同一份数据、同一个选中项**：
+       * 列表 = state.configs 里「图片请求模板」非空的那些（判据只有一个）；
+       * 选中的 = state.ocr.imageConfigId。
+     所以在面板里拨这个下拉 = 在设置页里改选中项，拨完要**写回存档**（后台是现读存档
+     挑配置的，见 lib/store.js 的 pickRequestConfig）。 */
+  /** 能翻图的配置（后台的 ready 和存档两条路都会刷新它） */
+  let imageConfigs = [];
+  /** = state.ocr.imageConfigId */
+  let imageConfigId = '';
+  /** 顶栏现在列的是哪一份：'text' 列全部，'image' 列能翻图的那些 */
+  let cfgMode = 'text';
+
   /** 当前标签页的缩放比（1 = 100%）。面板与按钮要按这个值反向补偿，才不会被网页缩放带着一起变大变小 */
   let zoom = 1;
   /** 面板最近一次的定位锚点，缩放变化时用来重算位置 */
@@ -68,9 +82,7 @@
   /** 截图翻译时面板的落点，重试还要用 */
   let lastOcrAnchor = null;
 
-  /* ------------------------------------------------------------------ */
-  /* 按钮预设                                                            */
-  /* ------------------------------------------------------------------ */
+  /* ---- 按钮预设 ---- */
   /* ⚠️ 下面这两块与 lib/trigger-styles.js 里的**逐字一致**（content script 不能
      import，只能复制）。tools/test-lib.mjs 会读本文件比对，改一边必须改另一边。
      为什么用户填的 SVG 是「整段校验、不通过就不用」，见 lib/trigger-styles.js 顶部的说明。 */
@@ -181,9 +193,7 @@
     }
   };
 
-  /* ------------------------------------------------------------------ */
-  /* 宿主节点 + 样式                                                     */
-  /* ------------------------------------------------------------------ */
+  /* ---- 宿主节点 + 样式 ---- */
 
   const host = document.createElement('div');
   host.id = HOST_ID;
@@ -358,8 +368,10 @@ ${TRIGGER_CSS}
 .rt-out {
   padding: .6em .7em;
   min-height: 3.6em;
-  /* vh 是「页面 CSS 像素」，被上面的反向缩放再缩一次，所以要乘回来 */
-  max-height: calc(46vh * var(--rt-zoom, 1));
+  /* 自适应时的上限 = 设置里那条「结果区最大高度」（vh），默认 46 就是原来写死的那个值。
+     单位是 vh 而不是 px：这条上限的用意是「别顶出视口」，跟着窗口走才对。
+     下面这个是「页面 CSS 像素」的 vh，被反向缩放再缩一次，所以要乘回来。 */
+  max-height: calc(var(--rt-max-h, 46vh) * var(--rt-zoom, 1));
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-word;
@@ -367,6 +379,9 @@ ${TRIGGER_CSS}
   line-height: 1.8;
   color: var(--rt-text-out);
 }
+/* 设置成 0（不限）时显式关掉，而不是把变量设成 none —— calc(none * 1) 是无效值，
+   会让整条 max-height 失效，行为不好预期。 */
+.rt-panel.no-max-h .rt-out { max-height: none; }
 .rt-out.empty::before {
   content: attr(data-placeholder);
   color: var(--rt-placeholder);
@@ -441,9 +456,7 @@ ${TRIGGER_CSS}
 
   shadow.appendChild(style);
 
-  /* ------------------------------------------------------------------ */
-  /* DOM                                                                 */
-  /* ------------------------------------------------------------------ */
+  /* ---- DOM ---- */
 
   const trigger = document.createElement('div');
   trigger.className = 'rt-trigger s-badge';
@@ -499,9 +512,7 @@ ${TRIGGER_CSS}
     if (!document.documentElement.contains(host)) document.documentElement.appendChild(host);
   }
 
-  /* ------------------------------------------------------------------ */
-  /* 外观：主题 / 字号 / 尺寸                                            */
-  /* ------------------------------------------------------------------ */
+  /* ---- 外观：主题 / 字号 / 尺寸 ---- */
 
   const lightQuery = window.matchMedia
     ? window.matchMedia('(prefers-color-scheme: light)')
@@ -532,6 +543,12 @@ ${TRIGGER_CSS}
     return Math.min(1600, Math.max(280, Number(prefs.panelWidth) || 460));
   }
 
+  /** 自适应时正文区的上限（vh，0 = 不限）。认不出的值退回 46 —— 和改动前那条 CSS 一样 */
+  function panelMaxHeight() {
+    const v = Number(prefs.panelMaxHeight);
+    return Number.isFinite(v) ? Math.min(100, Math.max(0, v)) : 46;
+  }
+
   function applyPanelSize() {
     panel.style.width = panelWidth() + 'px';
 
@@ -543,11 +560,14 @@ ${TRIGGER_CSS}
       panel.style.maxHeight = '';
       panel.classList.remove('fixed-h');
     }
+
+    // 只在自适应模式下有用（固定高度时上面那条 max-height: none 说了算）
+    const mh = panelMaxHeight();
+    panel.classList.toggle('no-max-h', mh === 0);
+    panel.style.setProperty('--rt-max-h', mh + 'vh');
   }
 
-  /* ------------------------------------------------------------------ */
-  /* 页面缩放补偿                                                        */
-  /* ------------------------------------------------------------------ */
+  /* ---- 页面缩放补偿 ---- */
   /* 网页被 Ctrl+加减号放大时，整页的 CSS 像素都会跟着变大，
      我们这些 fixed 定位的面板同样逃不掉。这里把标签页的真实缩放比
      从后台问出来（chrome.tabs.getZoom），再用 1/zoom 缩回去。
@@ -649,9 +669,7 @@ ${TRIGGER_CSS}
     else if (lightQuery.addListener) lightQuery.addListener(onSchemeChange);
   }
 
-  /* ------------------------------------------------------------------ */
-  /* 位置                                                                */
-  /* ------------------------------------------------------------------ */
+  /* ---- 位置 ---- */
 
   /** 面板 / 按钮与视口边缘的最小间距（物理像素，网页缩放后观感不变） */
   const EDGE = 12;
@@ -659,13 +677,10 @@ ${TRIGGER_CSS}
   /**
    * 把面板夹进视口，保证它**整个**都看得见。
    *
-   * 坐标系容易搞错，记一下：面板是 fixed + `transform: scale(1/zoom)`，
-   * 而 transform-origin 是左上角 —— 缩放**不会移动左上角**，
-   * 所以 `left/top` 就是它的视觉左上角，但视觉宽高要乘 1/zoom
-   * （`offsetWidth` 是不含 transform 的布局尺寸）。
-   * 夹取必须在这个视觉尺寸上算，否则网页一缩放，右/下两边就会算错。
-   *
-   * 面板比视口还大（小窗口 + 大面板）时没得选，只能贴左上角。
+   * 坐标系容易搞错：面板是 fixed + `transform: scale(1/zoom)`，origin 在左上角 ——
+   * 缩放**不会移动左上角**，所以 `left/top` 就是视觉左上角，但视觉宽高要乘 1/zoom
+   * （`offsetWidth` 是不含 transform 的布局尺寸）。夹取要在视觉尺寸上算，否则一缩放右/下就错。
+   * 面板比视口还大时没得选，只能贴左上角。
    */
   function clampPanel(x, y) {
     const k = 1 / zoom;
@@ -715,9 +730,7 @@ ${TRIGGER_CSS}
     if (p.y !== y) panel.style.top = p.y + 'px';
   }
 
-  /* ------------------------------------------------------------------ */
-  /* 面板开关                                                            */
-  /* ------------------------------------------------------------------ */
+  /* ---- 面板开关 ---- */
 
   function showPanel(anchor) {
     mount();
@@ -749,9 +762,7 @@ ${TRIGGER_CSS}
     dot.title = DOT_TIP[kind] || '';
   }
 
-  /* ------------------------------------------------------------------ */
-  /* 顶部的「原文」开关                                                  */
-  /* ------------------------------------------------------------------ */
+  /* ---- 顶部的「原文」开关 ---- */
 
   function syncSrcBtn() {
     const on = !!prefs.showOriginal;
@@ -781,9 +792,25 @@ ${TRIGGER_CSS}
     return saveChain;
   }
 
-  /* ------------------------------------------------------------------ */
-  /* 底部「…」里的诊断                                                   */
-  /* ------------------------------------------------------------------ */
+  /* 写 state.ocr.imageConfigId —— 面板在图片模式下拨顶栏那个下拉时改的就是它。
+     和 saveSetting 共用一条链，免得两次「读-改-写」互相盖掉。
+     **必须先写下去再发请求**：后台是 loadState() 现读存档挑配置的（同换目标语言那个坑）。 */
+  function saveImageConfigId(id) {
+    saveChain = saveChain.then(async () => {
+      try {
+        const raw = await chrome.storage.local.get('state');
+        const st = raw && raw.state;
+        if (!st || !st.ocr) return;
+        st.ocr.imageConfigId = id;
+        await chrome.storage.local.set({ state: st });
+      } catch {
+        /* 同上 */
+      }
+    });
+    return saveChain;
+  }
+
+  /* ---- 底部「…」里的诊断 ---- */
 
   let diagOpen = false;
 
@@ -818,6 +845,9 @@ ${TRIGGER_CSS}
     if (typeof r.chunks === 'number') rows.push({ k: '分片', v: String(r.chunks) });
     if (r.bytes) rows.push({ k: '响应大小', v: formatBytes(r.bytes) });
     if (r.usedPath) rows.push({ k: '命中路径', v: r.usedPath });
+    // 这次到底调了哪个模型 —— 从请求体（或地址）里读出来的那个名字。
+    // 读不到就整行不显示（内置适配器没有请求文本），别写个「未知」占地方。
+    if (r.model) rows.push({ k: '模型', v: r.model, hint: '这条请求里写的模型名（读的是请求体 / 地址，不是猜的）' });
 
     if (r.reasoningChars) {
       rows.push({
@@ -867,9 +897,7 @@ ${TRIGGER_CSS}
     moreBtn.classList.remove('warn');
   }
 
-  /* ------------------------------------------------------------------ */
-  /* 端口通信                                                            */
-  /* ------------------------------------------------------------------ */
+  /* ---- 端口通信 ---- */
 
   let port = null;
 
@@ -893,23 +921,13 @@ ${TRIGGER_CSS}
     return port;
   }
 
-  /* ------------------------------------------------------------------ */
-  /* 流式渲染                                                            */
-  /* ------------------------------------------------------------------ */
+  /* ---- 流式渲染 ---- */
 
-  // 实测（tools/perf-probe.mjs）：流式渲染是这个扩展唯一真正花钱的地方，
-  // 成本正比于「渲染次数 × 文本长度」—— 每渲染一次，浏览器就要把整块译文重新排版。
-  //
-  // 试过但实测无效的做法：把两次强制布局减为一次、用 rAF 合并、原地改写文本节点。
-  // 前两个在噪声内（±3%），因为分片间隔本身就接近刷新率，合并不了多少。
-  // 唯一有效的杠杆是「少渲染几次」，所以这里做时间节流：
-  //
-  //   RENDER_INTERVAL = 50 → 约 20fps
-  //   实测布局开销：A 常规 52→37ms，C 500分片 115→41ms，D 极端 435→136ms（−69%）
-  //
-  // 关键是它对慢速接口完全无副作用：分片间隔超过 50ms 时每个分片都立即渲染，
-  // 和原来一模一样。只有分片涌进来的场景（本地模型、带思考的模型）才会触发节流，
-  // 而那正是需要省的地方。请求结束时 done 会立刻写入最终文本，尾巴上不会少字。
+  /* 实测（tools/perf-probe.mjs）：成本正比于「渲染次数 × 文本长度」，每渲染一次整块译文就要重新排版。
+     试过无效的：合并两次强制布局、rAF 合并、原地改写文本节点 —— 分片间隔本身就接近刷新率，合并不了多少。
+     唯一有效的杠杆是「少渲染几次」：50ms（约 20fps），实测布局开销 A 52→37ms / C 500分片 115→41ms /
+     D 极端 435→136ms（−69%）。对慢速接口无副作用：分片间隔超过 50ms 时每个分片都立即渲染；
+     结束时 done 立刻写最终文本，尾巴上不会少字。 */
   const RENDER_INTERVAL = 50;
 
   let pendingDelta = null;
@@ -948,9 +966,7 @@ ${TRIGGER_CSS}
     else deltaTimer = setTimeout(applyDelta, RENDER_INTERVAL - gap);
   }
 
-  /* ------------------------------------------------------------------ */
-  /* 结果铺到界面上 / 按配置归档                                          */
-  /* ------------------------------------------------------------------ */
+  /* ---- 结果铺到界面上 / 按配置归档 ---- */
 
   /**
    * 把一次请求的结果铺到界面上。
@@ -1018,7 +1034,9 @@ ${TRIGGER_CSS}
     if (!msg) return;
 
     if (msg.type === 'ready') {
-      configs = msg.configs || [];
+      configs = (msg.configs || []).map((c) => ({ id: c.id, name: c.name, img: !!c.img }));
+      imageConfigs = configs.filter((c) => c.img).map((c) => ({ id: c.id, name: c.name }));
+      if (typeof msg.imageConfigId === 'string') imageConfigId = msg.imageConfigId;
       if (Array.isArray(msg.targetLangs)) targetLangs = msg.targetLangs;
       activeConfigId = msg.activeConfigId || (configs[0] && configs[0].id) || '';
       if (msg.settings) prefs = { ...prefs, ...msg.settings };
@@ -1031,7 +1049,7 @@ ${TRIGGER_CSS}
       // 这条是给「发请求时选中的那个配置」看的。用户可能已经切走了 ——
       // 切到**有缓存**的配置时那条请求不会被中止（后台只在收到新的 translate 时才 abort），
       // 所以它的 start / delta 还会继续来，不挡住就把人家刚铺好的结果冲掉了。
-      if (pendingConfigId !== currentConfigId) return;
+      if (pendingConfigId !== shownConfigId()) return;
       cancelPendingDelta();
       setStatus('请求中…');
       setDot('on');
@@ -1043,7 +1061,7 @@ ${TRIGGER_CSS}
 
     if (msg.type === 'delta') {
       // 和 start 同理：这条流是**别的配置**的，用户已经切走了，别往眼前这屏上涂
-      if (pendingConfigId !== currentConfigId) return;
+      if (pendingConfigId !== shownConfigId()) return;
       queueDelta(msg.text);
       return;
     }
@@ -1079,7 +1097,8 @@ ${TRIGGER_CSS}
       }
       // 认出来的这段就是「原文」，接着走和划词一模一样的翻译链路 ——
       // 配置下拉、重新翻译、复制、诊断全都照常复用，不用另开一套。
-      translate(text, cfgSelect.value || activeConfigId, {
+      // 挑哪条交给 translate（它会先按模式重画下拉再读值）—— 这里别传下拉的当前值
+      translate(text, '', {
         provider: msg.provider || 'OCR',
         ms: msg.ms,
         bytes: msg.bytes
@@ -1088,9 +1107,10 @@ ${TRIGGER_CSS}
     }
 
     if (msg.type === 'ocr-image') {
-      // 「禁用外置 OCR」模式：不做识别，图片直接塞进当前那条请求，
-      // 由多模态模型自己看图 + 翻译（请求模板里用 {{image}} 引用它）
-      translate('', cfgSelect.value || activeConfigId, {
+      /* 「禁用外置 OCR」：不做识别，图片直接塞进当前那条请求，由多模态模型自己看图 + 翻译。
+         配置 id **不传** —— translate 会先按「这一屏是图」切到「图片配置」那一份，
+         再用它的选中项（= 存档里的 state.ocr.imageConfigId，后台认的也是它）。 */
+      translate('', '', {
         direct: true,
         image: msg.dataUrl,
         bytes: msg.bytes
@@ -1103,7 +1123,7 @@ ${TRIGGER_CSS}
       // 按「发出这条请求时选中的配置」归档，不是当前选中的那个 ——
       // 请求在飞的时候用户可能已经切到别的配置上了（见 cfgSelect 的 change）
       rememberResult(pendingConfigId, r, lastOcr, lastAction, false);
-      if (pendingConfigId === currentConfigId) {
+      if (pendingConfigId === shownConfigId()) {
         // 必须先取消挂起的这一帧：done 往往在最后一个 delta 之后立刻到达，
         // 如果让那个 rAF 稍后执行，它会用更旧的文本把最终结果覆盖掉。
         renderResult(r, lastOcr, lastAction, false);
@@ -1114,7 +1134,7 @@ ${TRIGGER_CSS}
         retryBtn.disabled = false;
         // 兜底：眼前这个配置连缓存都没有（正常到不了这儿 —— 切到没翻过的配置时
         // 会当场发新请求，而那条会把这条顶掉）
-        if (!resultCache.has(currentConfigId)) showNoCachedResult(currentConfigId);
+        if (!resultCache.has(shownConfigId())) showNoCachedResult(shownConfigId());
       }
       return;
     }
@@ -1122,7 +1142,7 @@ ${TRIGGER_CSS}
     if (msg.type === 'fatal') {
       const r = { error: msg.message || '出错了' };
       rememberResult(pendingConfigId, r, lastOcr, lastAction, true);
-      if (pendingConfigId === currentConfigId) {
+      if (pendingConfigId === shownConfigId()) {
         renderResult(r, lastOcr, lastAction, true);
       } else {
         cancelPendingDelta();
@@ -1132,9 +1152,28 @@ ${TRIGGER_CSS}
     }
   }
 
+  /* 一条配置能不能翻图 —— 判据只有一个：**图片请求模板非空**。
+     和设置页 OCR 栏那份「图片配置」列表、后台 `lib/store.js` 的 `canTranslateImage`
+     是同一件事（content script 不能 import，只能在这儿再写一遍）。 */
+  function imageCapable(c) {
+    return !!(c && String(c.imageRequest || '').trim());
+  }
+
+  /* 面板此刻「用的是哪条」= 顶栏那个下拉显示的那条。
+     两个模式各记各的：文字用 currentConfigId，图片用 imageConfigId
+     （后者和设置页 OCR 栏那个选中项是同一个，翻图那一下不该改掉你文字用哪条）。 */
+  function shownConfigId() {
+    return cfgMode === 'image' && imageConfigs.length > 0 ? imageConfigId : currentConfigId;
+  }
+
   function renderConfigOptions() {
+    /* 图片那一屏列表 = 能翻图的那些；一条都没填就退回全量 ——
+       那时后台也会回退到顶栏当前那条（老行为），下拉跟着如实显示，别装。 */
+    const imgMode = cfgMode === 'image' && imageConfigs.length > 0;
+    const list = imgMode ? imageConfigs : configs;
+
     cfgSelect.innerHTML = '';
-    if (!configs.length) {
+    if (!list.length) {
       const o = document.createElement('option');
       o.textContent = '（没有配置）';
       o.value = '';
@@ -1142,22 +1181,39 @@ ${TRIGGER_CSS}
       cfgSelect.title = '翻译接口';
       return;
     }
-    for (const c of configs) {
+    for (const c of list) {
       const o = document.createElement('option');
       o.value = c.id;
       o.textContent = c.name;
       cfgSelect.appendChild(o);
     }
-    // 当前选中的配置可能已经被删了
-    if (!configs.some((c) => c.id === currentConfigId)) {
-      currentConfigId = activeConfigId && configs.some((c) => c.id === activeConfigId)
-        ? activeConfigId
-        : configs[0].id;
+
+    // 选中的那条可能已经被删了 / 图片模板被清空了 → 挑一条顶上，别让选中项悬空
+    let want = imgMode ? imageConfigId : currentConfigId;
+    if (!list.some((c) => c.id === want)) {
+      want = imgMode
+        ? list[0].id
+        : (activeConfigId && list.some((c) => c.id === activeConfigId) ? activeConfigId : list[0].id);
     }
-    cfgSelect.value = currentConfigId;
-    // 顶栏现在挤了两个下拉，长名字会被截掉 —— 鼠标停上去给全名
-    const cur = configs.find((c) => c.id === currentConfigId);
-    cfgSelect.title = cur ? '翻译接口：' + cur.name : '翻译接口';
+    // 两个模式各记各的：翻图那一下不该顺手改掉「文字用哪条」。
+    // 顶栏显示的就是当前这一屏要用的那条，两者靠 shownConfigId() 分辨。
+    if (imgMode) imageConfigId = want;
+    else currentConfigId = want;
+    cfgSelect.value = want;
+
+    // 顶栏现在挤了两个下拉，长名字会被截掉 —— 鼠标停上去给全名。
+    // 图片模式但一条都没填时，把「为什么没缩成一小撮」写在 tooltip 里。
+    const cur = list.find((c) => c.id === want);
+    const who = cur ? cur.name : '';
+    if (cfgMode !== 'image') {
+      cfgSelect.title = cur ? '翻译接口：' + who : '翻译接口';
+    } else if (imageConfigs.length) {
+      cfgSelect.title = '图片接口：' + who;
+    } else {
+      cfgSelect.title =
+        '还没有任何配置填过「图片请求模板」——去设置页的「配置」栏给能看图的那条填上，' +
+        '它才会出现在这个列表里。现在用的是「' + who + '」';
+    }
   }
 
   /* 顶栏那个「目标语言」下拉的候选，由后台随 ready 一起发过来
@@ -1180,9 +1236,7 @@ ${TRIGGER_CSS}
     langSelect.title = '目标语言：' + cur;
   }
 
-  /* ------------------------------------------------------------------ */
-  /* 翻译                                                                */
-  /* ------------------------------------------------------------------ */
+  /* ---- 翻译 ---- */
 
   function translate(text, configId, ocr) {
     const limit = Number(prefs.maxChars) || 8000;
@@ -1196,13 +1250,28 @@ ${TRIGGER_CSS}
     const hasImage = !!(ocr && ocr.image);
     if (!payload.trim() && !hasImage) return;
 
+    // 顶栏那个下拉现在该列哪一份：拿图去翻 → 换成「图片配置」那一份（同设置页 OCR 栏）。
+    // **必须在挑配置之前切** —— 不然会拿着上一次那条文字配置发出去。
+    const nextMode = hasImage ? 'image' : 'text';
+    if (cfgMode !== nextMode) {
+      cfgMode = nextMode;
+      renderConfigOptions();
+    }
+
     lastOcr = ocr || null;
     // 截图那条路要记住是「截图来的」：直传模式下 currentText 是空串，
     // 一旦翻译失败，重试按钮得靠这个标记回去重读一遍剪切板。
     lastAction = ocr ? 'ocr' : 'translate';
     currentText = payload;
-    currentConfigId = configId || cfgSelect.value || activeConfigId;
-    pendingConfigId = currentConfigId;
+
+    /* 挑哪条：调用方**别传**「从下拉里读出来的那个值」—— 模式刚切过，那个值可能是
+       上一屏的。上面已经按模式重画过下拉了，这里直接读它就是对的。 */
+    const picked = configId || cfgSelect.value || activeConfigId;
+    // 两个模式各记各的：图片那一屏记的是 imageConfigId（= 设置页那个选中项），
+    // 别让它把「文字用哪条」顶掉。
+    if (cfgMode === 'image' && imageConfigs.length > 0) imageConfigId = picked;
+    else currentConfigId = picked;
+    pendingConfigId = picked;
 
     // 原文一变，所有配置的结果都快照过期了 —— 数据驱动地作废，不指望每个调用点记得清。
     // 直传（截图）模式没有文字原文，就拿图片的「长度 + 尾巴」当指纹。
@@ -1248,7 +1317,7 @@ ${TRIGGER_CSS}
     p.postMessage({
       type: 'translate',
       text: payload,
-      configId: currentConfigId,
+      configId: picked,
       context: {
         url: location.href,
         title: document.title,
@@ -1261,7 +1330,8 @@ ${TRIGGER_CSS}
   function openWith(text, anchor) {
     showPanel(anchor);
     hideTrigger();
-    translate(text, cfgSelect.value || activeConfigId);
+    // 同上：别传下拉的当前值 —— 上一次可能是「图片那一屏」，值不是文字那条
+    translate(text, '');
   }
 
   /** 右键点在哪儿 —— 右键菜单 API 不给坐标，只能自己记一个零大小的锚点 */
@@ -1270,11 +1340,10 @@ ${TRIGGER_CSS}
   }
 
   /**
-   * 「等一张图来翻译」的公共开场：面板先开出来、状态先写上 —— 读剪切板加
-   * OCR 要好几秒，中间什么都不显示的话用户会以为没反应，然后再点一次。
-   * 真正的活在 background 那边（content script 读不到剪切板），识别完再把
-   * 文字送回来。框选截图和剪切板截图两条路共用这一段。
-   * 返回端口（可能为 null —— 扩展刚更新过，页面还是旧脚本）。
+   * 「等一张图来翻译」的公共开场：面板先开出来、状态先写上 —— 读剪切板加 OCR 要好几秒，
+   * 中间什么都不显示的话用户会以为没反应、再点一次。
+   * 真正的活在 background（content script 读不到剪切板）。框选截图和剪切板截图两条路共用。
+   * 返回端口（可能是 null —— 扩展刚更新过，页面还是旧脚本）。
    */
   function beginOcrPanel(anchor, statusText) {
     mount();
@@ -1317,9 +1386,7 @@ ${TRIGGER_CSS}
     p.postMessage({ type: 'ocr' });
   }
 
-  /* ------------------------------------------------------------------ */
-  /* 框选截图                                                            */
-  /* ------------------------------------------------------------------ */
+  /* ---- 框选截图 ---- */
   /* 右键「框选截图翻译」：background 已经把视口截成一张图发过来（截图必须
      赶在菜单点击那次手势里做），这里盖一层遮罩让用户拖框，框完把选区从图上
      裁下来，走和剪切板截图同一条 OCR 链。
@@ -1481,9 +1548,7 @@ ${TRIGGER_CSS}
     shotHost = hostEl;
   }
 
-  /* ------------------------------------------------------------------ */
-  /* 划词监听                                                            */
-  /* ------------------------------------------------------------------ */
+  /* ---- 划词监听 ---- */
 
   function isEditable(node) {
     let el = node && node.nodeType === 1 ? node : node && node.parentElement;
@@ -1500,9 +1565,14 @@ ${TRIGGER_CSS}
 
   function readSelection() {
     const sel = window.getSelection();
-    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return null;
+    if (!sel || sel.rangeCount === 0) return null;
+    // 判据是「选中了文字没有」，不是 isCollapsed。Shadow DOM（Web Component，
+    // 比如 B 站评论区的 <bili-comments>）里划词时，选区被重定目标到 document 层：
+    // isCollapsed 会是 true，但 toString() 照样能拿到文字 —— 拿 isCollapsed 挡会误杀。
     const text = sel.toString().trim();
     if (!text || text.length < 1) return null;
+    // 注意：同一套重定目标也发生在 anchorNode 上（拿到的是 Shadow 外面的节点），
+    // 所以 Shadow DOM 内部的输入框认不出来 —— 认不出就放行，宁可多弹一次。
     if (isEditable(sel.anchorNode)) return null;
 
     let rect;
@@ -1514,7 +1584,15 @@ ${TRIGGER_CSS}
     } catch {
       return null;
     }
-    if (!rect || (rect.width === 0 && rect.height === 0)) return null;
+
+    // 同样是 Shadow DOM：文字拿得到，几何量却全丢了（rect 全 0、clientRects 空）。
+    // 不知道贴哪儿就用鼠标松开的位置当锚点 —— 零尺寸点，和右键菜单那条路
+    // 同一种形态（placePanel 本来就吃得下）。键盘划词（没有鼠标位置）只能放弃。
+    if (!rect || (rect.width === 0 && rect.height === 0)) {
+      if (!lastMouse) return null;
+      rect = pointRect(lastMouse.x, lastMouse.y);
+      segments = [rect];
+    }
 
     // 选中多行时，整段的框会把右边界对齐到最长那行，离鼠标（选区末尾）很远。
     // 所以取「第一行 / 最后一行」各自的矩形，贴着字放按钮。
@@ -1637,9 +1715,7 @@ ${TRIGGER_CSS}
     if (text) openWith(text, trigger.__anchor);
   });
 
-  /* ------------------------------------------------------------------ */
-  /* 面板交互                                                            */
-  /* ------------------------------------------------------------------ */
+  /* ---- 面板交互 ---- */
 
   panel.querySelector('[data-act="close"]').addEventListener('click', hidePanel);
 
@@ -1664,7 +1740,7 @@ ${TRIGGER_CSS}
       if (lastAction === 'ocr') startOcr(lastOcrAnchor);
       return;
     }
-    translate(currentText, currentConfigId);
+    translate(currentText, shownConfigId());
   });
 
   copyBtn.addEventListener('click', async () => {
@@ -1685,21 +1761,32 @@ ${TRIGGER_CSS}
     }
   });
 
-  cfgSelect.addEventListener('change', () => {
-    currentConfigId = cfgSelect.value;
+  cfgSelect.addEventListener('change', async () => {
+    const v = cfgSelect.value;
+    /* 图片那一屏：这个下拉就是设置页 OCR 栏「图片配置」列表的另一个入口，
+       拨一下等于在设置页里改选中项 —— **先写回存档再发请求**，后台只认
+       state.ocr.imageConfigId（见 lib/store.js 的 pickRequestConfig）。
+       不写回的话就会出现「拨了没反应，翻出来还是设置里那条」。 */
+    if (cfgMode === 'image' && imageConfigs.length > 0) {
+      imageConfigId = v;
+      renderConfigOptions();   // 标题 / 选中项跟着换
+      await saveImageConfigId(v);
+    } else {
+      currentConfigId = v;
+    }
     // 翻过的 → 放回上次的结果，一个请求都不发；
     // 没翻过的 → 当场用这个配置翻一次（重发同一条请求是 ↻ 的活儿，不是这儿）
-    const hit = resultCache.get(currentConfigId);
+    const hit = resultCache.get(shownConfigId());
     if (hit) {
       renderResult(hit.r, hit.ocr, hit.action, hit.fatal);
       return;
     }
     // 截图直传那一路没有文字原文，判据得看图片；OCR 认出来的文字在 currentText 里
     if (currentText || (lastOcr && lastOcr.image)) {
-      translate(currentText, currentConfigId, lastOcr || undefined);
+      translate(currentText, shownConfigId(), lastOcr || undefined);
       return;
     }
-    showNoCachedResult(currentConfigId);
+    showNoCachedResult(shownConfigId());
   });
 
   /* 顶栏换目标语言。语言是藏在请求模板里的（{{target}} / {{targetCode}}），
@@ -1717,7 +1804,7 @@ ${TRIGGER_CSS}
     // 真踩过 —— e2e 里「换成英语但请求还是 ZH-HANS」抓到的就是这个。
     await saveSetting('targetLang', v);
     if (currentText || (lastOcr && lastOcr.image)) {
-      translate(currentText, currentConfigId, lastOcr || undefined);
+      translate(currentText, shownConfigId(), lastOcr || undefined);
       return;
     }
     setStatus('目标语言：' + v);
@@ -1757,9 +1844,7 @@ ${TRIGGER_CSS}
     }, true);
   })();
 
-  /* ------------------------------------------------------------------ */
-  /* 来自右键菜单的指令                                                  */
-  /* ------------------------------------------------------------------ */
+  /* ---- 来自右键菜单的指令 ---- */
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (!msg) return;
@@ -1791,13 +1876,17 @@ ${TRIGGER_CSS}
     openWith(text, rect);
   });
 
-  /* ------------------------------------------------------------------ */
-  /* 读取设置                                                            */
-  /* ------------------------------------------------------------------ */
+  /* ---- 读取设置 ---- */
 
   function applyState(state) {
     if (!state) return;
-    if (Array.isArray(state.configs)) configs = state.configs.map((c) => ({ id: c.id, name: c.name }));
+    if (Array.isArray(state.configs)) {
+      // img 得在这儿算：设置页里刚填/刚清掉「图片请求模板」时，面板要跟着变
+      // （ready 只在连端口那一刻发一次，靠它就会停在旧的一版）
+      configs = state.configs.map((c) => ({ id: c.id, name: c.name, img: imageCapable(c) }));
+      imageConfigs = configs.filter((c) => c.img).map((c) => ({ id: c.id, name: c.name }));
+    }
+    if (state.ocr) imageConfigId = String(state.ocr.imageConfigId || '');
     if (state.activeConfigId) activeConfigId = state.activeConfigId;
     const prevLang = prefs.targetLang;
     if (state.settings) prefs = { ...prefs, ...state.settings };

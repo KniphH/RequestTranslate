@@ -80,7 +80,6 @@ code {
   color: var(--fg-strong);
 }
 
-/* ---------------------------------------------------------------- */
 
 .app { display: flex; flex-direction: column; height: 100vh; }
 
@@ -132,7 +131,6 @@ header {
 
 .head-actions { display: flex; gap: 8px; }
 
-/* ---------------------------------------------------------------- */
 
 main { flex: 1; min-height: 0; position: relative; }
 
@@ -193,6 +191,13 @@ main { flex: 1; min-height: 0; position: relative; }
   transition: .13s;
   overflow: hidden;
 }
+
+/* 左栏（OCR 供应商 / 图片配置）那几个条目是**直接躺在 .list-body 里**的，没有
+   .cfg-row 兜着 —— 而上面那句 `width: auto` 对 <button> 来说是**收缩到内容宽度**
+   （按钮不是普通块级盒，auto 走的是 fit-content，`flex: 1` 在这时又是死的，因为
+   .list-body 是 display:block）。结果就是名字长的条宽、名字短的条窄，一列参差不齐。
+   「配置」栏看不出来：那边每条都包在 .cfg-row（display:flex）里，flex 把宽度拉平了。 */
+.list-body > .cfg-item { width: 100%; }
 
 /* 拖动排序的把手。只有它是拖拽源 —— 整行可拖会跟「点一下选中」抢鼠标。
    平时压得很暗，鼠标进这一行才亮起来。 */
@@ -335,6 +340,35 @@ input:focus, select:focus, textarea:focus {
 }
 select { cursor: pointer; }
 select option { background: var(--panel-2); }
+
+/* 配置栏里「图片请求模板」是可折叠的一段，默认收起：多数人用不到，
+   摆两段长得一模一样的 textarea 只会让人以为两段都必须填。 */
+.img-tpl { margin: 14px 0 0; }
+.img-tpl .fold-body { padding: 12px 13px; border-top: 1px solid var(--line-soft); }
+.img-tpl .hint { margin: 10px 0 0; }
+/* 它和上面那段是同一种东西（一整条请求），字体也跟着走 mono —— 原先漏了，
+   结果同一个编辑器里两段模板一个等宽一个不等宽。 */
+#f-image-request {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.65;
+  min-height: 150px;
+  resize: vertical;
+  white-space: pre;
+  overflow-x: auto;
+  tab-size: 2;
+}
+
+/* 勾了「禁用外置 OCR」：右栏只剩说明 + 那个开关 + 预览 + 那块「测试」—— 供应商那套字段用不到。
+   #o-note 也得跟着收：那是**这一条供应商**的备注，直传模式下压根用不到它。
+   #o-test-field / .preview 例外：它们不藏，只是对象换成左边选中的那条图片配置
+   （预览摊的是那条的图片请求模板，测试发的也是那一份）。 */
+#ocr-editor.is-imgcfg > .editor-head,
+#ocr-editor.is-imgcfg > .field:not(#o-test-field),
+#ocr-editor.is-imgcfg > .editor-foot,
+#ocr-editor.is-imgcfg > #o-hint,
+#ocr-editor.is-imgcfg > #o-note { display: none; }
+#ocr-editor:not(.is-imgcfg) > #imgcfg-hint { display: none; }
 
 #f-request,
 #o-request {
@@ -555,13 +589,12 @@ button.danger:hover { background: rgba(239, 68, 68, .1); border-color: rgba(239,
 button.danger:disabled { opacity: .35; cursor: default; background: transparent; }
 
 /* ---------------- OCR 供应商：复用配置列表的外观 ---------------- */
-/* 少一层 .cfg-row：OCR 没有拖动排序，顺序没意义，只有「选中哪条」有意义。
-   所以那圈上下移按钮和手柄都不存在，每条直接就是一个按钮。 */
+/* OCR 列表不排序，所以没有 .cfg-row 那层，每条直接是一个按钮。 */
 #ocr-list .cfg-item { width: 100%; margin-bottom: 3px; }
 
-/* 「禁用外置 OCR」勾上时，下面那些用不上的字段压暗（说明文字不动，
-   它正好在解释现在是什么状态） */
-#ocr-editor.is-off > *:not(.setting):not(.hint) { opacity: .4; }
+/* 原有一条 `#ocr-editor.is-off > *:not(.setting):not(.hint) { opacity: .4 }`：勾了直传就把
+   用不上的字段压暗。**删掉了** —— `.is-imgcfg` 已经把供应商那套整个 display:none，
+   压暗只剩「测试」和「请求预览」挨着，而那两块这时**还在用**，看着像被禁用、点了没反应。 */
 
 button.block { width: 100%; }
 
@@ -598,6 +631,26 @@ button.block { width: 100%; }
 .vars.builtin td { padding: 6px 0; border-bottom: 1px solid var(--line-soft); font-size: 12.5px; }
 .vars.builtin td:first-child { color: var(--accent); font-family: var(--mono); width: 170px; }
 .vars.builtin td:last-child { color: var(--fg-dim); font-size: 12px; }
+
+/* 变量值那一列：值默认打码，右边跟一个眼睛。
+   打码走 -webkit-text-security 而不是 <input type="password"> —— 后者会招来
+   密码管理器的保存提示，还有 Edge 自带那个原生眼睛（跟这个按钮重复）。
+   本扩展是 Chromium-only（只发 Edge 商店），这个属性够用。 */
+.vars .val-wrap { display: flex; align-items: center; gap: 4px; }
+.vars .val-wrap input { flex: 1; min-width: 0; }
+.vars input.masked { -webkit-text-security: disc; }
+
+.row-eye {
+  flex: none;
+  width: 26px; height: 26px;
+  padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent;
+  border-color: transparent;
+  color: var(--fg-faint);
+}
+.row-eye:hover { color: var(--fg); border-color: transparent; }
+.row-eye.on { color: var(--accent); }
 
 .row-del {
   width: 30px; height: 30px;

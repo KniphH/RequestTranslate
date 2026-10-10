@@ -20,8 +20,8 @@ const { tokenize, parseRequest, parseCurl, parseRawHttp, repairJsonBody } = awai
 const { renderTemplate, escapeJsonString, imageContentPart, targetCodeOf, TARGET_PRESETS } = await import('../lib/template.js');
 const { parsePath, getByPath, extractContent, describeShape } = await import('../lib/extract.js');
 const {
-  DEFAULT_CONFIGS, DEFAULT_SETTINGS, moveItem, dropIndex, buildVars,
-  requestTemplateFor, freshConfigs, loadState, exportState, importState
+  DEFAULT_CONFIGS, DEFAULT_SETTINGS, moveItem, moveVisibleItem, dropIndex, buildVars,
+  requestTemplateFor, pickRequestConfig, canTranslateImage, freshConfigs, loadState, exportState, importState
 } = await import('../lib/store.js');
 const { previewRequest } = await import('../lib/engine.js');
 const { toBingLang, hasAdapter } = await import('../lib/adapters.js');
@@ -31,7 +31,7 @@ const {
   DEFAULT_OCR_PROMPT,
   normalizeOcrProvider, normalizeOcrState, defaultOcrState, activeOcrProvider,
   buildOcrBody, pickOcrText, describeOcrError, ocrErrorHint,
-  normalizeMaxTokens, previewOcrRequest, runOcr, shotMenuItem,
+  normalizeMaxTokens, previewOcrRequest, runOcr, runImageTranslate, shotMenuItem,
   fillOcrTemplate, ocrProviderToTemplate
 } = await import('../lib/ocr.js');
 const {
@@ -55,6 +55,37 @@ function eq(name, actual, expected) {
   const a = JSON.stringify(actual);
   const e = JSON.stringify(expected);
   check(name, a === e, { actual, expected });
+}
+
+/**
+ * 造一个**带流**的 Response 桩。
+ *
+ * 真 fetch 里 SSE / NDJSON 是 `res.body.getReader()` 一段段给的；只打桩 `text()`
+ * 会走「没有流，整体读一次」那条兜底路 —— 流式分支（也就是实机上踩到的那个
+ * 「stream: true 的接口报返回的不是 JSON」）就永远测不到。
+ *
+ * parts 是**按分片喂**的原文，可以故意把一个事件切两半。
+ */
+function streamResponse(parts, ctype = 'text/event-stream') {
+  const enc = new TextEncoder();
+  let i = 0;
+  return {
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    headers: { get: (k) => (String(k).toLowerCase() === 'content-type' ? ctype : null) },
+    body: {
+      getReader() {
+        return {
+          read: async () =>
+            i < parts.length
+              ? { done: false, value: enc.encode(parts[i++]) }
+              : { done: true, value: undefined }
+        };
+      }
+    },
+    text: async () => parts.join('')
+  };
 }
 
 function section(title) {
@@ -553,6 +584,102 @@ section('10. 老存档迁移：开关归位 / 补预设 / OCR 供应商换模型
     !v4hidden.ocr.providers.some((p) => p.id === 'builtin-siliconflow'),
     v4hidden.ocr.providers.map((p) => p.id));
 
+  /* v7 存档（= 1.1.2，第一个模板形状的版本）：两条内置供应商的默认模板后来改过 ——
+     硅基流动的提示词补了 `<image>\n` 前缀，百度的 body 补了 language_type=auto_detect
+     （不写就是 CHN_ENG，日文假名会被当成中文读）。
+     判据是「逐字还等于老默认值」，所以把老默认值整段抄进来当输入。
+     这两段必须和 store.js 里 OLD_DEFAULT_REQUEST 冻死的那份逐字一致 —— 改默认模板时别动它们。 */
+  const OLD_SF_REQUEST = `# DeepSeek-OCR 在硅基流动上免费；Key 在「变量」页签的 apiKey 里填，和翻译配置共用
+curl https://api.siliconflow.cn/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer {{apiKey}}" \\
+  -d '{
+  "model": "deepseek-ai/DeepSeek-OCR",
+  "messages": [
+    {"role": "user", "content": [
+      {"type": "image_url", "image_url": {"url": "{{image}}"}},
+      {"type": "text", "text": "Free OCR."}
+    ]}
+  ],
+  "temperature": 0.01
+}'`;
+  const OLD_BD_REQUEST = `# 百度高精度版：个人认证每月 1000 次免费，QPS 2/秒
+# access_token = API Key + Secret Key 换来的（30 天过期）：
+#   https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id=你的AK&client_secret=你的SK
+# 换到后把 token 粘进下面 URL，过期了重换一次
+POST https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic?access_token=把access_token粘到这里
+Content-Type: application/x-www-form-urlencoded
+
+image={{imageUrlEncoded}}`;
+
+  const v7 = await load({
+    version: 7,
+    configs: [{ id: 'builtin-deepl', name: 'DeepL' }],
+    activeConfigId: 'builtin-deepl',
+    vars: [],
+    settings: { ...DEFAULT_SETTINGS },
+    ocr: {
+      activeId: 'builtin-baidu-ocr',
+      providers: [
+        { id: 'builtin-siliconflow', name: '硅基流动', note: 'n', request: OLD_SF_REQUEST, responsePath: '' },
+        { id: 'builtin-baidu-ocr', name: '百度 OCR（高精度版）', note: 'n', request: OLD_BD_REQUEST, responsePath: '' }
+      ]
+    }
+  });
+  const v7sf = v7.ocr.providers.find((p) => p.id === 'builtin-siliconflow');
+  const v7bd = v7.ocr.providers.find((p) => p.id === 'builtin-baidu-ocr');
+  check('硅基流动那条归位：提示词补上 <image> 前缀（老写法会退化）',
+    v7sf.request.includes('"<image>\\nFree OCR."'), v7sf.request);
+  check('百度那条归位：body 带上 language_type=auto_detect',
+    v7bd.request.includes('&language_type=auto_detect'), v7bd.request);
+  eq('两条的 key / token 之类用户自己填的东西一个都没动', v7bd.request.includes('把access_token粘到这里'), true);
+  eq('选中的还是那条', v7.ocr.activeId, 'builtin-baidu-ocr');
+
+  /* 用户自己动过模板就一律不碰 —— 差一个字节就不算「还停在老默认值」。
+     第二条正是日语用户会做的事：自己把 language_type 钉成 JAP，升级时不能被 auto_detect 顶掉。 */
+  const v7kept = await load({
+    version: 7,
+    configs: [{ id: 'builtin-deepl', name: 'DeepL' }],
+    activeConfigId: 'builtin-deepl',
+    vars: [],
+    settings: { ...DEFAULT_SETTINGS },
+    ocr: {
+      activeId: 'builtin-siliconflow',
+      providers: [
+        { id: 'builtin-siliconflow', name: '我的硅基', note: 'n', request: OLD_SF_REQUEST + '\n# 我自己加的注释' },
+        {
+          id: 'builtin-baidu-ocr',
+          name: '百度 OCR（高精度版）',
+          note: 'n',
+          request: OLD_BD_REQUEST.replace('image={{imageUrlEncoded}}', 'image={{imageUrlEncoded}}&language_type=JAP')
+        }
+      ]
+    }
+  });
+  const v7keptSf = v7kept.ocr.providers.find((p) => p.id === 'builtin-siliconflow');
+  const v7keptBd = v7kept.ocr.providers.find((p) => p.id === 'builtin-baidu-ocr');
+  check('硅基流动那条被自己加过字 → 整段原样留着', v7keptSf.request.endsWith('# 我自己加的注释'));
+  check('也还是老提示词（没有被塞进 <image> 前缀）', !v7keptSf.request.includes('<image>'));
+  check('百度那条已经自己钉了 JAP → 不被 auto_detect 顶掉',
+    v7keptBd.request.endsWith('&language_type=JAP'), v7keptBd.request);
+
+  /* 已经是 v8 的存档不再走这条迁移（和 v4→v5 一样吃版本号） */
+  const v8now = await load({
+    version: STORAGE_VERSION,
+    configs: [{ id: 'builtin-deepl', name: 'DeepL' }],
+    activeConfigId: 'builtin-deepl',
+    vars: [],
+    settings: { ...DEFAULT_SETTINGS },
+    ocr: {
+      activeId: 'builtin-baidu-ocr',
+      providers: [
+        { id: 'builtin-baidu-ocr', name: '百度 OCR（高精度版）', note: 'n', request: OLD_BD_REQUEST, responsePath: '' }
+      ]
+    }
+  });
+  check('版本已是最新的存档不会被再迁一次',
+    v8now.ocr.providers.find((p) => p.id === 'builtin-baidu-ocr').request === OLD_BD_REQUEST);
+
   /* 已经是最新版本的存档：不会再插一次 */
   const vNow = await load({
     version: STORAGE_VERSION,
@@ -757,6 +884,47 @@ section('14. 配置排序：moveItem 的下标口径 / dropIndex 的落点换算
   eq('把最后一条拖到第二条后面', dragTo(A, 'd', 'b', true), ['a', 'b', 'd', 'c']);
   eq('拖到自己身上 = 一点没动', dragTo(A, 'b', 'b', false), A);
   eq('手抖拖到自己下半区也 = 没动', dragTo(A, 'b', 'b', true), A);
+
+  /* ---- moveVisibleItem：过滤视图里的排序，落到完整数组上 ----
+     OCR 栏那份「图片配置」是 state.configs 的过滤视图，在那儿拖动的下标是
+     **过滤视图**的，得换算回完整数组。看不见的那些一条都不该动。 */
+  const obj = (ids) => ids.map((id) => ({ id }));
+  const idOf = (list) => list.map((c) => c.id);
+
+  // 全都能看见时，就该和 moveItem 一模一样
+  const all4 = obj(['a', 'b', 'c', 'd']);
+  eq('全可见时 = moveItem',
+    idOf(moveVisibleItem(all4, ['a', 'b', 'c', 'd'], 0, 3)), ['b', 'c', 'd', 'a']);
+  eq('全可见时（往下挪一位）',
+    idOf(moveVisibleItem(all4, ['a', 'b', 'c', 'd'], 0, 1)), ['b', 'a', 'c', 'd']);
+
+  /* 完整：a b c d，可见：a c（b、d 藏起来）
+     把 c 挪到最前 → 可见变成 c a，b、d 原地不动 */
+  const mixed = obj(['a', 'b', 'c', 'd']);
+  eq('可见项往前挪，看不见的那条不动',
+    idOf(moveVisibleItem(mixed, ['a', 'c'], 1, 0)), ['c', 'a', 'b', 'd']);
+  eq('可见项往后挪到末尾（插在最后一条可见项后面）',
+    idOf(moveVisibleItem(mixed, ['a', 'c'], 0, 1)), ['b', 'c', 'a', 'd']);
+
+  /* 「拖到末尾」那条分流：b 越过 rest 的长度时要插在**最后一条可见项后面**，
+     不是锚点前面 —— 少这一脚就会差一位（和 dropIndex 那个坑同源）。 */
+  const three = obj(['a', 'x', 'b', 'y', 'c']); // 可见 a b c，x y 藏起来
+  eq('可见三条，把第一条拖到最后',
+    idOf(moveVisibleItem(three, ['a', 'b', 'c'], 0, 2)), ['x', 'b', 'y', 'c', 'a']);
+  eq('可见三条，把最后一条拖到最前',
+    idOf(moveVisibleItem(three, ['a', 'b', 'c'], 2, 0)), ['c', 'a', 'x', 'b', 'y']);
+
+  // 引用判等：调用方靠 `next === arr` 跳过重渲染
+  check('原地不动时返回同一个数组', moveVisibleItem(all4, ['a', 'b', 'c', 'd'], 1, 1) === all4);
+  check('可见项不足两条 = 没得排，原样返回',
+    moveVisibleItem(all4, ['a'], 0, 1) === all4 && moveVisibleItem(all4, [], 0, 1) === all4);
+  check('提交上来的 id 全不认识也原样返回',
+    moveVisibleItem(all4, ['zz', 'yy'], 0, 1) === all4);
+  eq('不是数组也不炸',
+    [moveVisibleItem(null, ['a'], 0, 1).length, moveVisibleItem(all4, null, 0, 1).length].join(),
+    '0,' + all4.length);
+  eq('下标越界会夹住（拖到列表外的空白处就是这个）',
+    idOf(moveVisibleItem(all4, ['a', 'b', 'c', 'd'], 0, 99)), ['b', 'c', 'd', 'a']);
 }
 
 /* ------------------------------------------------------------------ */
@@ -815,9 +983,9 @@ section('15. 截图 OCR：供应商状态 / 请求体 / 取文字');
     body.messages[0].content.map((c) => c.type), ['image_url', 'text']);
   eq('图片走 image_url.url 的 data URL',
     body.messages[0].content[0].image_url.url, 'data:image/png;base64,AAA');
-  eq('没填提示词就用默认的那句', body.messages[0].content[1].text, 'Free OCR.');
+  eq('没填提示词就用默认的那句', body.messages[0].content[1].text, '<image>\nFree OCR.');
   eq('提示词留空时退回默认',
-    buildOcrBody({ model: 'm', prompt: '   ' }, 'data:x').messages[0].content[1].text, 'Free OCR.');
+    buildOcrBody({ model: 'm', prompt: '   ' }, 'data:x').messages[0].content[1].text, '<image>\nFree OCR.');
 
   /* ---- 设置页那个「这次会发出去的请求」预览 ---- */
   /* OCR 栏不开放手写模板（形状固定），但接口地址 / 模型 / 提示词都是用户填的 ——
@@ -988,7 +1156,7 @@ section('15. 截图 OCR：供应商状态 / 请求体 / 取文字');
     const token = baidu.request.replace('把access_token粘到这里', 'TOKEN-1');
     const okT = await runOcr({ provider: { ...baidu, request: token }, dataUrl: 'data:image/png;base64,AAA', vars: {} });
     eq('百度模板：token 在 URL 上', sentT.url, 'https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic?access_token=TOKEN-1');
-    eq('百度模板：form 体就是 urlencode 过的 base64', sentT.init.body, 'image=AAA');
+    eq('百度模板：form 体就是 urlencode 过的 base64', sentT.init.body, 'image=AAA&language_type=auto_detect');
     eq('百度模板：Content-Type 是表单', sentT.init.headers['Content-Type'], 'application/x-www-form-urlencoded');
     eq('行数组响应按 \\n 拼成一段', okT.text, '你好\n世界');
     check('模板路径也带原始响应和状态', okT.status === 200 && String(okT.raw).includes('words_result'));
@@ -1016,6 +1184,159 @@ section('15. 截图 OCR：供应商状态 / 请求体 / 取文字');
     globalThis.fetch = realFetch;
   }
 
+  /* ---- 模板路径 + stream:true（SSE）：实机踩过的那种 ----
+     用户图片模板里带 `"stream": true` 时接口回的是 SSE，而设置页那个「测试」
+     原来自己写了个 JSON.parse(res.text())，于是当场报「返回的不是 JSON」——
+     可实际用（面板走引擎）明明是好的。现在读响应收口在引擎的 readResponseBody，
+     这里钉住「SSE 也要能读出来」+「切两半的事件照样拼得回来」。 */
+  try {
+    let sentS = null;
+    globalThis.fetch = async (url, init) => {
+      sentS = { url: String(url), init };
+      return streamResponse([
+        'data: {"choices":[{"delta":{"content":"现在是"}}]}\n\n' +
+          'data: {"choices":[{"delta":{"con',
+        'tent":"图片直传"}}]}\n\n',
+        'data: [DONE]\n\n'
+      ]);
+    };
+    const sseVl = normalizeOcrProvider(OCR_PROVIDERS.find((p) => p.id === 'builtin-openai-vl'));
+    const okS = await runOcr({ provider: sseVl, dataUrl: 'data:image/png;base64,AAA', vars: { apiKey: 'sk-vars' } });
+    eq('OCR 模板 + SSE：逐帧攒出来的文字', okS.text, '现在是图片直传');
+    check('OCR 模板 + SSE：真发出去的那份没变（还是模板渲出来的）',
+      String(sentS.init.body).includes('data:image/png;base64,AAA'), String(sentS.init.body).slice(0, 120));
+    check('OCR 模板 + SSE：原始响应原样留着', String(okS.raw).includes('[DONE]'), okS.raw);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+
+  /* ---- 图片直传那个「测试」：一条翻译配置的图片请求模板跑不跑得通 ----
+     勾了「禁用外置 OCR」之后右键截一张图才知道配没配对，太贵 —— 设置页那块「测试」
+     走的就是这个函数（和 OCR 那个共用同一套图片占位符装配）。 */
+  {
+    const imgTpl =
+      "curl -X POST 'https://api.example.com/v1/chat/completions' \\\n" +
+      '  -H "Content-Type: application/json" \\\n' +
+      '  -H "Authorization: Bearer {{apiKey}}" \\\n' +
+      '  -d \'{"model":"see","messages":[{"role":"user","content":[' +
+      '{"type":"image_url","image_url":{"url":"{{image}}"}},' +
+      '{"type":"text","text":"翻成{{target}}"}]}]}\'';
+
+    // 没填图片模板：不发包，直接把「去哪填」说清楚
+    let noTpl = null;
+    try {
+      await runImageTranslate({ config: { id: 'x', name: '甲', imageRequest: '   ' }, dataUrl: 'data:x' });
+    } catch (e) {
+      noTpl = e;
+    }
+    check('没填图片请求模板时直接说清楚，不发请求',
+      !!noTpl && /图片请求模板/.test(noTpl.message), noTpl && noTpl.message);
+    check('空模板那条也没带 request（没发出去自然没有）', !noTpl || !noTpl.request);
+
+    const cfg = { id: 'x', name: '看图那条', imageRequest: imgTpl, responsePath: 'choices[0].message.content' };
+
+    // 成功：图片 / 变量 / 目标语言都填进去了，返回值按 responsePath 提取
+    try {
+      let sent = null;
+      globalThis.fetch = async (url, init) => {
+        sent = { url: String(url), init };
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({ choices: [{ message: { content: '译文在这' } }] })
+        };
+      };
+      const okR = await runImageTranslate({
+        config: cfg,
+        dataUrl: 'data:image/png;base64,AAA',
+        vars: { apiKey: 'sk-vars', target: '简体中文' }
+      });
+      eq('图片直传测试：发到模板里的地址', sent.url, 'https://api.example.com/v1/chat/completions');
+      eq('图片直传测试：变量里的 Key 进了请求头', sent.init.headers.Authorization, 'Bearer sk-vars');
+      check('图片直传测试：{{image}} 换成了那张 data URL',
+        sent.init.body.includes('data:image/png;base64,AAA'), sent.init.body.slice(0, 120));
+      check('图片直传测试：{{target}} 也换了', sent.init.body.includes('翻成简体中文'), sent.init.body.slice(0, 160));
+      eq('图片直传测试：结果按 responsePath 提取', okR.text, '译文在这');
+      /* 打码的请求是给人看的，真发的那份别拿它发 —— 这里对一下 Authorization 确实被打码了 */
+      check('图片直传测试：记下来给人看的请求里 Key 已打码',
+        !String(okR.request.headers.Authorization || '').includes('sk-vars'),
+        String(okR.request.headers.Authorization));
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+
+    /* stream: true 的图片模板 —— 就是实机上那个 bug：
+       Ling 那种模型的响应是 SSE，面板那头（走引擎）翻得好好的，设置页这个
+       「测试」却报「返回的不是 JSON」。读响应现在收口在 readResponseBody。
+       （这条配置**不写** responsePath —— 流式的分片是 delta.content，
+         写死了 message.content 就谁也取不出来，那是模板作者自己的事，
+         留空会按常见结构自动探测。用户那条 Ling 配置也是留空的。） */
+    try {
+      let sentSse = null;
+      globalThis.fetch = async (url, init) => {
+        sentSse = { url: String(url), init };
+        return streamResponse([
+          'data: {"choices":[{"delta":{"content":"图片直传"}}]}\n\n',
+          'data: {"choices":[{"delta":{"content":"：截图"}}]}\n\n' +
+            'data: {"choices":[{"delta":{"content":"不再过"}}]}\n\n',
+          'data: {"choices":[{"delta":{"content":" OCR"}}]}\n\n',
+          'data: [DONE]\n\n'
+        ]);
+      };
+      const okSse = await runImageTranslate({
+        config: { id: 'y', name: '流式那条', imageRequest: imgTpl },
+        dataUrl: 'data:image/png;base64,AAA',
+        vars: { apiKey: 'sk-vars', target: '简体中文' }
+      });
+      eq('图片直传测试：stream:true 的 SSE 也读得出来（不再误报「不是 JSON」）',
+        okSse.text, '图片直传：截图不再过 OCR');
+      check('图片直传测试：SSE 那次真发出去的还是模板渲出来的那份',
+        String(sentSse.init.body).includes('翻成简体中文'), String(sentSse.init.body).slice(0, 160));
+      check('图片直传测试：SSE 的原始响应留着（诊断要看全帧）',
+        String(okSse.raw).includes('[DONE]'), okSse.raw);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+
+    // 失败：HTTP 状态、原始响应、请求都挂到 Error 上（设置页那三块靠它）
+    try {
+      globalThis.fetch = async () => ({
+        ok: false,
+        status: 401,
+        text: async () => '{"error":{"message":"bad key"}}'
+      });
+      let bad = null;
+      try {
+        await runImageTranslate({ config: cfg, dataUrl: 'data:image/png;base64,AAA', vars: {} });
+      } catch (e) {
+        bad = e;
+      }
+      check('图片直传测试：失败时 HTTP 状态原样带出来', !!bad && bad.status === 401, bad && String(bad.status));
+      check('图片直传测试：失败时原始响应也带出来（定位靠它）',
+        !!bad && /bad key/.test(String(bad.raw)), bad && String(bad.raw));
+      check('图片直传测试：失败时请求也带出来（知道发到哪去了）',
+        !!bad && !!bad.request && bad.request.url === 'https://api.example.com/v1/chat/completions');
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+
+    // 回来了但不是 JSON：说人话，别糊一个 "Unexpected token"
+    try {
+      globalThis.fetch = async () => ({ ok: true, status: 200, text: async () => '<html>502</html>' });
+      let notJson = null;
+      try {
+        await runImageTranslate({ config: cfg, dataUrl: 'data:x', vars: {} });
+      } catch (e) {
+        notJson = e;
+      }
+      check('图片直传测试：返回不是 JSON 时说清并附上原文',
+        !!notJson && /不是 JSON/.test(notJson.message) && /<html>/.test(notJson.message),
+        notJson && notJson.message);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  }
+
   /* ---- 右键菜单那一条 ---- */
   eq('菜单 id', OCR_MENU_ID, 'rt-ocr-clipboard');
   eq('菜单文案', OCR_MENU_TITLE, '翻译剪切板中的截图');
@@ -1034,12 +1355,12 @@ section('15. 截图 OCR：供应商状态 / 请求体 / 取文字');
     OCR_PROVIDERS[0].request);
   check('内置多了百度那条（模板化之后 form 协议也是一段模板）',
     OCR_PROVIDERS.some((p) => p.id === 'builtin-baidu-ocr' && p.request.includes('access_token=')));
-  check('默认提示词是 DeepSeek-OCR 认的那句（不是 PaddleOCR-VL 的 OCR:）',
-    DEFAULT_OCR_PROMPT === 'Free OCR.', DEFAULT_OCR_PROMPT);
-  /* 提示词**不内置成预设**：各家格式互不相通（DeepSeek-OCR 认 `Free OCR.`、
-     PaddleOCR-VL 认 `OCR:`），设置页摆一排只对某一家有效的按钮就是误导。
-     内置那条供应商只兜一个默认值，换模型时用户自己去文档里抄。
-     设置页里那句说明由 e2e 第 10 节盯着（它得写清「不同模型不一样 + 举个例子」）。 */
+  check('默认提示词是 DeepSeek-OCR 官方那串（`<image>` + 换行 + `Free OCR.`，一个字都别少）',
+    DEFAULT_OCR_PROMPT === '<image>\nFree OCR.', JSON.stringify(DEFAULT_OCR_PROMPT));
+  /* 提示词**不内置成预设**：各家格式互不相通，而且 DeepSeek-OCR 只认训练时那几个固定写法 ——
+     换成普通措辞（哪怕意思一模一样的中文）就把它推出训练分布，输出会退化（实测会跑去生成
+     `<table>` 表格，识别率也掉）。所以设置页摆一排「预设按钮」是误导：内置那条只兜一个默认值，
+     换模型时用户自己去翻官方文档。设置页里那句说明由 e2e 第 10 节盯着。 */
   check('内置那条用的就是默认提示词',
     normalizeOcrProvider(OCR_PROVIDERS[0]).prompt === DEFAULT_OCR_PROMPT,
     normalizeOcrProvider(OCR_PROVIDERS[0]).prompt);
@@ -1187,6 +1508,84 @@ section('15c. 一条配置两段模板：文本一段、图片一段');
   eq('老存档里的配置读出来被补上空的 imageRequest', oldState.configs[0].imageRequest, '');
   eq('老配置的请求模板一个字没动', oldState.configs[0].request, 'R');
   eq('老配置的 id / 名字也都在', [oldState.configs[0].id, oldState.configs[0].name], ['old', '老配置']);
+}
+
+section('15d. 谁去翻译这一条：文字用顶栏那条，图片可另指一条');
+{
+  /* 三条配置：A 只有文字模板、B 两段都有、C 只有文字模板（用来试「指过去但没填图片模板」） */
+  const mk = () => ({
+    activeConfigId: 'A',
+    settings: { targetLang: '简体中文' },
+    vars: [],
+    configs: [
+      { id: 'A', name: '甲', request: 'TEXT_A', imageRequest: '' },
+      { id: 'B', name: '乙', request: 'TEXT_B', imageRequest: 'IMG_B' },
+      { id: 'C', name: '丙', request: 'TEXT_C', imageRequest: '   \n ' }
+    ]
+  });
+
+  const idOf = (st, id) => (pickRequestConfig(st, id, false) || {}).id;
+
+  /* 文字：永远走传进来的 / 存档里记的那条，跟图片选中项无关 */
+  const st1 = mk();
+  st1.ocr = { imageConfigId: 'B' };
+  eq('划文字：用传进来的那条', idOf(st1, 'A'), 'A');
+  eq('划文字：传了别的 id 就用那个', idOf(st1, 'C'), 'C');
+  eq('划文字：哪怕图片选中项指着别人，也不受影响', idOf(st1, 'B'), 'B');
+  eq('划文字：没传 id → 用存档里的 activeConfigId', idOf(st1, ''), 'A');
+
+  eq('划文字：imageConfigId 指向不存在的 id 也不炸', idOf(st1, 'NOPE'), 'A');
+
+  /* 图片：只有「勾了禁用外置 OCR + 有 imageConfigId + 那条的 imageRequest 非空」三件事齐了才改道 */
+  const st2 = mk();
+  st2.ocr = { imageConfigId: 'B' };
+  eq('图片直传：改道到图片配置那条', (pickRequestConfig(st2, 'A', true) || {}).id, 'B');
+  eq('图片直传：改道过去的正是那条模板', pickRequestConfig(st2, 'A', true).imageRequest, 'IMG_B');
+
+  const st3 = mk();
+  st3.ocr = { imageConfigId: 'C' }; // 丙的图片模板只有空白
+  eq('图片直传：指着一条没填图片模板的 → 回退到顶栏那条',
+    (pickRequestConfig(st3, 'A', true) || {}).id, 'A');
+
+  const st4 = mk();
+  st4.ocr = { imageConfigId: 'NOPE' };
+  eq('图片直传：指着不存在的 id → 回退到顶栏那条',
+    (pickRequestConfig(st4, 'A', true) || {}).id, 'A');
+
+  const st5 = mk();
+  eq('图片直传：老存档（压根没 imageConfigId）行为不变',
+    (pickRequestConfig(st5, 'A', true) || {}).id, 'A');
+
+  const st6 = mk();
+  st6.ocr = { imageConfigId: 'B' };
+  eq('图片直传：没勾禁用外置 OCR（hasImage=false）就不改道',
+    (pickRequestConfig(st6, 'A', false) || {}).id, 'A');
+
+  eq('没有存档时给 null', pickRequestConfig(null, 'A', true), null);
+  eq('传进来的 id 是空的、存档 activeConfigId 也空 → 兜底第一条',
+    (pickRequestConfig({ activeConfigId: '', configs: [{ id: 'Z', request: 'r' }] }, '', false) || {}).id, 'Z');
+
+  /* ---- canTranslateImage：三处共用的唯一判据 ----
+     设置页那份「图片配置」列表、面板顶栏图片模式下的下拉、pickRequestConfig 的入围条件。 */
+  check('填了图片模板才算能翻图', canTranslateImage({ imageRequest: 'curl x' }) === true);
+  check('只有空白也算没填（和设置页列表、pickRequestConfig 一个口径）',
+    canTranslateImage({ imageRequest: '   \n\t ' }) === false);
+  check('留空 / 没这个字段 / 传 null 都给 false',
+    [canTranslateImage({ imageRequest: '' }), canTranslateImage({ request: 'r' }), canTranslateImage(null)]
+      .join(',') === 'false,false,false');
+  check('非字符串（老存档里手改坏的）不炸',
+    canTranslateImage({ imageRequest: 123 }) === true && canTranslateImage({ imageRequest: null }) === false);
+
+  /* content script 不能 import，content.js 里那份 imageCapable() 必须是同一句 ——
+     这条钉的是「别只改一边」，断了就把两边一起改。 */
+  const contentSrc = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
+  check('content.js 里那份镜像判据和 canTranslateImage 同形',
+    /function imageCapable\(c\) \{\s*\n\s*return !!\(c && String\(c\.imageRequest \|\| ''\)\.trim\(\)\);/.test(contentSrc),
+    'content.js 的 imageCapable() 变样了 —— 和 lib/store.js 的 canTranslateImage 对不上了');
+  /* 后台随 ready 发 img 标志，面板照着它过滤 —— 别退回「页面自己猜一份」 */
+  const bgSrc = readFileSync(new URL('../background.js', import.meta.url), 'utf8');
+  check('background.js 的 ready 用 canTranslateImage 发 img + imageConfigId',
+    /img: canTranslateImage\(c\)/.test(bgSrc) && /imageConfigId: state\.ocr\.imageConfigId/.test(bgSrc));
 }
 
 section('16. 剪切板图片：类型识别 / data URL / base64');
@@ -1471,9 +1870,23 @@ section('20. 「临时直连」已彻底移除：权限 / 模块 / 调用点都�
   }
 }
 
+section('21. 结果区最大高度：默认值 = 原来写死的那个数，而且真的走变量');
+{
+  /* 这条设置的默认值**必须**是 46 —— 那是改动前 `.rt-out` 里写死的 `46vh`。
+     换成别的数，老用户升级后会发现面板高度变样了（等于偷偷改了行为）。 */
+  eq('默认值就是原来写死的 46（升级看不出变化）', DEFAULT_SETTINGS.panelMaxHeight, 46);
+
+  // content.js 手抄了一份 prefs 初值（content script 不能 import），两边都得有
+  const src = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
+  check('content.js 那份 prefs 初值里也有它（且同是 46）', /\bpanelMaxHeight:\s*46\b/.test(src));
+  check('上限读的是变量，没写死回去', src.includes('var(--rt-max-h, 46vh)'));
+  check('填 0（不限）靠一个类显式关掉，而不是把变量设成 none',
+    src.includes('.rt-panel.no-max-h .rt-out { max-height: none; }') &&
+    src.includes("classList.toggle('no-max-h'"));
+}
+
 /* ------------------------------------------------------------------ */
 
 console.log('\n' + '='.repeat(46));
-console.log(`通过 ${passed} 项，失败 ${failed} 项`);
-console.log('='.repeat(46));
+console.log(`通过 ${passed} 项，失败 ${failed} 项`);console.log('='.repeat(46));
 process.exit(failed === 0 ? 0 : 1);

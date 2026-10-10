@@ -132,6 +132,10 @@ const SLOW_MS = 1200;
    请求体从那儿被截断，服务端报 `Unexpected end-of-input in VALUE_STRING`。 */
 const OCR_TEXT = 'Pixeldrain\'s free tier: "6.00 GB per day"\nours is already 9.96 GB.';
 
+/** 假「图片直传测试」接口回的译文。和 OCR_TEXT 刻意不一样 ——
+    两个接口都会被同一节打到，用同一句话就分不出这条断言是在查哪一边。 */
+const IMG_TEST_TEXT = '图片直传测试的假译文';
+
 /** 假 OCR 接口收到的最后一个请求体，用来断言图片真的以 data URL 发过去了 */
 let lastOcrRequest = '';
 /** 假 OCR 接口被打了几次。用来反证「剪切板里没图时压根不会发请求」 */
@@ -140,6 +144,10 @@ let ocrHits = 0;
 let lastTextRequest = '';
 /** 假翻译接口被打了几次 */
 let textHits = 0;
+/** 假「图片直传测试」接口收到的最后一个请求体。设置页那块「测试图片配置」只看这里 */
+let lastImgTestRequest = '';
+/** 假「图片直传测试」接口被打了几次 */
+let imgTestHits = 0;
 /** 假接口收到的最后一个请求路径 —— 断言挂了的时候用来判断「请求到底打到哪条路由」 */
 let lastPath = '';
 
@@ -238,6 +246,30 @@ const server = http.createServer(async (req, res) => {
         message: 'max_tokens (8192) have exceeded max_seq_len (8192) limit.',
         data: null
       }));
+    });
+    return;
+  }
+  // 假「图片直传测试」接口：设置页在勾了「禁用外置 OCR」之后那块「测试」打的就是它。
+  // **故意回 SSE**（`stream: true` 的真接口就长这样，Ling 那种）—— 实机上踩过：
+  // 设置页原来自个儿 JSON.parse(res.text())，于是当场报「返回的不是 JSON」，
+  // 而面板走引擎翻得好好的。这里把请求体记下来 —— 图片有没有以 data URL 进去、
+  // 目标语言有没有填上，只看这里。
+  // 放在 /ocr 前面判：不然会被上面那条 startsWith('/ocr') 吃掉。
+  if (req.url && req.url.startsWith('/imgtest')) {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      lastImgTestRequest = body;
+      imgTestHits += 1;
+      res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8' });
+      // 分三帧喂，中间那帧还把事件切成两半 —— 跨分片拼接也一起测了
+      const frames = [
+        'data: {"choices":[{"delta":{"content":"' + IMG_TEST_TEXT.slice(0, 4) + '"}}]}\n\n',
+        'data: {"choices":[{"delta":{"cont',
+        'ent":"' + IMG_TEST_TEXT.slice(4) + '"}}]}\n\ndata: [DONE]\n\n'
+      ];
+      for (const f of frames) res.write(f);
+      res.end();
     });
     return;
   }
@@ -495,6 +527,92 @@ try {
   }
 
   /* ------------------------------------------------------------------ */
+  /* 1.5 Shadow DOM 里划词（B 站评论区那种 Web Component）                */
+  /* ------------------------------------------------------------------ */
+
+  // B 站评论区是 <bili-comments> + shadowRoot。选区落在 Shadow DOM 里会被重定目标
+  // 到 document 层：isCollapsed 变 true、range 的几何量全丢（rect 全 0、clientRects
+  // 为空），只有 toString() 还拿得到文字。以前这两条都把结果直接挡掉，表现就是
+  // 「划视频标题弹按钮、划评论区评论不弹」。这里钉住：照样弹，而且贴鼠标松开的位置。
+  console.log('\n1.5 Shadow DOM 里划词');
+
+  // 这一段必须用真鼠标拖，不能像第 1 节那样手工 createRange：脚本构造的选区
+  // 自己持有 Shadow 内部节点，浏览器不做重定目标，几何量是好的；只有真实拖拽
+  // 出来的选区才是「rect 全 0」那个形态。
+  const shBox = await page.evaluate(() => {
+    const hostEl = document.createElement('div');
+    hostEl.id = 'rt-shadow-host';
+    hostEl.style.cssText =
+      'position:fixed;left:60px;bottom:60px;width:300px;padding:8px;background:#fff;border:1px solid #ccc;z-index:5';
+    document.body.appendChild(hostEl);
+    const sr = hostEl.attachShadow({ mode: 'open' });
+    sr.innerHTML = '<div style="font:16px/26px sans-serif">影子里的评论文字，用来验划词</div>';
+    const r = sr.querySelector('div').getBoundingClientRect();
+    return { x: r.x, y: r.y, w: r.width, h: r.height };
+  });
+
+  const shFrom = { x: shBox.x + 4, y: shBox.y + shBox.h / 2 };
+  const shTo = { x: shBox.x + shBox.w - 4, y: shFrom.y };
+  await page.mouse.move(shFrom.x, shFrom.y);
+  await page.mouse.down();
+  await page.mouse.move(shTo.x, shTo.y, { steps: 14 });
+  await page.mouse.up();
+
+  const shadowProbe = {
+    ...(await page.evaluate(() => {
+      const s = window.getSelection();
+      const out = { text: s.toString().trim(), geoW: 0, geoH: 0, rectCount: 0, collapsed: s.isCollapsed };
+      if (s.rangeCount) {
+        const rg = s.getRangeAt(0);
+        const b = rg.getBoundingClientRect();
+        out.geoW = b.width;
+        out.geoH = b.height;
+        out.rectCount = rg.getClientRects().length;
+      }
+      return out;
+    })),
+    mx: shTo.x
+  };
+
+  check(
+    '前置条件：Shadow DOM 的选区确实拿不到几何量',
+    shadowProbe.geoW === 0 && shadowProbe.geoH === 0 && shadowProbe.rectCount === 0,
+    `文字「${shadowProbe.text}」，rect ${fmt(shadowProbe.geoW)}x${fmt(shadowProbe.geoH)}，` +
+      `clientRects ${shadowProbe.rectCount}，isCollapsed=${shadowProbe.collapsed}`
+  );
+  check('前置条件：这种情况下文字仍然拿得到', shadowProbe.text.length > 0, `文字「${shadowProbe.text}」`);
+
+  await page.waitForTimeout(300);
+  const mSh = await measure();
+
+  check(
+    'Shadow DOM 里划词也弹按钮',
+    !!(mSh.trigger && mSh.trigger.display !== 'none'),
+    `display=${mSh.trigger && mSh.trigger.display}`
+  );
+  if (mSh.trigger && mSh.trigger.display !== 'none') {
+    between('没几何量时贴鼠标松开的位置', mSh.trigger.x - shadowProbe.mx, 2, 14, 'px');
+  }
+
+  // 去掉 isCollapsed 判断之后，「单击、没选中文字」不能跟着乱弹
+  await page.mouse.click(200, 200);
+  await page.waitForTimeout(300);
+  const mEmpty = await measure();
+  check(
+    '单击（没选中文字）还是不弹',
+    !mEmpty.trigger || mEmpty.trigger.display === 'none',
+    `display=${mEmpty.trigger && mEmpty.trigger.display}`
+  );
+
+  // 收拾干净：影子宿主和残留选区都不能留给后面的小节
+  await page.evaluate(() => {
+    const h = document.getElementById('rt-shadow-host');
+    if (h) h.remove();
+  });
+  await selectText();
+  await page.waitForTimeout(200);
+
+  /* ------------------------------------------------------------------ */
   /* 2. 点开面板，量顶栏底栏                                             */
   /* ------------------------------------------------------------------ */
 
@@ -685,6 +803,78 @@ try {
   await opt.waitForTimeout(200);
 
   check('设置页打得开、没报错', errors.length === 0, errors.join(' | '));
+
+  /* ---- 变量值默认打码（别让设置页截图带走 Key） ----------------------
+     配置栏和 OCR 的请求预览早就把 Key 打码了（maskApiKey / maskAuthHeaders），
+     变量这一栏作为「源头」不能反着来。这里新加一条变量试：默认藏、点眼睛能看、
+     再点藏回去。测完把这条删掉，别留给后面的小节。 */
+  // 先切到「变量」页签（默认激活的不是它，不切的话按钮量不到尺寸）
+  await opt.evaluate(() => {
+    document.querySelector('.tab[data-tab="vars"]')?.click();
+  });
+  await opt.waitForTimeout(150);
+
+  // 存档里本来就有一条空的 {{apiKey}}（DEFAULT_VARS），所以一律认**最后一行**
+  const varRowsBefore = await opt.evaluate(() => document.querySelectorAll('#vars-body tr').length);
+
+  await opt.click('#btn-add-var');
+  await opt.waitForTimeout(120);
+  await opt.evaluate(() => {
+    const rows = document.querySelectorAll('#vars-body tr');
+    const row = rows[rows.length - 1];
+    const name = row.querySelector('input[data-kind="name"]');
+    const val = row.querySelector('input[data-kind="value"]');
+    name.value = 'rtTestKey';
+    name.dispatchEvent(new Event('input', { bubbles: true }));
+    val.value = 'sk-abcdef1234567890';
+    val.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+
+  const varMask = await opt.evaluate(() => {
+    const rows = document.querySelectorAll('#vars-body tr');
+    const row = rows[rows.length - 1];
+    const val = row.querySelector('input[data-kind="value"]');
+    const eye = row.querySelector('.row-eye');
+    const read = () => {
+      const cs = getComputedStyle(val);
+      return {
+        masked: val.classList.contains('masked'),
+        css: cs.webkitTextSecurity || cs.getPropertyValue('-webkit-text-security')
+      };
+    };
+    const before = read();
+    eye.click();
+    const shown = read();
+    eye.click();
+    const back = read();
+    return { before, shown, back, value: val.value, type: val.type };
+  });
+
+  check(
+    '新加的变量值默认打码（不是明文摆着）',
+    varMask.before.masked && varMask.before.css === 'disc',
+    JSON.stringify(varMask.before)
+  );
+  check(
+    '点眼睛能看到真值（打码只是显示层，值没被改）',
+    !varMask.shown.masked && varMask.value === 'sk-abcdef1234567890',
+    `${JSON.stringify(varMask.shown)}｜值 ${varMask.value}｜type=${varMask.type}`
+  );
+  check('再点一下又藏回去', varMask.back.masked, JSON.stringify(varMask.back));
+
+  // 收拾干净
+  await opt.evaluate(() => {
+    const rows = document.querySelectorAll('#vars-body tr');
+    const row = rows[rows.length - 1];
+    if (row) row.querySelector('.row-del').click();
+  });
+  await opt.waitForTimeout(120);
+  const varLeft = await opt.evaluate(() => document.querySelectorAll('#vars-body tr').length);
+  check(
+    '（脚手架）测完把那条临时变量删掉了',
+    varLeft === varRowsBefore,
+    `还剩 ${varLeft} 行（原本 ${varRowsBefore}）`
+  );
 
   // 「设置」是第二个 tab，不点开的话里面的元素量不到尺寸
   await opt.evaluate(() => {
@@ -1171,16 +1361,22 @@ try {
       active: state.activeConfigId,
       hasBox: !!document.querySelector('#f-image-request'),
       imgVal: (document.querySelector('#f-image-request') || {}).value,
-      requestVisible: !document.querySelector('#request-only').hidden
+      requestVisible: !document.querySelector('#request-only').hidden,
+      // 「图片请求模板」默认是收起的 <details>：不填的人不用天天看着那一大块
+      imgTplOpen: document.querySelector('#f-img-tpl').open
     };
   });
   check('切到自定义请求型配置后，图片模板的输入框在', tplSwitched.hasBox && tplSwitched.requestVisible,
     JSON.stringify(tplSwitched));
+  check('图片请求模板默认收起（可选的东西不占版面）', tplSwitched.imgTplOpen === false,
+    String(tplSwitched.imgTplOpen));
   check('图片模板默认是空的（老配置读出来就是空串）', tplSwitched.imgVal === '',
     JSON.stringify(tplSwitched.imgVal));
 
   // 写一段进去：它和普通模板要各存各的
   const wroteImg = await opt.evaluate(async () => {
+    // 先展开那个折叠块 —— 收起的 <details> 里的东西是 display:none，focus() 是空操作
+    document.querySelector('#f-img-tpl').open = true;
     const box = document.querySelector('#f-image-request');
     box.focus();
     box.value = '{"mode":"e2e-image","text":"{{image}}"}';
@@ -1197,6 +1393,7 @@ try {
   // 上面那排标签应该插进「当前光标所在的框」—— 这里光标在图片模板里。
   // 挑 {{date}}：Ollama 那条内置模板里没有它，才不会把「本来就有」看成「刚插进去」。
   const chipInto = await opt.evaluate(async () => {
+    document.querySelector('#f-img-tpl').open = true;
     const box = document.querySelector('#f-image-request');
     box.focus();
     box.selectionStart = box.selectionEnd = box.value.length;
@@ -1496,7 +1693,7 @@ try {
     '  "messages": [',
     '    {"role": "user", "content": [',
     '      {"type": "image_url", "image_url": {"url": "{{image}}"}},',
-    '      {"type": "text", "text": "Free OCR."}',
+    '      {"type": "text", "text": "<image>\\nFree OCR."}',
     '    ]}',
     '  ],',
     '  "temperature": 0.01',
@@ -1521,7 +1718,7 @@ try {
     ocrShape.request.includes('https://api.siliconflow.cn/v1/chat/completions') &&
       ocrShape.request.includes('deepseek-ai/DeepSeek-OCR') &&
       ocrShape.request.includes('{{image}}') &&
-      ocrShape.request.includes('Free OCR.'),
+      ocrShape.request.includes('<image>\\nFree OCR.'),
     ocrShape.request.slice(0, 120)
   );
   check('占位符标签四个（image / imageBase64 / imageUrlEncoded / apiKey）',
@@ -1752,20 +1949,368 @@ try {
   const clipBranch = await opt.evaluate(() => document.querySelector('#ocr-test-result').textContent);
   check('没选图时去读剪切板，读不到就直说（不静默）', /剪切板/.test(clipBranch), clipBranch.slice(0, 140));
 
-  // 勾上「禁用外置 OCR」时这条供应商根本不会被动用，测试按钮该禁用
+  /* 勾上「禁用外置 OCR」之后那块「测试」不关掉，而是**换个对象**：
+     不测这条 OCR 供应商，改测左边选中那条图片配置的「图片请求模板」。
+     不然勾上之后这条路就没法试了 —— 只能右键截一张图才知道配没配对。 */
   const testBtnOff = await opt.evaluate(() => {
     const el = document.querySelector('#o-disabled');
     el.checked = true;
     el.dispatchEvent(new Event('input', { bubbles: true }));
-    return document.querySelector('#btn-ocr-test').disabled;
+    return {
+      disabled: document.querySelector('#btn-ocr-test').disabled,
+      label: document.querySelector('#o-test-label').textContent,
+      ocrHintHidden: document.querySelector('#ocr-test-hint').hidden,
+      imgHintHidden: document.querySelector('#imgcfg-test-hint').hidden,
+      summary: document.querySelector('#o-preview-summary').textContent,
+      btnVisible: document.querySelector('#o-test-field').offsetParent !== null,
+      // 这块「测试」什么时候都不该被压暗 —— 它一直是个能点的按钮。
+      // （踩过：.is-off 那条压暗规则和 .is-imgcfg 是同一个开关 toggle 的，
+      //   供应商字段全藏起来之后，只剩下它和请求预览挨着，看着像被禁用了。）
+      testOpacity: getComputedStyle(document.querySelector('#o-test-field')).opacity,
+      previewOpacity: getComputedStyle(document.querySelector('#o-preview').closest('.preview')).opacity
+    };
   });
-  check('勾了「禁用外置 OCR」后测试按钮禁用', testBtnOff === true, String(testBtnOff));
+  check('勾了「禁用外置 OCR」后「测试」那块没有藏起来',
+    testBtnOff.btnVisible === true, JSON.stringify(testBtnOff));
+  check('测试按钮没被禁用（有几条图片配置在，正好拿来测）',
+    testBtnOff.disabled === false, String(testBtnOff.disabled));
+  check('标签改成「测试图片配置」', testBtnOff.label === '测试图片配置', testBtnOff.label);
+  check('「测试」那块没被压暗（它一直是个能点的按钮）',
+    testBtnOff.testOpacity === '1', String(testBtnOff.testOpacity));
+  check('请求预览也没被压暗（这时摊的是图片配置那一份）',
+    testBtnOff.previewOpacity === '1', String(testBtnOff.previewOpacity));
+  check('说明换成图片配置那一套（OCR 那段收起来）',
+    testBtnOff.ocrHintHidden === true && testBtnOff.imgHintHidden === false,
+    `ocr 隐藏=${testBtnOff.ocrHintHidden}｜图片提示露着=${!testBtnOff.imgHintHidden}`);
+  check('预览标题说明这是示例图（真截图是一整段 data URL）',
+    /示例图/.test(testBtnOff.summary), testBtnOff.summary);
+
+  /* 勾上之后左栏还得整栏换成「图片配置」—— 那份列表是配置栏数据的**过滤视图**：
+     只列填过「图片请求模板」的配置（= 能看图的那些），选中项存在 state.ocr.imageConfigId。 */
+  const imgCfgMode = await opt.evaluate(() => ({
+    ocrListHidden: document.querySelector('#ocr-list').hidden,
+    imgListHidden: document.querySelector('#imgcfg-list').hidden,
+    title: document.querySelector('#ocr-list-title').textContent,
+    newHidden: document.querySelector('#btn-ocr-new').hidden,
+    footHidden: document.querySelector('#imgcfg-foot').hidden,
+    hintHidden: document.querySelector('#imgcfg-hint').hidden,
+    editorImgCfg: document.querySelector('#ocr-editor').classList.contains('is-imgcfg'),
+    checked: document.querySelector('#o-disabled').checked
+  }));
+  check('勾了之后左栏换成「图片配置」',
+    imgCfgMode.ocrListHidden && !imgCfgMode.imgListHidden, JSON.stringify(imgCfgMode));
+  check('左栏标题跟着换', imgCfgMode.title === '图片配置', imgCfgMode.title);
+  check('「新建供应商」收起来（图片配置的增删改只在「配置」栏）',
+    imgCfgMode.newHidden === true, String(imgCfgMode.newHidden));
+  check('右边供应商那套字段收起来、只留「图片直传」那句说明',
+    imgCfgMode.editorImgCfg && !imgCfgMode.hintHidden,
+    `is-imgcfg=${imgCfgMode.editorImgCfg}｜hint 露着=${!imgCfgMode.hintHidden}`);
+
+  const imgCfgConsistent = await opt.evaluate(async () => {
+    // 行是 .cfg-row（id 挂在它身上），可点的是里面的 .cfg-item
+    const ids = [...document.querySelectorAll('#imgcfg-list .cfg-row')].map((b) => b.dataset.id);
+    const { state } = await chrome.storage.local.get('state');
+    const all = state.configs.filter((c) => String(c.imageRequest || '').trim()).map((c) => c.id);
+    return { ids, same: ids.join(',') === all.join(','), all };
+  });
+  check('列表里不多不少，正好是填过「图片请求模板」的那些',
+    imgCfgConsistent.same,
+    `列表=[${imgCfgConsistent.ids}]｜存档=[${imgCfgConsistent.all}]`);
+
+  /* 左栏那几条得**一样宽**。踩过（kniph 报的「左边收束的几个选项宽度不一样」）：
+     `.cfg-item` 是 <button>，而 `width: auto` 对按钮来说是「**收缩到内容宽度**」
+     （fit-content 那套），`flex: 1` 在直接躺在 `.list-body` 里的那些条上又是死的 ——
+     结果名字长的条宽、名字短的条窄。
+
+     两种列表现有两种长相，判据得同时容得下：
+       · 「OCR 供应商」= `.list-body > .cfg-item`（条目直接躺列表里，靠 width:100% 铺满）
+       · 「图片配置」= `.list-body > .cfg-row > .cfg-item`（行是 flex，条目靠 flex:1 拉平，
+         行里还夹着手柄和 ↑↓）
+     所以量的是「条目 + 同一行里除它以外的那些」= 行宽：这样两种长相都能说
+     「每行正好占满列表可用宽度」。**只有一条也能测** —— 有 bug 时它会缩成一个窄条。 */
+  const colW = (sel) =>
+    opt.evaluate((s) => {
+      const list = document.querySelector(s);
+      const cs = getComputedStyle(list);
+      const inner = list.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      const items = [...list.querySelectorAll('.cfg-item')];
+      return {
+        ws: items.map((el) => Math.round(el.getBoundingClientRect().width)),
+        // 同一行里条目之外还占了多少（手柄 + 上下移 + 间隙）；直接躺列表里的那些是 0
+        chrome: items.map((el) => {
+          const row = el.closest('.cfg-row');
+          if (!row) return 0;
+          return Math.round(row.getBoundingClientRect().width - el.getBoundingClientRect().width);
+        }),
+        inner: Math.round(inner),
+        // 名字长度跟着一起报出来 —— 宽度真出问题时，一眼就能看出是「跟着文字走的」
+        lens: items.map((el) => (el.querySelector('.name').textContent || '').length)
+      };
+    }, sel);
+
+  /** 每一行（条目 + 行内其他东西）是不是都正好占满列表可用宽度 */
+  const fillsList = (m) => m.ws.map((w, i) => Math.abs(w + m.chrome[i] - m.inner)).every((d) => d <= 1);
+
+  const imgColW = await colW('#imgcfg-list');
+  check('（脚手架）直传模式下左栏有图片配置在', imgColW.ws.length >= 1, String(imgColW.ws.length));
+  check('左栏那几条一样宽（不是各自缩到自己文字的宽度）',
+    new Set(imgColW.ws).size === 1,
+    `${imgColW.ws.join(' / ')}｜名字长度 ${imgColW.lens.join('/')}`);
+  check('而且每行都占满列表的可用宽度',
+    fillsList(imgColW),
+    `条 ${imgColW.ws[0]} + 行内 ${imgColW.chrome[0]} ｜ 可用 ${imgColW.inner}`);
+
+  /* ---- 图片配置列表也能拖动排序 / 上下移（和「配置」栏同一套逻辑）----
+     kniph 要的：「禁用外置 OCR 时左边的配置也要和配置列表一样可以拖动排序」。
+     那份列表是 state.configs 的**过滤视图**，所以排序动的还是 state.configs 本身 ——
+     副作用是「配置」栏的先后跟着一起变，这正是「逻辑一样」的意思，两边都得验。 */
+  // 这会儿只有一条图片配置，一条没法测排序 —— 真走一遍 UI，给另一条配置填上图片模板凑第二条
+  await opt.evaluate(() => document.querySelector('.tab[data-tab="configs"]')?.click());
+  await opt.waitForTimeout(180);
+  await opt.evaluate(async () => {
+    const row = [...document.querySelectorAll('#cfg-list .cfg-row')]
+      .find((r) => r.dataset.id === 'builtin-deepseek');
+    row?.querySelector('.cfg-item')?.click();
+    await new Promise((r) => setTimeout(r, 250));
+    document.querySelector('#f-img-tpl').open = true; // 默认收起的 <details>
+    const box = document.querySelector('#f-image-request');
+    box.value = '{"mode":"e2e-imgcfg-2","text":"{{image}}"}';
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 1100));
+  });
+  await opt.evaluate(async () => {
+    document.querySelector('.tab[data-tab="ocr"]')?.click();
+    await new Promise((r) => setTimeout(r, 250));
+  });
+  await opt.waitForTimeout(250);
+
+  /** 过滤视图里的顺序 / 存档里的顺序 / 「配置」栏当前画出来的顺序 */
+  const imgOrder = () =>
+    opt.evaluate(async () => {
+      const dom = [...document.querySelectorAll('#imgcfg-list .cfg-row')].map((r) => r.dataset.id);
+      const { state } = await chrome.storage.local.get('state');
+      return {
+        dom,
+        cfgDom: [...document.querySelectorAll('#cfg-list .cfg-row')].map((r) => r.dataset.id),
+        saved: state.configs.map((c) => c.id),
+        visible: state.configs.filter((c) => String(c.imageRequest || '').trim()).map((c) => c.id)
+      };
+    });
+
+  const imgShape = await opt.evaluate(() => {
+    const rows = [...document.querySelectorAll('#imgcfg-list .cfg-row')];
+    return {
+      rows: rows.length,
+      grips: document.querySelectorAll('#imgcfg-list .cfg-grip').length,
+      mvs: document.querySelectorAll('#imgcfg-list .cfg-mv-btn').length,
+      firstUp: rows[0].querySelector('.cfg-mv-btn[data-mv="-1"]').disabled,
+      lastDown: rows[rows.length - 1].querySelector('.cfg-mv-btn[data-mv="1"]').disabled
+    };
+  });
+  check('（脚手架）凑够两条图片配置，才测得了排序', imgShape.rows >= 2, String(imgShape.rows));
+  check('图片配置每行也有手柄 + 上下移（和「配置」栏长得一样）',
+    imgShape.grips === imgShape.rows && imgShape.mvs === imgShape.rows * 2,
+    `${imgShape.rows} 行 / ${imgShape.grips} 个手柄 / ${imgShape.mvs} 个按钮`);
+  check('图片配置的头尾 ↑ ↓ 也各禁掉一边',
+    imgShape.firstUp === true && imgShape.lastDown === true);
+
+  const imgBefore = await imgOrder();
+  check('（脚手架）存档里能翻图的正好就是屏幕上那几条',
+    JSON.stringify(imgBefore.visible) === JSON.stringify(imgBefore.dom),
+    `屏幕 ${imgBefore.dom}｜存档 ${imgBefore.visible}`);
+
+  /** 图片配置列表里每一行的几何（拖动要用） */
+  const imgBoxes = () =>
+    opt.evaluate(() =>
+      [...document.querySelectorAll('#imgcfg-list .cfg-row')].map((r) => {
+        const b = r.getBoundingClientRect();
+        const g = r.querySelector('.cfg-grip').getBoundingClientRect();
+        return {
+          id: r.dataset.id,
+          top: b.top,
+          bottom: b.bottom,
+          gripX: g.left + g.width / 2,
+          gripY: g.top + g.height / 2
+        };
+      })
+    );
+
+  // 把最后一条拖到第一条上半区（dragTo 是第 7 节那套手势，这里复用）
+  let ib = await imgBoxes();
+  let iSrc = ib[ib.length - 1];
+  let iDst = ib[0];
+  await dragTo(iSrc, iDst.top + 2);
+
+  const imgMark = await opt.evaluate(() => {
+    const t = document.querySelector('#imgcfg-list .cfg-row.drop-before');
+    const h = document.querySelector('#imgcfg-list .cfg-row.dragging');
+    return { before: t ? t.dataset.id : '', dragging: h ? h.dataset.id : '' };
+  });
+  check('图片配置拖动时也画「会插到这儿」的指示线', imgMark.before === iDst.id, imgMark.before || '(没有)');
+  check('图片配置被拖的那一行也有反馈', imgMark.dragging === iSrc.id, imgMark.dragging || '(没有)');
+
+  await opt.mouse.up();
+  await opt.waitForTimeout(1300);
+  const imgAfter = await imgOrder();
+  check('拖到最前面之后，图片配置的顺序真的变了',
+    imgAfter.dom[0] === iSrc.id, imgAfter.dom.join(','));
+  check('就那么几条，没多没少',
+    imgAfter.dom.length === imgBefore.dom.length, `${imgBefore.dom.length} → ${imgAfter.dom.length}`);
+  check('排序动的是 state.configs 本身（存档里能翻图的几条，顺序和屏幕一致）',
+    JSON.stringify(imgAfter.visible) === JSON.stringify(imgAfter.dom),
+    `存档 ${imgAfter.visible}｜屏幕 ${imgAfter.dom}`);
+  check('「配置」栏跟着一起重排了（同一份数据 —— 这就是「逻辑一样」）',
+    JSON.stringify(imgAfter.cfgDom) === JSON.stringify(imgAfter.saved) &&
+      JSON.stringify(imgAfter.cfgDom) !== JSON.stringify(imgBefore.cfgDom),
+    `${imgBefore.cfgDom.slice(0, 4).join(',')} → ${imgAfter.cfgDom.slice(0, 4).join(',')}`);
+
+  const imgLeftover = await opt.evaluate(
+    () =>
+      document.querySelectorAll(
+        '#imgcfg-list .drop-before, #imgcfg-list .drop-after, #imgcfg-list .dragging'
+      ).length
+  );
+  check('图片配置松手后指示线 / 拖动态也清干净了', imgLeftover === 0, `${imgLeftover} 个残留`);
+
+  // 反向：把现在最前面那条拖到末尾（off-by-one 正好藏在这个方向）
+  ib = await imgBoxes();
+  iSrc = ib[0];
+  iDst = ib[ib.length - 1];
+  await dragTo(iSrc, iDst.bottom - 2);
+  await opt.mouse.up();
+  await opt.waitForTimeout(1300);
+  const imgBack = await imgOrder();
+  check('往回拖到末尾也对（可见项的先后回到原样）',
+    JSON.stringify(imgBack.dom) === JSON.stringify(imgBefore.dom), imgBack.dom.join(','));
+
+  /* 收尾：把临时借来那条图片模板清掉 —— 后面那节按「有图片配置在」挑测试对象，
+     多一条会让「挑中哪一条」变得看运气。顺序不动（后面几节不依赖它）。 */
+  await opt.evaluate(() => document.querySelector('.tab[data-tab="configs"]')?.click());
+  await opt.waitForTimeout(180);
+  await opt.evaluate(async () => {
+    const row = [...document.querySelectorAll('#cfg-list .cfg-row')]
+      .find((r) => r.dataset.id === 'builtin-deepseek');
+    row?.querySelector('.cfg-item')?.click();
+    await new Promise((r) => setTimeout(r, 250));
+    document.querySelector('#f-img-tpl').open = true;
+    const box = document.querySelector('#f-image-request');
+    box.value = '';
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 1100));
+  });
+  const afterCleanup = await opt.evaluate(async () => {
+    const { state } = await chrome.storage.local.get('state');
+    return state.configs.filter((c) => String(c.imageRequest || '').trim()).map((c) => c.id);
+  });
+  check('收尾：临时那条图片模板清掉了（回到原来那一条）',
+    afterCleanup.length === 1, afterCleanup.join(',') || '(一条都没有)');
+
+  /* ---- 真跑一次「测试图片配置」：本地图片 → 假接口 → 译文摆出来 ---- */
+  /* 先给选中的那条图片配置写一段能解析的模板（配置栏那条原本只是个 JSON 片段，
+     没有地址，解析不出请求）。这一段就是设置页预览 / 测试要发的东西。 */
+  const imgTestCfgId = imgCfgConsistent.ids[0];
+  const imgTestTpl =
+    `curl -X POST 'http://127.0.0.1:${port}/imgtest' \\\n` +
+    '  -H "Content-Type: application/json" \\\n' +
+    '  -d \'{"model":"see","messages":[{"role":"user","content":[' +
+    '{"type":"image_url","image_url":{"url":"{{image}}"}},' +
+    '{"type":"text","text":"翻成{{target}}"}]}]}\'';
+
+  await opt.evaluate(async () => {
+    document.querySelector('.tab[data-tab="config"]')?.click();
+  });
+  await opt.waitForTimeout(150);
+  await opt.evaluate(async (id) => {
+    // 配置行是 .cfg-row（dataset.id），可点的是里面的 .cfg-item
+    const row = [...document.querySelectorAll('#cfg-list .cfg-row')].find((b) => b.dataset.id === id);
+    const item = row && row.querySelector('.cfg-item');
+    if (item) item.click();
+  }, imgTestCfgId);
+  await opt.waitForTimeout(200);
+  await opt.evaluate(async (tpl) => {
+    document.querySelector('#f-img-tpl').open = true;
+    const box = document.querySelector('#f-image-request');
+    box.value = tpl;
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 900));
+  }, imgTestTpl);
+  await opt.evaluate(async () => {
+    document.querySelector('.tab[data-tab="ocr"]')?.click();
+    await new Promise((r) => setTimeout(r, 300));
+  });
+  await opt.waitForTimeout(300);
+
+  // 预览先摊出来（不用发请求就能看到会发什么）
+  const imgTestPreview = await opt.evaluate(() => document.querySelector('#o-preview').textContent);
+  check('直传模式下预览摊的是图片请求模板（地址 / 图片占位符都在）',
+    imgTestPreview.includes(`http://127.0.0.1:${port}/imgtest`) &&
+      imgTestPreview.includes('image_url') &&
+      imgTestPreview.includes('data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=='),
+    imgTestPreview.slice(0, 140));
+
+  // 真发一次
+  const imgTestHitsBefore = imgTestHits;
+  await opt.setInputFiles('#ocr-test-img', { name: 'probe.png', mimeType: 'image/png', buffer: probeBuf });
+  await opt.evaluate(() => {
+    document.querySelector('#btn-ocr-test').click();
+  });
+  await opt
+    .waitForFunction(
+      (needle) => {
+        const box = document.querySelector('#ocr-test-result');
+        return box && !box.hidden && box.textContent.includes(needle);
+      },
+      IMG_TEST_TEXT,
+      { timeout: 15000 }
+    )
+    .catch(() => {});
+  const imgTestOut = await opt.evaluate(() => document.querySelector('#ocr-test-result').textContent);
+  check('「测试图片配置」真的发出去了、结果摆出来了',
+    imgTestOut.includes(IMG_TEST_TEXT), imgTestOut.slice(0, 200));
+  check('结果那块写的是「译文」（不是「识别到的文字」）',
+    imgTestOut.includes('译文') && !imgTestOut.includes('识别到的文字'), imgTestOut.slice(0, 80));
+  check('假接口确实被打了一次', imgTestHits === imgTestHitsBefore + 1,
+    `${imgTestHitsBefore} → ${imgTestHits}`);
+  check('发出去的请求里图片是真图片的 data URL',
+    /"url":"data:image\/png;base64,[A-Za-z0-9+/]{100,}/.test(lastImgTestRequest),
+    lastImgTestRequest.slice(0, 140));
+  check('{{target}} 也按当前目标语言填了（不是留着一个占位符）',
+    lastImgTestRequest.includes('翻成简体中文'), lastImgTestRequest.slice(0, 160));
+  // 假接口回的是 SSE（分三帧，中间那帧还切两半）—— 结果要正好攒成一整句
+  check('SSE 的响应也读得出来（不再误报「返回的不是 JSON」）',
+    !imgTestOut.includes('不是 JSON'), imgTestOut.slice(0, 200));
+
   await opt.evaluate(async () => {
     const el = document.querySelector('#o-disabled');
     el.checked = false;
     el.dispatchEvent(new Event('input', { bubbles: true }));
     await new Promise((r) => setTimeout(r, 900));
   });
+
+  // 取消勾选之后供应商那套字段要回来（别一勾一拨就回不去），而那块「测试」
+  // 在两种模式下都不该被压暗
+  const testBtnOn = await opt.evaluate(() => ({
+    checked: document.querySelector('#o-disabled').checked,
+    imgCfg: document.querySelector('#ocr-editor').classList.contains('is-imgcfg'),
+    reqVisible: document.querySelector('#o-request').closest('.field').offsetParent !== null,
+    label: document.querySelector('#o-test-label').textContent,
+    opacity: getComputedStyle(document.querySelector('#o-test-field')).opacity
+  }));
+  check('取消勾选后供应商那套字段回来（不再是图片配置模式）',
+    testBtnOn.checked === false && testBtnOn.imgCfg === false && testBtnOn.reqVisible === true,
+    JSON.stringify(testBtnOn));
+  check('两种模式下那块「测试」都不被压暗', testBtnOn.opacity === '1', String(testBtnOn.opacity));
+  check('标签也变回「测试」', testBtnOn.label === '测试', testBtnOn.label);
+
+  /* 供应商那三条名字长短差得挺多（硅基流动 / 百度 OCR（高精度版）/ OpenAI 兼容（任意视觉模型）），
+     正好拿来测「宽度是不是跟着文字走的」—— 有 bug 时这三条会是三个不同的宽度。 */
+  const ocrColW = await colW('#ocr-list');
+  check('供应商几条名字长短不一，但列出来一样宽',
+    ocrColW.ws.length >= 3 && new Set(ocrColW.ws).size === 1,
+    `${ocrColW.ws.join(' / ')}｜名字长度 ${ocrColW.lens.join('/')}`);
+  check('供应商那几条也占满列表可用宽度',
+    fillsList(ocrColW),
+    `条 ${ocrColW.ws[0]} + 行内 ${ocrColW.chrome[0]} ｜ 可用 ${ocrColW.inner}`);
 
   /* ---- 真剪切板 + 假 OCR 接口 ---- */
   /* 这一段必须开**有头**窗口。实测（tools 里探过）：无头 Chromium 的剪切板是
@@ -1827,7 +2372,7 @@ try {
             // 撇号安全地送进去 —— 这里就是那条回归的现场。
             request:
               "curl -X POST -H 'Content-Type: application/json' " +
-              "-d '{\"role\":\"user\",\"content\":\"翻成{{target}}：\\n\\\"\\\"\\\"\\n{{text}}\\n\\\"\\\"\\\"\"}' " +
+              "-d '{\"model\":\"e2e-local-model\",\"role\":\"user\",\"content\":\"翻成{{target}}：\\n\\\"\\\"\\\"\\n{{text}}\\n\\\"\\\"\\\"\"}' " +
               u.text,
             path: '',
             responseMode: 'text'
@@ -1901,6 +2446,8 @@ try {
         ocrOut.dotTitle === '翻译成功', String(ocrOut.dotTitle));
       check('诊断里记了这次 OCR（哪条供应商 / 多大图）',
         ocrOut.diag.includes('截图 OCR'), ocrOut.diag.slice(0, 90));
+      check('「…」里也交代了这次调的是哪个模型',
+        ocrOut.diag.includes('e2e-local-model'), ocrOut.diag.slice(0, 120));
       check('面板没抱怨请求体不是合法 JSON',
         !ocrOut.diag.includes('不是合法 JSON'), ocrOut.diag.slice(0, 120));
 
@@ -1928,7 +2475,8 @@ try {
         /^data:image\/[a-z]+;base64,[A-Za-z0-9+/]{100,}/.test(String((parts[0] || {}).image_url?.url || '')),
         String((parts[0] || {}).image_url?.url || '').slice(0, 48)
       );
-      check('提示词跟在图片后面', (parts[1] || {}).text === 'Free OCR.', JSON.stringify(parts[1]));
+      check('提示词跟在图片后面（官方那串：<image> + 换行 + Free OCR.）',
+        (parts[1] || {}).text === '<image>\nFree OCR.', JSON.stringify(parts[1]));
 
       /* ---- 剪切板里是纯文字时，要明说没有图片 ---- */
       /* 计数按「进入这一小节之前」为准，别写死绝对值 ——
@@ -2095,6 +2643,156 @@ try {
         JSON.stringify(txtBody.text));
       check('文字那一次没混进图片（content 结构都和图片段不一样）', txtBody.content === undefined,
         JSON.stringify(Object.keys(txtBody)));
+
+      /* ---- ②.5 图片改道：图片可以另指一条配置，文字不动 ---- */
+      /* 上面那两次用的是同一条配置（e2e-local）的两段模板。
+         真实场景是：文字翻译走便宜的文字模型，图片翻译另指一个能看图的模型。
+         这里再塞两条能看图的（e2e-img / e2e-img2），把 state.ocr.imageConfigId 指到第一条，
+         看图片那次是不是改道了、文字那次是否仍然待在 activeConfigId 上。
+         两条是为了能测「在面板里拨那个下拉」。 */
+      const imgCfgTpl = (u, mode) =>
+        "curl -X POST -H 'Content-Type: application/json' " +
+        `-d '{"mode":"${mode}","content":[` +
+        '{"type":"image_url","image_url":{"url":"{{image}}"}},' +
+        '{"type":"text","text":"看图"}]}\' ' + u;
+
+      const imgCfgs = [
+        { id: 'e2e-img', name: '看图那条', imageRequest: imgCfgTpl(`http://127.0.0.1:${port}/text`, 'imgcfg') },
+        { id: 'e2e-img2', name: '看图二号', imageRequest: imgCfgTpl(`http://127.0.0.1:${port}/text`, 'imgcfg2') }
+      ];
+
+      await csw.evaluate(async ({ textUrl, cfgs }) => {
+        const read = async () => (await chrome.storage.local.get('state')).state || null;
+        let state = await read();
+        for (let i = 0; i < 30; i++) {
+          for (const c of cfgs) {
+            if (!state.configs.some((x) => x.id === c.id)) {
+              state.configs.push({
+                id: c.id,
+                name: c.name,
+                // 文字那段给个**不一样**的标记：不然「文字那次用的是哪条」分不出来
+                request: 'curl -X POST -d \'{"mode":"textcfg"}\' ' + textUrl,
+                imageRequest: c.imageRequest
+              });
+            }
+          }
+          state.activeConfigId = 'e2e-local'; // 文字仍旧走这条
+          state.ocr.imageConfigId = 'e2e-img'; // 图片改走新加的这条
+          state.ocr.disabled = true;
+          await chrome.storage.local.set({ state });
+          const back = await read();
+          const b = back && back.configs.find((c) => c.id === 'e2e-img');
+          if (b && b.imageRequest.includes('imgcfg') && back.ocr.imageConfigId === 'e2e-img') return;
+          state = back || state;
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        throw new Error('图片配置（e2e-img / e2e-img2 + imageConfigId）没写进去');
+      }, { textUrl: `http://127.0.0.1:${port}/text`, cfgs: imgCfgs });
+      await cpage.waitForTimeout(500);
+
+      lastTextRequest = '';
+      await csw.evaluate(async () => {
+        const tabs = await chrome.tabs.query({});
+        const t = tabs.find((x) => x.url && x.url.includes('127.0.0.1'));
+        if (t) await chrome.tabs.sendMessage(t.id, { type: 'rt-ocr-clipboard' });
+      });
+      const sawImgCfgReq = await waitForTextReq('"mode":"imgcfg"');
+      await cpage
+        .waitForFunction(
+          (needle) => {
+            const root = document.getElementById('request-translate-host')?.shadowRoot;
+            const out = root?.querySelector('.rt-out');
+            return !!out && out.textContent.includes(needle);
+          },
+          '本地假译文',
+          { timeout: 30000 }
+        )
+        .catch(() => {});
+      check('图片那次改道去了 imageConfigId 指的那条', sawImgCfgReq, lastTextRequest.slice(0, 90));
+
+      /* ---- ②.6 面板顶栏那个下拉：图片这一屏要收束成「图片配置」那一份，而且拨得动 ---- */
+      /* 之前这儿是坏的：下拉照列全部配置（里面一堆纯文字接口），拨一下也不生效 ——
+         因为后台只认 state.ocr.imageConfigId，面板那条选中值压根没写回存档。
+         现在两边是同一份数据 + 同一个选中项（和设置页 OCR 栏那份列表同源）。 */
+      const readCfgSelect = () =>
+        cpage.evaluate(() => {
+          const root = document.getElementById('request-translate-host').shadowRoot;
+          const sel = root.querySelector('.rt-cfg');
+          return { opts: [...sel.options].map((o) => o.value), value: sel.value, title: sel.title };
+        });
+
+      const imgSel = await readCfgSelect();
+      check(
+        '图片那一屏：顶栏下拉只列能翻图的配置（带图片模板的那几条）',
+        imgSel.opts.length === 3 && imgSel.opts.join(',') === 'e2e-local,e2e-img,e2e-img2',
+        JSON.stringify(imgSel.opts)
+      );
+      check('图片那一屏：纯文字的内置配置一条都不在里面',
+        !imgSel.opts.some((id) => id.startsWith('builtin-')), JSON.stringify(imgSel.opts));
+      check('图片那一屏：下拉停在存档里的 imageConfigId 上（不是顶栏那条）',
+        imgSel.value === 'e2e-img', `${imgSel.value}｜顶栏 activeConfigId 是 e2e-local`);
+      check('图片那一屏：tooltip 说的是「图片接口」', /^图片接口：/.test(imgSel.title), imgSel.title);
+
+      /* 拨到另一条：得真的换过去（请求走新那条 + 存档里的选中项也改了） */
+      lastTextRequest = '';
+      await cpage.evaluate(() => {
+        const root = document.getElementById('request-translate-host').shadowRoot;
+        const sel = root.querySelector('.rt-cfg');
+        sel.value = 'e2e-img2';
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      const sawSwitched = await waitForTextReq('"mode":"imgcfg2"');
+      check('图片那一屏：拨一下真的换成新那条了（请求带的是 imgcfg2）', sawSwitched,
+        lastTextRequest.slice(0, 90));
+      check('拨完没有再走原来那条', !lastTextRequest.includes('"mode":"imgcfg"'),
+        lastTextRequest.slice(0, 90));
+
+      let storedImgCfg = '';
+      for (let i = 0; i < 30; i++) {
+        storedImgCfg = await csw.evaluate(async () => {
+          const { state } = await chrome.storage.local.get('state');
+          return state.ocr.imageConfigId;
+        });
+        if (storedImgCfg === 'e2e-img2') break;
+        await cpage.waitForTimeout(100);
+      }
+      check('拨完写回了存档 —— 和设置页 OCR 栏那个选中项是同一个（不是各选各的）',
+        storedImgCfg === 'e2e-img2', storedImgCfg);
+
+      await cpage
+        .waitForFunction(
+          (needle) => {
+            const root = document.getElementById('request-translate-host')?.shadowRoot;
+            const out = root?.querySelector('.rt-out');
+            return !!out && out.textContent.includes(needle);
+          },
+          '本地假译文',
+          { timeout: 30000 }
+        )
+        .catch(() => {});
+
+      lastTextRequest = '';
+      await csw.evaluate(async () => {
+        const tabs = await chrome.tabs.query({});
+        const t = tabs.find((x) => x.url && x.url.includes('127.0.0.1'));
+        if (t) {
+          await chrome.tabs.sendMessage(t.id, { type: 'rt-translate-selection', text: 'still text config' });
+        }
+      });
+      const sawTextStill = await waitForTextReq('"mode":"text"');
+      check('文字那次不受 imageConfigId 影响（还在 activeConfigId 那条）', sawTextStill,
+        lastTextRequest.slice(0, 90));
+      check('文字那次没有误用图片配置那条', !lastTextRequest.includes('imgcfg'),
+        lastTextRequest.slice(0, 90));
+
+      // 收拾干净：把临时那条配置删掉、选中项清空（别留给后面几节）
+      await csw.evaluate(async () => {
+        const { state } = await chrome.storage.local.get('state');
+        state.configs = state.configs.filter((c) => c.id !== 'e2e-img');
+        state.ocr.imageConfigId = '';
+        await chrome.storage.local.set({ state });
+      });
+      await cpage.waitForTimeout(300);
 
       /* ---- ③ 顶栏那盏状态灯：紫 = 正在翻译 / 绿 = 成功 / 红 = 失败 ---- */
       /* 「飞行中」这个瞬间不拿东西顶住就采不到，所以借用 /slow（挂 1.2 秒）。
@@ -2935,6 +3633,69 @@ try {
     `视口 ${endScroll.clientH} ｜ 内容 ${endScroll.scrollH}`);
   check('流到一半时视口没被甩着往下跑', midScroll.scrollTop === 0, String(midScroll.scrollTop));
   check('流完了还停在原地（能从头安静读完）', endScroll.scrollTop === 0, String(endScroll.scrollTop));
+
+  /* —— 结果区最大高度（设置里那条）：量**算出来的** max-height，不是变量名 —— */
+  /* 自适应时 `.rt-out` 以前写死 46vh，译文一长就卡在那儿。现在这个上限可调，
+     下面三条盯的是「设置 → 面板」这条链真的通了：默认还是 46 → 拨到 30 跟着走
+     → 填 0 不再封顶。用不上滚动条的那条（scrollH/clientH）比只看 max-height
+     更实在 —— 只改个变量而没真生效，它不会动。 */
+  const outShape = () =>
+    page.evaluate(() => {
+      const root = document.getElementById('request-translate-host').shadowRoot;
+      const out = root.querySelector('.rt-out');
+      const panel = root.querySelector('.rt-panel');
+      const max = getComputedStyle(out).maxHeight;
+      return {
+        max,
+        px: parseFloat(max),
+        clientH: out.clientHeight,
+        scrollH: out.scrollHeight,
+        vh: window.innerHeight,
+        zoom: parseFloat(getComputedStyle(panel).getPropertyValue('--rt-zoom')) || 1
+      };
+    });
+
+  /** 从设置页改这一条（和用户手输一样，走的是 storage + onChanged 那条路） */
+  const setMaxH = (v) =>
+    opt3.evaluate(async (val) => {
+      const read = async () => (await chrome.storage.local.get('state')).state || null;
+      for (let i = 0; i < 30; i++) {
+        const st = await read();
+        st.settings.panelMaxHeight = val;
+        await chrome.storage.local.set({ state: st });
+        const back = await read();
+        if (back.settings.panelMaxHeight === val) return;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      throw new Error('panelMaxHeight 没写进去');
+    }, v);
+
+  const mhDefault = await outShape();
+  check('默认封在 46% 视口高（和写死那个值一样，升级看不出变化）',
+    Math.abs(mhDefault.px - 0.46 * mhDefault.vh * mhDefault.zoom) <= 2,
+    `${mhDefault.max}｜视口 ${mhDefault.vh}`);
+
+  await setMaxH(30);
+  await page.waitForTimeout(400);
+  const mh30 = await outShape();
+  check('拨到 30，上限就封在 30% 视口高',
+    Math.abs(mh30.px - 0.3 * mh30.vh * mh30.zoom) <= 2,
+    `${mh30.max}｜视口 ${mh30.vh}`);
+  check('正文区真的跟着矮了（不是只改了个变量没生效）',
+    mh30.clientH < mhDefault.clientH - 20,
+    `46vh 时 ${mhDefault.clientH}px → 30vh 时 ${mh30.clientH}px`);
+  check('压到这个高度，内容还是长的（所以确实在滚动）',
+    mh30.scrollH > mh30.clientH + 20, `视口 ${mh30.clientH} ｜ 内容 ${mh30.scrollH}`);
+
+  await setMaxH(0);
+  await page.waitForTimeout(400);
+  const mhNone = await outShape();
+  check('填 0 = 不限，max-height 变成 none', mhNone.max === 'none', mhNone.max);
+  check('不限之后内容整个铺开，滚动条也没了',
+    mhNone.clientH >= mhNone.scrollH - 2, `视口 ${mhNone.clientH} ｜ 内容 ${mhNone.scrollH}`);
+
+  // 拨回默认，别让后面收到一个「不限」的面板
+  await setMaxH(46);
 
   await opt3.close();
 

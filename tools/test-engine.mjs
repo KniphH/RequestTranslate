@@ -4,7 +4,7 @@
  */
 
 import http from 'node:http';
-import { runRequest } from '../lib/engine.js';
+import { runRequest, extractModelName } from '../lib/engine.js';
 import { setBingBase, resetBingSession } from '../lib/adapters.js';
 
 let passed = 0;
@@ -173,6 +173,16 @@ const server = http.createServer(async (req, res) => {
     res.write('data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"克"}}\n\n');
     res.write('data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"劳"}}\n\n');
     res.end();
+    return;
+  }
+
+  // 9.5 响应里回显模型名（请求里没写 model 时的兜底来源）
+  if (path === '/echo-model') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      model: 'served-by-proxy',
+      choices: [{ message: { role: 'assistant', content: '回显' } }]
+    }));
     return;
   }
 
@@ -449,10 +459,49 @@ console.log('\n15. 内置适配器（Bing 免费通道）');
   check('返回结构仍然完整', typeof r.ms === 'number' && r.text === '', r);
 }
 
+console.log('\n16. 「…」里那个模型名（这次翻译到底调了谁）');
+{
+  /** 请求体里**不带 model** 的模板 —— 用来测「退而求其次」的两条来源 */
+  const noModelCurl = (p) =>
+    `curl ${base}${p} \\\n  -H "Content-Type: application/json" \\\n  -d '{"messages":[{"role":"user","content":"{{text}}"}]}'`;
+
+  // ① 请求体里写了 model —— 用户写了什么就显示什么
+  const r1 = await runRequest({ requestText: curlFor('/json'), vars });
+  eq('从请求体里读到模型名', r1.model, 'm');
+
+  // ② 地址里带 /models/<名字>（Gemini 那种把模型写进地址的）
+  const r2 = await runRequest({ requestText: noModelCurl('/models/gemini-2.0-flash'), vars });
+  eq('请求体没有 model 时，从地址里读', r2.model, 'gemini-2.0-flash');
+
+  // ③ 两处都没有 → 看响应有没有回显（不少中转每一帧都带）
+  const r3 = await runRequest({ requestText: noModelCurl('/echo-model'), vars });
+  eq('请求里没写，就用响应回显的那个', r3.model, 'served-by-proxy');
+
+  // ④ 全都没有就留空 —— 面板据此整行不显示，不编一个「未知」出来
+  const r4 = await runRequest({ requestText: noModelCurl('/text'), vars });
+  eq('哪儿都没有就是空串', r4.model, '');
+  check('空串是有意为之（不是 undefined）', r4.model === '', typeof r4.model);
+
+  // ⑤ 内置适配器没有可编辑的请求文本，同样留空
+  resetBingSession();
+  const r5 = await runRequest({ adapter: 'bing', vars: { text: 'M', targetLang: 'en' } });
+  eq('适配器那条没有模型名', r5.model, '');
+
+  /* 单独钉一下解析口径：地址那种写法要截掉冒号后面的动作，还要认 %XX */
+  eq('地址里那截也算（冒号后面是动作，不算名字）',
+    extractModelName({ url: 'https://x/v1beta/models/gemini-2.0-flash:generateContent' }),
+    'gemini-2.0-flash');
+  eq('地址里有 %XX 就解回来', extractModelName({ url: 'https://x/models/a%20b' }), 'a b');
+  eq('名字前后有空白就 trim', extractModelName({ body: '{"model":"  gpt-4o  "}' }), 'gpt-4o');
+  eq('model 不是字符串就当没有', extractModelName({ body: '{"model":123}' }), '');
+  eq('body 是坏 JSON 也不炸（退回看地址）',
+    extractModelName({ url: 'https://x/models/ok', body: '{坏' }), 'ok');
+  eq('没有请求信息就是空串（适配器那条）', extractModelName(null), '');
+}
+
 /* ------------------------------------------------------------------ */
 
 server.close();
-
 console.log('\n' + '='.repeat(46));
 console.log(`通过 ${passed} 项，失败 ${failed} 项`);
 console.log('='.repeat(46));

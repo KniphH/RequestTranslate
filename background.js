@@ -1,26 +1,19 @@
 /**
  * background service worker
- * ------------------------------------------------------------------
- * content script 受页面 CORS 约束，所以真正的请求都在这里发
- * （扩展有 host_permissions，可以访问用户配置里的任意域名）。
+ * content script 受页面 CORS 约束，所以真正的请求都在这里发（扩展有 host_permissions，
+ * 可以访问用户配置里的任意域名）。
  *
- * 端口协议（端口名 rt-translate）：
- *   page → bg : { type:'translate', text, configId, context }
- *               { type:'ocr' }
- *               { type:'abort' }
- *               { type:'hello' }
- *   bg → page : { type:'ready', configs, activeConfigId, settings, targetLangs }
- *               { type:'start', configName }
- *               { type:'delta', text }
- *               { type:'done', result }
- *               { type:'fatal', message }
- *               { type:'ocr-status', message }
- *               { type:'ocr-text', text, provider, ms, bytes }
- *               { type:'ocr-image', dataUrl, bytes }   ← 「禁用外置 OCR」时的直传
- *               { type:'ocr-error', message }
+ * 端口协议（端口名 rt-translate）
+ *   page → bg：{ type:'translate', text, configId, context } ｜ { type:'ocr' }
+ *              ｜ { type:'abort' } ｜ { type:'hello' }
+ *   bg → page：{ type:'ready', configs, activeConfigId, settings, targetLangs }
+ *              ｜ { type:'start', configName } ｜ { type:'delta', text } ｜ { type:'done', result }
+ *              ｜ { type:'fatal', message } ｜ { type:'ocr-status', message }
+ *              ｜ { type:'ocr-text', text, provider, ms, bytes } ｜ { type:'ocr-error', message }
+ *              ｜ { type:'ocr-image', dataUrl, bytes }（「禁用外置 OCR」时的直传）
  */
 
-import { loadState, getConfig, buildVars, requestTemplateFor } from './lib/store.js';
+import { loadState, pickRequestConfig, canTranslateImage, buildVars, requestTemplateFor } from './lib/store.js';
 import { runRequest } from './lib/engine.js';
 import {
   OCR_MENU_ID,
@@ -38,9 +31,7 @@ import { TARGET_PRESETS } from './lib/template.js';
 const PORT_NAME = 'rt-translate';
 const MENU_ID = 'rt-translate-selection';
 
-/* ------------------------------------------------------------------ */
-/* 右键菜单                                                            */
-/* ------------------------------------------------------------------ */
+/* ---- 右键菜单 ---- */
 
 async function ensureMenu() {
   try {
@@ -112,9 +103,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 });
 
-/* ------------------------------------------------------------------ */
-/* 页面缩放                                                            */
-/* ------------------------------------------------------------------ */
+/* ---- 页面缩放 ---- */
 /* 网页缩放（Ctrl + 加减号）会把页面里所有 fixed 定位的东西一起放大，
    内容脚本自己看不到缩放比，只能由这里查出来告诉它，那边再做反向补偿。
    zoom 相关的 tabs 方法不需要额外的权限声明。 */
@@ -142,9 +131,7 @@ chrome.tabs.onZoomChange.addListener((info) => {
   });
 });
 
-/* ------------------------------------------------------------------ */
-/* 剪切板里的截图                                                      */
-/* ------------------------------------------------------------------ */
+/* ---- 剪切板里的截图 ---- */
 /* service worker 里没有 navigator.clipboard（也没有 DOM），读剪切板只能借
    offscreen 文档。它是**用完就关**的：这台机器内存本来就紧，
    常驻一个隐藏页面不划算（创建一次几十毫秒，能接受）。 */
@@ -213,9 +200,7 @@ async function readClipboardImage() {
   }
 }
 
-/* ------------------------------------------------------------------ */
-/* 翻译端口                                                            */
-/* ------------------------------------------------------------------ */
+/* ---- 翻译端口 ---- */
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== PORT_NAME) return;
@@ -246,8 +231,12 @@ chrome.runtime.onConnect.addListener((port) => {
       const state = await loadState();
       safePost({
         type: 'ready',
-        configs: state.configs.map((c) => ({ id: c.id, name: c.name })),
+        /* img = 这条配置能不能翻图（图片请求模板非空）—— 面板顶栏在「图片直传」那一屏
+           只列这些。判据收在 lib/store.js 的 canTranslateImage 一处，别在这手写一遍。 */
+        configs: state.configs.map((c) => ({ id: c.id, name: c.name, img: canTranslateImage(c) })),
         activeConfigId: state.activeConfigId,
+        // 图片模式下顶栏下拉显示 / 改的就是它（和设置页 OCR 栏那份列表同一个选中项）
+        imageConfigId: state.ocr.imageConfigId,
         settings: state.settings,
         targetLangs: TARGET_PRESETS
       });
@@ -331,7 +320,9 @@ chrome.runtime.onConnect.addListener((port) => {
       controller = new AbortController();
 
       const state = await loadState();
-      const config = getConfig(state, msg.configId || state.activeConfigId);
+      // 图片直传（勾了「禁用外置 OCR」）时用的是 OCR 栏里选定的那条**图片配置**，
+      // 和顶栏那条（翻文字用的）互不干扰 —— 规则和兜底都在 pickRequestConfig 里
+      const config = pickRequestConfig(state, msg.configId, !!(msg.context && msg.context.image));
       if (!config) {
         safePost({ type: 'fatal', message: '没有任何可用配置，请先到设置页新建一条' });
         return;
@@ -377,9 +368,7 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
-/* ------------------------------------------------------------------ */
-/* 配置变化时通知所有页面                                              */
-/* ------------------------------------------------------------------ */
+/* ---- 配置变化时通知所有页面 ---- */
 
 let menuTimer = null;
 

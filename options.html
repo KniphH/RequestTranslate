@@ -92,28 +92,25 @@
             <textarea id="f-request" spellcheck="false" wrap="off"
               placeholder="在这里粘贴 curl，或者写原始 HTTP 报文"></textarea>
             <p class="hint">
-              支持 curl 与原始 HTTP 报文两种写法，除占位符外一字不改地发出去。
-              JSON 字符串内不能有裸换行，换行写 <code>\n</code>，双引号写 <code>\"</code>。
-              行首 <code>#</code> 是注释，引号内的 <code>#</code> 不受影响。
+              curl 和原始 HTTP 报文都行，除占位符外一字不改地发出去。JSON 里不能有裸换行
+              （写 <code>\n</code>），双引号写 <code>\"</code>；行首 <code>#</code> 是注释。
             </p>
           </div>
 
-          <div class="field">
-            <div class="field-head">
-              <label for="f-image-request">图片请求模板（可选）</label>
+          <details class="preview img-tpl" id="f-img-tpl">
+            <summary>图片请求模板（可选 · 点开填）</summary>
+            <div class="fold-body">
+              <textarea id="f-image-request" spellcheck="false" wrap="off"
+                placeholder="留空 = 图片那次也用上面那段模板"></textarea>
+              <p class="hint">
+                <b>填了这段，这条配置才会出现在 OCR 栏的「图片配置」列表里。</b>
+                它管翻图，上面那段继续管划词翻译；留空就回退到上面那段。<br>
+                写成多模态的样子，比如：
+                <code>{"role":"user","content":[{"type":"image_url","image_url":{"url":"{{image}}"}},{"type":"text","text":"把图里的文字翻成{{target}}，只输出译文"}]}</code><br>
+                这段里 <code>{{text}}</code> 是空串 —— 直传时图片本身就是原文。
+              </p>
             </div>
-            <textarea id="f-image-request" spellcheck="false" wrap="off"
-              placeholder="留空 = 图片那次也用上面那段模板"></textarea>
-            <p class="hint">
-              <b>翻图专用的一段。</b>右键「翻译剪切板中的截图」、且 OCR 栏勾了「禁用外置 OCR」时用这一段；
-              普通划词翻译用上面那段。两段互不干扰，可以放心把这段写成多模态的样子：
-              <code>{"role":"user","content":[{"type":"image_url","image_url":{"url":"{{image}}"}},{"type":"text","text":"把图里的文字翻成{{target}}，只输出译文"}]}</code>
-              <br>
-              留空就回退到上面那段（那时 <code>{{image}}</code> 是空的，所以只写了文字模板也不会坏）。
-              这段里 <code>{{text}}</code> 始终是空串 —— 直接翻译时，图片本身就是原文。
-              上面那排 <code>text / image / target …</code> 标签会插进当前光标所在的框。
-            </p>
-          </div>
+          </details>
 
           <div class="field">
             <label for="f-path">响应提取路径（留空自动识别）</label>
@@ -151,20 +148,28 @@
     <section class="tabpanel" data-panel="ocr">
       <aside class="list">
         <div class="list-head">
-          <span>OCR 供应商</span>
-          <span class="list-tip" title="点一条就切换过去。右键菜单只用选中的这一条">选中的那条约右键用</span>
+          <span id="ocr-list-title">OCR 供应商</span>
         </div>
         <div id="ocr-list" class="list-body"></div>
+        <!-- 勾了「禁用外置 OCR」时改列这些：配了「图片请求模板」的配置（renderImageConfigList） -->
+        <div id="imgcfg-list" class="list-body" hidden></div>
         <div class="list-foot">
           <button id="btn-ocr-new" class="primary block">＋ 新建供应商</button>
+          <p class="hint" id="imgcfg-foot" hidden>
+            只列<b>填了图片请求模板</b>的配置 —— 增删改回「配置」栏。
+          </p>
         </div>
       </aside>
 
       <div class="editor" id="ocr-editor">
         <p class="hint wide" id="o-hint">
-          当<b>「翻译剪切板中的截图」</b>或<b>「框选截图翻译」</b>时，这里<b>选中</b>的供应商把图转文字，
-          再通过「配置」翻译。
+          <b>「翻译剪切板中的截图」</b>和<b>「框选截图翻译」</b>都先用这里<b>选中</b>的供应商把图转成文字，
+          再交给「配置」翻译。
           <button type="button" id="o-hint-hide" class="hint-hide">不再显示</button>
+        </p>
+
+        <p class="hint wide" id="imgcfg-hint">
+          现在是<b>图片直传</b>：截图不过 OCR，直接交给左边选中那条的<b>「图片请求模板」</b>去翻。
         </p>
 
         <div class="editor-head">
@@ -187,12 +192,10 @@
           <textarea id="o-request" spellcheck="false" wrap="off"
             placeholder="在这里粘贴 curl，或者写原始 HTTP 报文"></textarea>
           <p class="hint">
-            和「配置」栏同一套规矩：curl / 原始 HTTP 报文都行，除占位符外一字不改地发出去。
-            <b>提示词不是占位符</b> —— 直接写在请求文本里。
-            <code>{{image}}</code> 是截图的 data URL；<code>{{imageBase64}}</code> 是裸 base64；
-            <code>{{imageUrlEncoded}}</code> 是 base64 再过一遍 URL 编码
-            （百度这类表单接口要这种，base64 里的 <code>+</code> 不转成 <code>%2B</code> 会被服务端当空格）。
-            写在模板里的 Key（含 <code>{{apiKey}}</code> 解出来的值）同样明文存本地，导出配置文件会被一起带走。
+            和「配置」栏同一套规矩，除占位符外一字不改地发出去；<b>提示词直接写在请求文本里</b>，
+            不是占位符。三个图片占位符的区别见上面那排标签的悬停提示 —— 百度那类表单接口要
+            <code>{{imageUrlEncoded}}</code>（base64 里的 <code>+</code> 不转成 <code>%2B</code> 会被当空格）。
+            写在模板里的 Key 明文存本地。
           </p>
         </div>
 
@@ -207,21 +210,25 @@
         </div>
 
         <details class="preview">
-          <summary>这次会发出去的请求（Key 已打码）</summary>
+          <summary id="o-preview-summary">这次会发出去的请求（Key 已打码）</summary>
           <pre id="o-preview"></pre>
         </details>
 
-        <div class="field">
-          <label for="ocr-test-img">测试</label>
+        <!-- 这块在直传模式下不藏（其余 .field 都藏），只是换个对象：
+             不测 OCR 供应商，改测左边选中的那条「图片配置」的图片请求模板。 -->
+        <div class="field" id="o-test-field">
+          <label for="ocr-test-img" id="o-test-label">测试</label>
           <div class="test-row">
             <input id="ocr-test-img" type="file" accept="image/*">
             <button id="btn-ocr-test" class="primary">测试</button>
           </div>
-          <p class="hint">
-            不选文件就直接点「测试」的话，用<b>剪切板里的第一张图</b>：先系统截图（Win + Shift + S），
-            回这里点一下即可；也可以先选一张本地图片再点。
-            <br>
-            用的就是上面那段请求模板 —— 和外面右键时同一套，这里通了，实际用就是通的。
+          <p class="hint" id="ocr-test-hint">
+            不选文件就直接点：用<b>剪切板里的第一张图</b>（Win + Shift + S 截图后回这儿点一下）。
+            发的是上面那段请求模板，和实际右键时同一套。
+          </p>
+          <p class="hint" id="imgcfg-test-hint" hidden>
+            不选文件就直接点：用<b>剪切板里的第一张图</b>（Win + Shift + S 截图后回这儿点一下）。
+            发的是左边选中那条的「图片请求模板」，和实际右键截图翻译时同一套。
           </p>
           <div id="ocr-test-result" class="result" hidden></div>
         </div>
@@ -234,20 +241,9 @@
             <span>禁用外置 OCR（仅模型具有多模态时使用）</span>
           </label>
           <p class="hint">
-            勾上之后不再走上面的 OCR 供应商：截图会被<b>原样塞进「配置」里当前那条请求</b>，
-            由多模态模型自己看图 + 翻译，省一次来回。
-            <br>
-            <b>要写两段模板：</b>去「配置」那一栏，把
-            <b>「图片请求模板」</b>填成多模态的样子（普通那段继续翻文字），
-            截图直传时自动用图片那段 —— 比如：
-            <code>{"role":"user","content":[{"type":"image_url","image_url":{"url":"{{image}}"}},{"type":"text","text":"把图里的文字翻成{{target}}，只输出译文"}]}</code>
-            <br>
-            <b>也可以只写一段</b>解决：把 <code>content</code> 写成数组、末尾挂一个
-            <code>{{imagePart}}</code>（没图时它是空串，所以同一段模板照样能翻文字）。
-            详见「配置」栏里的说明。
-          </p>
-          <p class="hint wide" id="o-disabled-note" hidden>
-            现在是直传模式 —— 上面的供应商不会被动用，取消勾选就回来。
+            <b>模型具有多模态时，无需中转 OCR</b>：截图直接交给左边选中的那条图片配置去翻，
+            不走上面的供应商。左边只列<b>填了「图片请求模板」</b>的配置；
+            一条都没填时退回顶栏当前那条（那条多半不支持看图）。
           </p>
         </div>
 
@@ -267,7 +263,7 @@
         <h2>自定义变量</h2>
         <p class="hint wide">
           这里定义的值可以在请求模板里用 <code>{{名字}}</code> 引用，比如把 API Key 写成
-          <code>Bearer {{apiKey}}</code>，换 key 只改这一处。同名的话，下面这些会覆盖内置变量。
+          <code>Bearer {{apiKey}}</code>。同名的话，下面这些会覆盖内置变量。
         </p>
 
         <table class="vars">
@@ -327,8 +323,7 @@
             <select id="s-lang"></select>
             <input id="s-lang-other" type="text" placeholder="填语言名或代码，比如「粤语」/ YUE" autocomplete="off" hidden>
             <p class="hint">
-              划词面板顶栏也有一个一样的选择框 —— 想临时换一门语言，不用特意回这儿。
-              两边改的是同一个值。
+              划词面板顶栏也有一个，两边是同一个值，想临时换一门语言不用特意回这儿。
             </p>
           </div>
         </div>
@@ -351,10 +346,8 @@
               </div>
             </div>
             <p class="hint">
-              划词后出现在选区旁边那个小按钮长什么样。只影响按钮本身，不动结果面板。
-              地球是线性图标，颜色跟着上面的<b>主题</b>走；<b>自定义</b>不给底座 ——
-              整块就是你粘进下面「自定义图标」的那段 SVG（想要圆盘 / 方块，自己在 SVG 里画一个）。
-              <b>自定义</b>那张卡上的图标就是你实际会用的那个：填了显示你的，没填先空着。
+              划词后出现在选区旁边那个小按钮的样子，只影响按钮本身。<b>地球</b>是线性图标，颜色跟着
+              <b>主题</b>走；<b>自定义</b>不给底座 —— 整块就是你粘进下面那段 SVG。
             </p>
           </div>
         </div>
@@ -370,15 +363,12 @@
             <textarea id="s-trigsvg" spellcheck="false" rows="6" placeholder="&lt;svg viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;1.8&quot;&gt;&#10;  &lt;path d=&quot;M4 12h10M9 7l5 5-5 5&quot;/&gt;&#10;&lt;/svg&gt;"></textarea>
             <p class="trig-svg-msg" id="s-trigsvg-msg" hidden></p>
             <p class="hint">
-              粘一段 <code>&lt;svg&gt;…&lt;/svg&gt;</code> 进来，它会替换掉预设里的图标 /「译」字；
-              <b>底座（底色、圆角、大小）还是用上面选的那个预设</b> ——
-              想连底座也自己说了算，样式就选<b>「自定义」</b>（那个预设没有底座）。
-              颜色写 <code>currentColor</code> 就跟着主题走（暗色浅紫 / 亮色深紫），写死颜色也行。
-              <br>
-              这段代码会被插进页面，所以要求以 <code>&lt;svg</code> 开头、<code>&lt;/svg&gt;</code> 结尾，
+              粘 <code>&lt;svg&gt;…&lt;/svg&gt;</code> 进来，替换掉预设里的图标 /「译」字；
+              <b>底座还是用上面选的那个预设</b>，想连底座都自己说了算就选<b>「自定义」</b>。
+              颜色写 <code>currentColor</code> 跟着主题走。<br>
+              这段会插进页面，所以要求以 <code>&lt;svg</code> 开头、<code>&lt;/svg&gt;</code> 结尾，
               且不含 <code>&lt;script&gt;</code> / <code>onload=</code> / <code>href</code> /
-              <code>&lt;foreignObject&gt;</code> 这类东西 —— 通过时下面会绿字写一句「这段用上了」，
-              不通过时会说明卡在哪一条（内容不会被改，是整段不用）。
+              <code>&lt;foreignObject&gt;</code> 这类东西 —— 不通过时下面会说明卡在哪一条（内容不会被改）。
             </p>
             <div class="trig-examples">
               <button type="button" id="btn-trigsvg-demo" class="trig-ex">插入示例图标</button>
@@ -397,6 +387,17 @@
         <div class="setting">
           <label for="s-height">结果面板高度（px， 0 = 自适应）</label>
           <input id="s-height" type="number" min="0" max="2000" step="20">
+        </div>
+
+        <div class="setting">
+          <label for="s-maxh">结果区最大高度（vh，0 = 不限）</label>
+          <div class="stack">
+            <input id="s-maxh" type="number" min="0" max="100" step="2">
+            <p class="hint">
+              只在上一条是「自适应」时有用：译文太长时正文区到这儿就不再长，多出来的滚着看。
+              单位 vh（窗口高度的百分之几），默认 46；填 0 = 不限。
+            </p>
+          </div>
         </div>
 
         <div class="setting">

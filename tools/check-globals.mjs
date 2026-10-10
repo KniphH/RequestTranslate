@@ -202,6 +202,12 @@ function collectDeclared(src) {
     }
   }
 
+  /* 解构出来的**对象参数**：`function f({ a, b }) { … }`。
+     上面那条正则只吃「括号里没有花括号」的情况，`{ a, b }` 会整块留下来，
+     拆开后每片都带着花括号 → 一个都认不出来，里面的 a / b 反倒被报成「没定义」。
+     用法见 moveButton({ … onMove }) / sortableRow({ … }) —— 两个列表共用的那一套。 */
+  for (const m of src.matchAll(/\(\s*\{([^}]*)\}/g)) addList(m[1]);
+
   return names;
 }
 
