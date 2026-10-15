@@ -192,12 +192,9 @@ main { flex: 1; min-height: 0; position: relative; }
   overflow: hidden;
 }
 
-/* 左栏（OCR 供应商 / 图片配置）那几个条目是**直接躺在 .list-body 里**的，没有
-   .cfg-row 兜着 —— 而上面那句 `width: auto` 对 <button> 来说是**收缩到内容宽度**
-   （按钮不是普通块级盒，auto 走的是 fit-content，`flex: 1` 在这时又是死的，因为
-   .list-body 是 display:block）。结果就是名字长的条宽、名字短的条窄，一列参差不齐。
-   「配置」栏看不出来：那边每条都包在 .cfg-row（display:flex）里，flex 把宽度拉平了。 */
-.list-body > .cfg-item { width: 100%; }
+/* 以前这儿有一条 `.list-body > .cfg-item { width: 100% }`：那时候 OCR 列表的条目是**直接躺在
+   .list-body 里**的裸 <button>（`width: auto` 对它来说是收缩到内容宽度，一列参差不齐）。
+   三处左栏统一成 `.cfg-row` 之后那条就是死的，删了 —— 留着的后果是「看起来还有第四种长相」。 */
 
 /* 拖动排序的把手。只有它是拖拽源 —— 整行可拖会跟「点一下选中」抢鼠标。
    平时压得很暗，鼠标进这一行才亮起来。 */
@@ -220,6 +217,10 @@ main { flex: 1; min-height: 0; position: relative; }
 
 .cfg-mv {
   flex: none;
+  /* 固定宽度（两枚 19px + 1px 缝）：不可排序的列表放的是同宽空位，
+     行宽必须三类完全一样，不然切模式时列表会「跳一下」（kniph 2026-10-14 要的统一） */
+  width: 39px;
+  justify-content: flex-end;
   display: flex;
   align-items: center;
   gap: 1px;
@@ -263,6 +264,23 @@ main { flex: 1; min-height: 0; position: relative; }
 }
 .cfg-row.drop-before::before { top: -2px; }
 .cfg-row.drop-after::after { bottom: -3px; }
+
+/* 变量卡片（网格）拖动中：被拖的那张淡下去，落点是**竖线**不是横线 ——
+   网格里一行的卡 Y相同，横线画出来分不清落在哪一列，得靠左/右侧才说得清。 */
+.vars-list.is-dragging { cursor: grabbing; }
+.var-row.dragging { opacity: .4; }
+.var-row.drop-before::before,
+.var-row.drop-after::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.var-row.drop-before::before { left: -3px; }
+.var-row.drop-after::after { right: -3px; }
 .cfg-item:hover { background: var(--hover); color: var(--fg); }
 .cfg-item.is-active {
   background: var(--accent-soft);
@@ -341,48 +359,142 @@ input:focus, select:focus, textarea:focus {
 select { cursor: pointer; }
 select option { background: var(--panel-2); }
 
-/* 配置栏里「图片请求模板」是可折叠的一段，默认收起：多数人用不到，
-   摆两段长得一模一样的 textarea 只会让人以为两段都必须填。 */
-.img-tpl { margin: 14px 0 0; }
-.img-tpl .fold-body { padding: 12px 13px; border-top: 1px solid var(--line-soft); }
-.img-tpl .hint { margin: 10px 0 0; }
-/* 它和上面那段是同一种东西（一整条请求），字体也跟着走 mono —— 原先漏了，
-   结果同一个编辑器里两段模板一个等宽一个不等宽。 */
-#f-image-request {
+/* 一段请求模板 = 标题栏（点它折叠）+ 文本框 + 说明。文字那条和图片那条**同一副骨架** ——
+   options.js 的 `templateFieldHtml` 一处渲染，样式也就只有这一份。
+   分开写过一次，两边的标题元素（label / summary）、hint 间距、文本框最小高度立刻各差一点
+   （kniph 报的「完全是两套布局结构」）。`.img-tpl` 只剩下「这是图片那条」这个身份
+   （e2e 拿它当钩子去展开），不再挂任何样式。 */
+.tpl-fold .fold-body { padding: 12px 13px; border-top: 1px solid var(--line-soft); }
+.tpl-fold .hint { margin: 10px 0 0; }
+/* 折块体里的那排占位符标签（OCR 栏那个）：和下面的文本框留一点缝 */
+.tpl-fold .fold-body > .chips { margin-bottom: 10px; }
+
+/* ---------------- 一条配置里的若干条请求（主请求 + 后备请求） ----------------
+   都是「一整条可编辑的请求」，所以长得一模一样、字段也一样 —— 收起时是一列整齐的标题。 */
+#req-blocks { display: flex; flex-direction: column; gap: 12px; }
+.req-block {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  overflow: hidden;
+}
+/* 勾掉了：整块压暗，一眼看出这条不参与轮换 */
+.req-block.rb-off { opacity: .5; }
+/* 块头**整条可点** = 折叠 / 展开（和页面上所有 <details> 一个手势，见 options.js 的 click 委托）。
+   所以光标是 pointer、文字不可选（拖着划一段文字会顺手把块折了）。 */
+.rb-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 11px;
+  background: var(--panel-2);
+  cursor: pointer;
+  user-select: none;
+}
+.req-block.open .rb-head { border-bottom: 1px solid var(--line-soft); }
+.rb-on { display: flex; flex: none; cursor: pointer; }
+.rb-on input { width: 15px; height: 15px; margin: 0; cursor: pointer; }
+/* 块头那个「主请求 / 后备 N」：后备的名字由位置现算，**不是输入框**。
+   （原来这里有个 `.rb-name` 让你改名 —— 那条 `<input type="text">` 会被本文件里
+   `input[type="text"] { width: 100% }` 那条全局规则撑满整行（选择器权重比单类高），
+   把右边的 ↑↓×▾ 顶出块外、再被 `.req-block` 的 overflow:hidden 裁掉 ——
+   两个按钮就此点不到。名字固定之后那个坑跟着没了，别再把它加回来。） */
+.rb-tag { flex: none; font-size: 12.5px; color: var(--fg-strong); }
+/* 「这条能翻图」的小标记 —— 只在填过图片模板时出现，收起状态也看得见。
+   `flex: none` 是必须的：它挨着 `.rb-sub`，不固定住宽度会把省略号那一列挤歪。 */
+.rb-badge {
+  flex: none;
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--badge-bg);
+  color: var(--fg-dim);
+}
+.rb-sub {
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--fg-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 块头右边那三个小按钮（↑↓×）——块头里唯一要单独点的东西，所以它们自己带底、带 hover */
+.rb-mini {
+  flex: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--fg-faint);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 7px;
+  cursor: pointer;
+}
+.rb-mini:hover:not(:disabled) { background: var(--hover-2); color: var(--fg); }
+.rb-mini:disabled { opacity: .3; cursor: default; }
+/* ▾ 只是**指示器**（点块头就折叠），所以不给按钮的底和 hover —— 免得看着像个独立手势 */
+.rb-fold {
+  flex: none;
+  background: none;
+  border: 0;
+  color: var(--fg-faint);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  padding: 4px 5px;
+  cursor: pointer;
+  transition: transform .15s;
+}
+.req-block.open .rb-fold { transform: rotate(180deg); }
+.rb-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 13px 16px;
+}
+.req-block:not(.open) .rb-body { display: none; }
+
+/* 内置通道那条（目前只有 Bing）没有可编辑的请求模板 —— 这里只把「走的是谁」写清楚。
+   以前这里是个能选「自定义请求 / 内置适配器」的下拉，已删（见 options.js 那段注释）。 */
+.rb-adapter-note { font-size: 12.5px; color: var(--fg-strong); }
+
+/* 一整条请求（翻译模板 / OCR 模板 / 图片模板）都是同一种东西，
+   字体、换行、缩进、**高度**一套走 —— 分开写过一次：同一个编辑器里一宽一窄、
+   两段模板一个 300 一个 150（kniph 报的「有小差别」）。 */
+.rb-request,
+.rb-image-request,
+#o-request {
   font-family: var(--mono);
   font-size: 12.5px;
   line-height: 1.65;
-  min-height: 150px;
+  min-height: 300px;
   resize: vertical;
   white-space: pre;
   overflow-x: auto;
   tab-size: 2;
 }
+
+.rb-path, #o-path { font-family: var(--mono); font-size: 12.5px; }
 
 /* 勾了「禁用外置 OCR」：右栏只剩说明 + 那个开关 + 预览 + 那块「测试」—— 供应商那套字段用不到。
    #o-note 也得跟着收：那是**这一条供应商**的备注，直传模式下压根用不到它。
    #o-test-field / .preview 例外：它们不藏，只是对象换成左边选中的那条图片配置
    （预览摊的是那条的图片请求模板，测试发的也是那一份）。 */
-#ocr-editor.is-imgcfg > .editor-head,
-#ocr-editor.is-imgcfg > .field:not(#o-test-field),
-#ocr-editor.is-imgcfg > .editor-foot,
-#ocr-editor.is-imgcfg > #o-hint,
-#ocr-editor.is-imgcfg > #o-note { display: none; }
-#ocr-editor:not(.is-imgcfg) > #imgcfg-hint { display: none; }
-
-#f-request,
-#o-request {
-  font-family: var(--mono);
-  font-size: 12.5px;
-  line-height: 1.65;
-  min-height: 340px;
-  resize: vertical;
-  white-space: pre;
-  overflow-x: auto;
-  tab-size: 2;
-}
-
-#f-path, #o-path { font-family: var(--mono); font-size: 12.5px; }
+/* 直传模式（is-imgcfg）下把 OCR 供应商那一套全藏掉。
+   **用后代选择器**：头部那组（.editor-head / #o-hint / #o-note）在 `#ocr-head` 容器里
+   （`editorHeadHtml()` 统一画的，2026-10-14），是 `#ocr-editor` 的孙代 ——
+   原来写 `>` 直接子代时这三条规则全部落空，直传模式下名称框和两句说明一起漏出来，
+   挤在 39px 的说明槽里互相裁（通读时子代理抓出来的）。 */
+#ocr-editor.is-imgcfg .editor-head,
+#ocr-editor.is-imgcfg .field:not(#o-test-field),
+#ocr-editor.is-imgcfg .editor-foot,
+#ocr-editor.is-imgcfg #o-hint,
+#ocr-editor.is-imgcfg #ocr-blocks,
+#ocr-editor.is-imgcfg #btn-ocr-add-fallback,
+#ocr-editor.is-imgcfg #o-note { display: none; }
+#ocr-editor:not(.is-imgcfg) #imgcfg-hint { display: none; }
 
 .hint {
   margin: 0;
@@ -404,6 +516,11 @@ select option { background: var(--panel-2); }
   cursor: pointer;
 }
 .hint-hide:hover { color: var(--fg-dim); }
+
+/* 点过「不再显示」的说明：用**类**收起来，不用 `hidden` 属性 ——
+   有几条说明的 `hidden` 是模式逻辑在管的（OCR ↔ 图片直传），一个属性两个主人会打架。
+   `!important` 是为了压过 `[hidden] { display: none !important }` 之上的那些模式规则。 */
+.hint-off { display: none !important; }
 
 .chips { display: flex; gap: 5px; flex-wrap: wrap; }
 
@@ -449,18 +566,21 @@ select option { background: var(--panel-2); }
 }
 .preview[open] summary::before { transform: rotate(90deg); }
 .preview summary:hover { color: var(--fg); }
-.preview pre {
+.preview pre,
+.result-body pre {
   margin: 0;
-  padding: 12px 13px;
-  border-top: 1px solid var(--line-soft);
   font-family: var(--mono);
   font-size: 12px;
   line-height: 1.65;
-  color: var(--fg-mid);
   white-space: pre-wrap;
   word-break: break-all;
-  max-height: 280px;
   overflow: auto;
+}
+.preview pre {
+  padding: 12px 13px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--fg-mid);
+  max-height: 280px;
 }
 
 .test-row { display: flex; gap: 8px; }
@@ -531,18 +651,51 @@ select option { background: var(--panel-2); }
   letter-spacing: .04em;
 }
 .result-body pre {
-  margin: 0;
-  font-family: var(--mono);
-  font-size: 12px;
-  line-height: 1.65;
-  white-space: pre-wrap;
-  word-break: break-all;
-  max-height: 260px;
-  overflow: auto;
   color: var(--fg-strong);
+  max-height: 260px;
 }
 .result-body .translated { color: var(--fg-bright); font-size: 13.5px; }
 .result-body pre.err-text { color: var(--danger-fg); }
+
+/* 「测试」是逐条跑出来的：一条一块，块之间留缝（跑了 3 条就该看到 3 块） */
+#test-result { display: flex; flex-direction: column; }
+.test-item + .test-item { margin-top: 10px; }
+.test-head {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel-2);
+  margin-bottom: 10px;
+}
+
+/* 没拿到译文的那几块默认折起来（一次测试挂几个 model 就是几屏报错 + 请求体 + 原始响应）。
+   头一栏就是 summary：▸ 是唯一能看出「这块能点开」的东西，别拿 CSS 把标记清了。 */
+.test-fold > summary {
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+.test-fold[open] > summary { border-bottom: 1px solid var(--line-soft); }
+.test-fold:not([open]) > summary { border-bottom: none; }
+.test-fold > summary::-webkit-details-marker { display: none; }
+.test-fold > summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 2px;
+  color: var(--fg-faint);
+  transition: transform .15s;
+}
+.test-fold[open] > summary::before { transform: rotate(90deg); }
+.test-fold > summary:hover { color: var(--fg); }
+/* 那行「为什么挂」：一行截断，别把块头撑成两行 */
+.test-fold > summary .why {
+  flex: 1 1 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--fg-faint);
+}
 
 .editor-foot {
   display: flex;
@@ -589,8 +742,10 @@ button.danger:hover { background: rgba(239, 68, 68, .1); border-color: rgba(239,
 button.danger:disabled { opacity: .35; cursor: default; background: transparent; }
 
 /* ---------------- OCR 供应商：复用配置列表的外观 ---------------- */
-/* OCR 列表不排序，所以没有 .cfg-row 那层，每条直接是一个按钮。 */
-#ocr-list .cfg-item { width: 100%; margin-bottom: 3px; }
+/* 三处左栏（配置 / OCR 供应商 / 图片配置）共用同一套行，所以这里**不再有特例规则**。
+   以前有两条按 id 写的补丁（OCR 列表没有 .cfg-row 时的宽度 / 间距），统一之后
+   一条是死的、另一条给条目加了 3px 下外边距 —— 行高因此比另外两处高 3px（63 vs 60）。
+   想要特例先问一句：是不是又往三处里塞了第四种长相。 */
 
 /* 原有一条 `#ocr-editor.is-off > *:not(.setting):not(.hint) { opacity: .4 }`：勾了直传就把
    用不上的字段压暗。**删掉了** —— `.is-imgcfg` 已经把供应商那套整个 display:none，
@@ -617,48 +772,200 @@ button.block { width: 100%; }
 }
 .page h2:first-child { margin-top: 0; }
 
-.vars { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
-.vars th {
-  text-align: left;
-  font-size: 11px;
-  color: var(--fg-faint);
-  font-weight: 500;
-  padding: 0 8px 7px;
+/* ---- 自定义变量列表：卡片网格 + 点击编辑 ----
+   一条 = 一张卡片（名字 + 值摘要 + 眼睛 + ✕），点了才摊开编辑。
+   三轮演化的教训：一张表（名字列被压瘦、长名字截断）→ 上下两行（13 条摊成 26 行，
+   找一条要滚很久）→ **一行一条（13 条仍要滚 13 下）** ——
+   kniph 2026-10-14 的原话是「像卡片一样排列，一目了然，方便查找」。
+   **关键是二维**：一行一条无论怎么压高度，查找都得靠滚动；摊成网格后一屏能看全所有变量名，
+   滚动只为看长值的全文。所有内容只在**编辑态**出现。 */
+.vars-list {
+  margin-bottom: 12px;
+  /* auto-fill + minmax：能放几列放几列，窄屏自动收成一列，不用写死断点 */
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px;
 }
-.vars td { padding: 0 8px 7px 0; vertical-align: middle; }
-.vars td:last-child { width: 34px; padding-right: 0; }
-.vars.builtin { margin-top: 4px; }
+
+/* 卡片本体。`align-items: start` 是关键：默认 stretch 会把每张卡拉到和最高的那张一样高，
+   一张长 key 的卡能把一整行全撑开。 */
+.var-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 7px 8px 7px 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  min-width: 0;
+  /* 拖动指示线（.drop-before/::after 的竖线）的定位基准 —— **必须留着**：
+     上一版手柄改 flex 时把它当成「手柄专用的」删了，结果竖线的 absolute
+     找不到基准，画到别的层上去，「拖到哪儿会插在哪儿」当场失效
+     （kniph 2026-10-14：「拖拽时边缘会亮怎么失效了」）。 */
+  position: relative;
+}
+/* 编辑态的卡片横跨整行 —— 编辑要的是宽度，不是格子里的那点空间 */
+.var-row.editing {
+  grid-column: 1 / -1;
+  display: block;
+}
+/* 拖动手柄：**flex 子项**，占住卡片左边一整条。
+   第一版是绝对定位贴在 left:1px（想省出那 16px 给正文），结果和名字文字叠在一起
+   （kniph 2026-10-14：「把手太窄了，而且和文字重叠了」）—— flex 排开就是物理分开，
+   16px 换不重叠，值那两行少一截但省略号本来就是兜底。 */
+.var-grip {
+  flex: none;
+  align-self: stretch;      /* 撑满卡片高 —— 整条都能按，不用瞄着中间那 22px */
+  width: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-faint);
+  opacity: 0.4;
+  cursor: grab;
+  border-radius: 4px;
+  /* 触屏上不写这个，浏览器会当成滚动页面 —— pointermove 收不到，拖不动。
+     和 .cfg-grip 同一个原因，别漏。 */
+  touch-action: none;
+  transition: opacity .13s;
+}
+.var-grip:hover { opacity: 0.75; }
+.var-row:hover .var-grip { opacity: 0.5; }
+.var-row:hover .var-grip:hover { opacity: 1; }
+/* pointer-events: none —— 手柄里的 svg 不该抢事件，`bindSortDrag` 认的是 .var-grip 本身 */
+.var-grip svg { display: block; pointer-events: none; }
+.var-grip:active { cursor: grabbing; }
+/* 编辑态不给手柄（那儿横跨整行、字段多，挤个手柄只会碍事） */
+.var-row.editing .var-grip { display: none; }
+.var-name {
+  flex: none;
+  max-width: 100%;          /* 卡片宽度是流式的，写死 260px 会在窄列里溢出 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--fg);
+}
+.var-name.is-key { color: var(--accent); }
+/* 值摘要给两行（`-webkit-line-clamp`）—— 一行不够认人，而卡片高度必须整齐才成网格。
+   `min-height` 必给：`-webkit-box` 的高度由**内容行数**决定，值只有一行时它就缩成一行，
+   同一行里别张卡（值两行）就比它高 —— 网格会把它拉起来、里面的文字还是只有一行，底部空一块。
+   写死两行的高度（11.5px × 1.35 × 2 ≈ 31px），不管一行两行，卡片都一样高。 */
+.var-sub {
+  flex: 1; min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  min-height: 31px;
+  overflow: hidden;
+  word-break: break-all;     /* 长 key / 连续符号不换行的话照样会撑破卡片 */
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--fg-dim);
+}
+/* 名字 + 值竖排成一块，操作按钮在右边另一块。`min-width: 0` 必给：
+   grid 子项默认 min-width:auto，值里的长 token 会把这一列撑得比卡片还宽。 */
+.var-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.var-acts { display: flex; flex: none; }
+
+/* 没展开时整张卡可点（hover 提示它是能点开的） */
+.var-row:not(.editing) { cursor: pointer; }
+.var-row:not(.editing):hover { border-color: var(--accent); }
+.var-row:not(.editing):hover .var-name { color: var(--accent); }
+
+/* ---- 编辑态 ---- */
+/* 编辑态横跨整行之后宽度不再是瓶颈：名字框跟着卡片走，别再钉死 260px */
+.var-edit-name, .var-edit-val { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+.var-edit-name input {
+  flex: 1; max-width: 420px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+/* 值那一栏：默认打码，右边跟一个眼睛。
+   打码走 -webkit-text-security 而不是 <input type="password"> —— 后者会招来
+   密码管理器的保存提示，还有 Edge 自带那个原生眼睛（跟这个按钮重复）。
+   本扩展是 Chromium-only（只发 Edge 商店），这个属性够用。
+   值是个 textarea（「一行一个」要多行），单行时由 JS 压成一行高，看着和 input 一样。 */
+.var-edit-val textarea[data-kind='value'] {
+  flex: 1; min-width: 0;
+  resize: none;
+  overflow: hidden;         /* 由 JS 按内容撑高；超过上限才靠 max-height 出滚动条 */
+  /* 底高兜着 —— 任何时候都不该扁成一条缝（JS 量不到高度时靠它撑着） */
+  min-height: 30px;
+  max-height: 160px;
+  line-height: 1.5;
+  padding: 5px 8px;
+}
+.var-edit-val textarea[data-kind='value'].masked { -webkit-text-security: disc; }
+.var-edit-bar { display: flex; justify-content: flex-end; gap: 8px; }
+.row-fold {
+  font-size: 11.5px;
+  padding: 3px 10px;
+  color: var(--fg-faint);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+.row-fold:hover { color: var(--fg); }
+
+/* 内置变量那张表（只读，名字 + 一句说明）。列宽照旧：170px 的名字列 */
+/* 说明槽：**固定占一行高**（21px 一行 + 原来 .hint.wide 那 18px 下边距）。
+   两栏的请求块都紧跟在第二个槽后面，槽的高度恒定 ⇒ 块的位置恒定。
+   为什么非得是槽、不能靠「文字自然高度」：说明是**能被用户收掉的**（.hint-off），
+   备注是**时有时无的**（自建那条为空），一收一空，两栏的行数就不对称 ——
+   靠文字凑高度必然对不齐（kniph 2026-10-14：「让配置栏的主请求**固定**到和 ocr 栏
+   一样的相对位置」—— 关键词是固定）。 */
+.hint-slot {
+  /* **定死**一行高（21px 一行 + 原来 .hint.wide 那 18px 下边距），不是 min-height：
+     内容多了就**裁掉**（行尾省略），也不许它把下面的请求块顶下去 ——
+     实测踩到过：百度那条备注在稍窄一点就换成两行，请求块当场掉 3px。
+     kniph 要的是「固定」，不是「大致齐」。 */
+  height: 39px;
+  overflow: hidden;
+}
+.hint-slot > .hint {
+  margin-bottom: 0;
+  /* 超过一行就省略（省略号 + 悬停看全文，备注那句 JS 里挂了 title） */
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.vars.builtin { width: 100%; border-collapse: collapse; margin-top: 4px; }
 .vars.builtin td { padding: 6px 0; border-bottom: 1px solid var(--line-soft); font-size: 12.5px; }
 .vars.builtin td:first-child { color: var(--accent); font-family: var(--mono); width: 170px; }
 .vars.builtin td:last-child { color: var(--fg-dim); font-size: 12px; }
 
-/* 变量值那一列：值默认打码，右边跟一个眼睛。
-   打码走 -webkit-text-security 而不是 <input type="password"> —— 后者会招来
-   密码管理器的保存提示，还有 Edge 自带那个原生眼睛（跟这个按钮重复）。
-   本扩展是 Chromium-only（只发 Edge 商店），这个属性够用。 */
-.vars .val-wrap { display: flex; align-items: center; gap: 4px; }
-.vars .val-wrap input { flex: 1; min-width: 0; }
-.vars input.masked { -webkit-text-security: disc; }
-
-.row-eye {
-  flex: none;
-  width: 26px; height: 26px;
+.row-eye,
+.row-del {
   padding: 0;
   display: flex; align-items: center; justify-content: center;
   background: transparent;
   border-color: transparent;
   color: var(--fg-faint);
 }
+/* 卡片只有 230px 起，30px 的按钮占掉六分之一宽 —— 收起态那两个都缩到 22px，
+   编辑态（横跨整行）再放大回原来的尺寸 */
+.row-eye {
+  flex: none;
+  width: 26px; height: 26px;
+}
+.var-row:not(.editing) .row-eye { width: 20px; height: 20px; }
+.var-row:not(.editing) .row-del { width: 22px; height: 22px; font-size: 13px; }
 .row-eye:hover { color: var(--fg); border-color: transparent; }
 .row-eye.on { color: var(--accent); }
 
 .row-del {
   width: 30px; height: 30px;
-  padding: 0;
-  display: flex; align-items: center; justify-content: center;
-  background: transparent;
-  border-color: transparent;
-  color: var(--fg-faint);
   font-size: 15px;
 }
 .row-del:hover { color: var(--danger-fg); background: rgba(239, 68, 68, .1); border-color: transparent; }

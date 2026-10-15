@@ -45,84 +45,26 @@
       </aside>
 
       <div class="editor" id="editor">
-        <div class="editor-head">
-          <div class="field grow">
-            <label for="f-name">配置名称</label>
-            <input id="f-name" type="text" placeholder="例如：DeepSeek 翻译 / 本地 Ollama" autocomplete="off">
-          </div>
-          <div class="field mode-field">
-            <label for="f-kind">类型</label>
-            <select id="f-kind">
-              <option value="request">自定义请求</option>
-              <option value="adapter">内置适配器</option>
-            </select>
-          </div>
-          <div class="field mode-field" id="f-mode-field">
-            <label for="f-mode">响应格式</label>
-            <select id="f-mode">
-              <option value="auto">自动识别</option>
-              <option value="sse">SSE 事件流</option>
-              <option value="json">整体 JSON</option>
-              <option value="text">纯文本</option>
-            </select>
-          </div>
-        </div>
+        <!-- 和 OCR 栏**同一套上三行**（一句说明 → 名称 → 一句说明 → 请求块）：
+             两栏的「主请求」块于是落在同一个高度，切页签时不会上下跳。
+             原来配置栏少上面那一句，块比 OCR 栏高 76px（kniph 2026-10-14 的「强迫症」）。 -->
+        <!-- 头部（一句说明 → 名称 → 一句说明）由 `editorHeadHtml()` 画 ——
+             **两栏共用这一个函数**，结构 / 槽 / 类名只有一处，请求块才可能对得齐。
+             手抄两份的话，一边改了另一边没改，高度差就又回来了。 -->
+        <div id="cfg-head"></div>
 
-        <div class="field" id="f-adapter-field" hidden>
-          <label for="f-adapter">内置适配器</label>
-          <select id="f-adapter"></select>
-          <p class="hint" id="f-adapter-hint"></p>
-        </div>
+        <!-- 占位符那排标签长在**每个请求块里面**（点一下插到那段自己的模板里）——
+             由 options.js 的 blockHtml 画，和 OCR 栏同一套。 -->
+        <!-- 这一行要和 OCR 栏那条「备注」（#o-note）同款（.hint.wide）—— 两栏的第二行说明
+             必须一样高，请求块才对得齐 -->
+        <div id="req-blocks"></div>
 
-        <div id="request-only">
-          <div class="field">
-            <div class="field-head">
-              <label for="f-request">请求模板</label>
-              <div class="chips" id="chips">
-                <button type="button" class="chip" data-ins="{{text}}" title="选中/待翻译的文本">text</button>
-                <button type="button" class="chip" data-ins="{{target}}" title="设置里的目标语言，原样搬过来（给聊天模型看）">target</button>
-                <button type="button" class="chip" data-ins="{{targetCode}}" title="同一件事，但映射成接口要的大写代码 ZH-HANS / JA，给 DeepL 这类只认代码的接口用">targetCode</button>
-                <button type="button" class="chip" data-ins="{{image}}" title="截图翻译直传模式下的图片（data URL）；普通翻译时是空串">image</button>
-                <button type="button" class="chip" data-ins="{{imagePart}}" title="图片那一段（含前导逗号），写在 content 数组最后；没图时是空串。用它就能让一段模板同时翻文字和翻图">imagePart</button>
-                <button type="button" class="chip" data-ins="{{url}}" title="页面地址">url</button>
-                <button type="button" class="chip" data-ins="{{title}}" title="页面标题">title</button>
-                <button type="button" class="chip" data-ins="{{date}}" title="今天日期">date</button>
-              </div>
-            </div>
-            <textarea id="f-request" spellcheck="false" wrap="off"
-              placeholder="在这里粘贴 curl，或者写原始 HTTP 报文"></textarea>
-            <p class="hint">
-              curl 和原始 HTTP 报文都行，除占位符外一字不改地发出去。JSON 里不能有裸换行
-              （写 <code>\n</code>），双引号写 <code>\"</code>；行首 <code>#</code> 是注释。
-            </p>
-          </div>
+        <button type="button" id="btn-add-fallback" class="ghost block">＋ 加一条后备请求</button>
 
-          <details class="preview img-tpl" id="f-img-tpl">
-            <summary>图片请求模板（可选 · 点开填）</summary>
-            <div class="fold-body">
-              <textarea id="f-image-request" spellcheck="false" wrap="off"
-                placeholder="留空 = 图片那次也用上面那段模板"></textarea>
-              <p class="hint">
-                <b>填了这段，这条配置才会出现在 OCR 栏的「图片配置」列表里。</b>
-                它管翻图，上面那段继续管划词翻译；留空就回退到上面那段。<br>
-                写成多模态的样子，比如：
-                <code>{"role":"user","content":[{"type":"image_url","image_url":{"url":"{{image}}"}},{"type":"text","text":"把图里的文字翻成{{target}}，只输出译文"}]}</code><br>
-                这段里 <code>{{text}}</code> 是空串 —— 直传时图片本身就是原文。
-              </p>
-            </div>
-          </details>
-
-          <div class="field">
-            <label for="f-path">响应提取路径（留空自动识别）</label>
-            <input id="f-path" type="text" spellcheck="false" placeholder="choices[0].message.content">
-            <p class="hint">点号 + 下标，例如 <code>data.translations[0].translatedText</code>。留空时会依次尝试各家常见的返回结构。</p>
-          </div>
-
-          <details class="preview">
-            <summary>这次会发出去的请求（Key 已打码）</summary>
-            <pre id="f-preview"></pre>
-          </details>
-        </div>
+        <details class="preview">
+          <summary>这次会发出去的请求（Key 已打码）</summary>
+          <pre id="f-preview"></pre>
+        </details>
 
         <div class="field">
           <label>测试</label>
@@ -130,7 +72,8 @@
             <input id="test-text" type="text" placeholder="测试用的原文，默认为 Hello, world!" autocomplete="off">
             <button id="btn-test" class="primary">发送</button>
           </div>
-          <div id="test-result" class="result" hidden></div>
+          <p class="hint" data-hint="cfg-test">按顺序跑勾上的那些请求，哪条先拿到译文就停（和面板上真翻译时一个顺序）。</p>
+          <div id="test-result" hidden></div>
         </div>
 
         <div class="editor-foot">
@@ -148,66 +91,31 @@
     <section class="tabpanel" data-panel="ocr">
       <aside class="list">
         <div class="list-head">
-          <span id="ocr-list-title">OCR 供应商</span>
+          <span id="ocr-list-title">OCR 配置</span>
+          <span class="list-tip" id="ocr-list-tip" title="按住左侧的手柄上下拖动，或者点右侧的 ↑ ↓">可拖动排序</span>
         </div>
         <div id="ocr-list" class="list-body"></div>
         <!-- 勾了「禁用外置 OCR」时改列这些：配了「图片请求模板」的配置（renderImageConfigList） -->
         <div id="imgcfg-list" class="list-body" hidden></div>
         <div class="list-foot">
-          <button id="btn-ocr-new" class="primary block">＋ 新建供应商</button>
-          <p class="hint" id="imgcfg-foot" hidden>
+          <button id="btn-ocr-new" class="primary block">＋ 新建配置</button>
+          <p class="hint" id="imgcfg-foot" hidden data-hint="imgcfg-foot">
             只列<b>填了图片请求模板</b>的配置 —— 增删改回「配置」栏。
           </p>
         </div>
       </aside>
 
       <div class="editor" id="ocr-editor">
-        <p class="hint wide" id="o-hint">
-          <b>「翻译剪切板中的截图」</b>和<b>「框选截图翻译」</b>都先用这里<b>选中</b>的供应商把图转成文字，
-          再交给「配置」翻译。
-          <button type="button" id="o-hint-hide" class="hint-hide">不再显示</button>
-        </p>
+        <!-- 同上：和配置栏共用 `editorHeadHtml()`。上面那句说明两句互斥（直传 / 不走直传），
+             下面的槽放这一条的备注（内置那几条自带，只读；自建的那条是空的）。 -->
+        <div id="ocr-head"></div>
 
-        <p class="hint wide" id="imgcfg-hint">
-          现在是<b>图片直传</b>：截图不过 OCR，直接交给左边选中那条的<b>「图片请求模板」</b>去翻。
-        </p>
+        <!-- 和「配置」栏**同一套请求块**（主请求 + 后备，见 options.js 的 blockHtml）：
+             占位符标签也长在块里面，点一下插到那段自己的模板里。
+             区别只有两处：OCR 没有「图片请求模板 / 响应格式」（它用不到）。 -->
+        <div id="ocr-blocks"></div>
 
-        <div class="editor-head">
-          <div class="field grow">
-            <label for="o-name">名称</label>
-            <input id="o-name" type="text" placeholder="例如：硅基流动" autocomplete="off">
-          </div>
-        </div>
-
-        <div class="field">
-          <div class="field-head">
-            <label for="o-request">请求模板</label>
-            <div class="chips" id="ocr-chips">
-              <button type="button" class="chip" data-ins="{{image}}" title="截图的 data URL（OpenAI 兼容接口用这个）">image</button>
-              <button type="button" class="chip" data-ins="{{imageBase64}}" title="裸 base64（不带 data: 前缀），给要纯 base64 的接口">imageBase64</button>
-              <button type="button" class="chip" data-ins="{{imageUrlEncoded}}" title="base64 再过一遍 URL 编码（百度这类表单接口要这种）">imageUrlEncoded</button>
-              <button type="button" class="chip" data-ins="{{apiKey}}" title="「变量」页签里的 apiKey，和翻译配置共用">apiKey</button>
-            </div>
-          </div>
-          <textarea id="o-request" spellcheck="false" wrap="off"
-            placeholder="在这里粘贴 curl，或者写原始 HTTP 报文"></textarea>
-          <p class="hint">
-            和「配置」栏同一套规矩，除占位符外一字不改地发出去；<b>提示词直接写在请求文本里</b>，
-            不是占位符。三个图片占位符的区别见上面那排标签的悬停提示 —— 百度那类表单接口要
-            <code>{{imageUrlEncoded}}</code>（base64 里的 <code>+</code> 不转成 <code>%2B</code> 会被当空格）。
-            写在模板里的 Key 明文存本地。
-          </p>
-        </div>
-
-        <div class="field">
-          <label for="o-path">响应提取路径（留空自动识别）</label>
-          <input id="o-path" type="text" spellcheck="false" autocomplete="off"
-            placeholder="choices[0].message.content">
-          <p class="hint">
-            点号 + 下标，例如百度的 <code>words_result</code>（一行一个对象，会按行拼成一段）。
-            留空时依次尝试各家常见的返回结构。
-          </p>
-        </div>
+        <button type="button" id="btn-ocr-add-fallback" class="ghost block">＋ 加一条后备请求</button>
 
         <details class="preview">
           <summary id="o-preview-summary">这次会发出去的请求（Key 已打码）</summary>
@@ -215,63 +123,65 @@
         </details>
 
         <!-- 这块在直传模式下不藏（其余 .field 都藏），只是换个对象：
-             不测 OCR 供应商，改测左边选中的那条「图片配置」的图片请求模板。 -->
+             不测这条 OCR 配置，改测左边选中的那条「图片配置」的图片请求模板。 -->
         <div class="field" id="o-test-field">
           <label for="ocr-test-img" id="o-test-label">测试</label>
           <div class="test-row">
             <input id="ocr-test-img" type="file" accept="image/*">
             <button id="btn-ocr-test" class="primary">测试</button>
           </div>
-          <p class="hint" id="ocr-test-hint">
+          <p class="hint" id="ocr-test-hint" data-hint="ocr-test">
             不选文件就直接点：用<b>剪切板里的第一张图</b>（Win + Shift + S 截图后回这儿点一下）。
             发的是上面那段请求模板，和实际右键时同一套。
           </p>
-          <p class="hint" id="imgcfg-test-hint" hidden>
+          <p class="hint" id="imgcfg-test-hint" hidden data-hint="imgcfg-test">
             不选文件就直接点：用<b>剪切板里的第一张图</b>（Win + Shift + S 截图后回这儿点一下）。
             发的是左边选中那条的「图片请求模板」，和实际右键截图翻译时同一套。
           </p>
           <div id="ocr-test-result" class="result" hidden></div>
         </div>
 
-        <p class="hint wide" id="o-note"></p>
-
         <div class="setting">
           <label class="switch">
             <input type="checkbox" id="o-disabled">
             <span>禁用外置 OCR（仅模型具有多模态时使用）</span>
           </label>
-          <p class="hint">
+          <p class="hint" data-hint="ocr-direct">
             <b>模型具有多模态时，无需中转 OCR</b>：截图直接交给左边选中的那条图片配置去翻，
-            不走上面的供应商。左边只列<b>填了「图片请求模板」</b>的配置；
+            不走上面那条。左边只列<b>填了「图片请求模板」</b>的配置；
             一条都没填时退回顶栏当前那条（那条多半不支持看图）。
           </p>
         </div>
 
         <div class="editor-foot">
+          <span id="o-save-status" class="save-status"></span>
           <span class="spacer"></span>
           <button id="btn-ocr-duplicate" class="ghost">复制一份</button>
-          <button id="btn-ocr-delete" class="danger">删除</button>
+          <button id="btn-ocr-delete" class="danger">删除配置</button>
         </div>
       </div>
 
-      <div class="empty-hint" id="ocr-empty" hidden>左边新建一条 OCR 供应商开始吧</div>
+      <div class="empty-hint" id="ocr-empty" hidden>左边新建一条 OCR 配置开始吧</div>
     </section>
 
     <!-- ============================ 变量 ============================ -->
     <section class="tabpanel" data-panel="vars">
       <div class="page">
         <h2>自定义变量</h2>
-        <p class="hint wide">
+        <p class="hint wide" data-hint="vars">
           这里定义的值可以在请求模板里用 <code>{{名字}}</code> 引用，比如把 API Key 写成
           <code>Bearer {{apiKey}}</code>。同名的话，下面这些会覆盖内置变量。
+          <br>
+          值里<b>一行写一个</b>时（模板里用到的那个含 <code>model</code> 的变量，比如
+          <code>model</code> / <code>GEMINI_MODEL</code>），翻译会从第一个开始试，
+          哪个先返回译文就用哪个；只有一行就是普通单值。
         </p>
 
-        <table class="vars">
-          <thead>
-            <tr><th>名字</th><th>值</th><th></th></tr>
-          </thead>
-          <tbody id="vars-body"></tbody>
-        </table>
+        <!-- 每条变量是一小块：名字一行、值一行（见 options.css 里 .var-row 的说明）。
+             值那一栏是唯一会长的那栏（多行的 model 列表、长 key、提示词），
+             和名字并排挤在一行里只剩四百来像素 —— 名字框还放不下
+             SILICONFLOW_CN_API_KEY 这种长名字（kniph 2026-10-14 报的「局促」）。 -->
+        <div id="vars-body" class="vars-list"></div>
         <button id="btn-add-var" class="ghost">＋ 添加变量</button>
 
         <h2>内置变量</h2>
@@ -322,7 +232,7 @@
                  别在这儿手抄一份（加语言只改 lib/template.js，两处同步由 test-lib 第 22 节盯着） -->
             <select id="s-lang"></select>
             <input id="s-lang-other" type="text" placeholder="填语言名或代码，比如「粤语」/ YUE" autocomplete="off" hidden>
-            <p class="hint">
+            <p class="hint" data-hint="set-lang">
               划词面板顶栏也有一个，两边是同一个值，想临时换一门语言不用特意回这儿。
             </p>
           </div>
@@ -345,7 +255,7 @@
                 <span>预览</span>
               </div>
             </div>
-            <p class="hint">
+            <p class="hint" data-hint="set-trigstyle">
               划词后出现在选区旁边那个小按钮的样子，只影响按钮本身。<b>地球</b>是线性图标，颜色跟着
               <b>主题</b>走；<b>自定义</b>不给底座 —— 整块就是你粘进下面那段 SVG。
             </p>
@@ -358,11 +268,32 @@
         </div>
 
         <div class="setting">
+          <label for="s-trigidle">按钮自动消失（秒）</label>
+          <div class="stack">
+            <input id="s-trigidle" type="number" min="0" max="60" step="1">
+            <p class="hint" data-hint="set-trigidle">
+              出现后鼠标一直不动，过这么多秒就自己消失（鼠标动一下、或者停在按钮上，都不算）。
+              填 0 = 不消失。
+            </p>
+          </div>
+        </div>
+
+        <div class="setting">
+          <label for="s-trigleave">鼠标移开后消失（秒）</label>
+          <div class="stack">
+            <input id="s-trigleave" type="number" min="0" max="10" step="0.5">
+            <p class="hint" data-hint="set-trigleave">
+              鼠标从按钮上移开、又没点，过这么多秒就消失；移回去就不消失。填 0 = 这项不生效。
+            </p>
+          </div>
+        </div>
+
+        <div class="setting">
           <label for="s-trigsvg">自定义图标（SVG）</label>
           <div class="stack">
             <textarea id="s-trigsvg" spellcheck="false" rows="6" placeholder="&lt;svg viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;1.8&quot;&gt;&#10;  &lt;path d=&quot;M4 12h10M9 7l5 5-5 5&quot;/&gt;&#10;&lt;/svg&gt;"></textarea>
             <p class="trig-svg-msg" id="s-trigsvg-msg" hidden></p>
-            <p class="hint">
+            <p class="hint" data-hint="set-trigsvg">
               粘 <code>&lt;svg&gt;…&lt;/svg&gt;</code> 进来，替换掉预设里的图标 /「译」字；
               <b>底座还是用上面选的那个预设</b>，想连底座都自己说了算就选<b>「自定义」</b>。
               颜色写 <code>currentColor</code> 跟着主题走。<br>
@@ -393,7 +324,7 @@
           <label for="s-maxh">结果区最大高度（vh，0 = 不限）</label>
           <div class="stack">
             <input id="s-maxh" type="number" min="0" max="100" step="2">
-            <p class="hint">
+            <p class="hint" data-hint="set-maxh">
               只在上一条是「自适应」时有用：译文太长时正文区到这儿就不再长，多出来的滚着看。
               单位 vh（窗口高度的百分之几），默认 46；填 0 = 不限。
             </p>
@@ -422,6 +353,7 @@
         </div>
 
         <div class="page-foot">
+          <button id="btn-restore-hints" class="ghost" hidden>把藏起来的说明文字都放回来</button>
           <button id="btn-reset" class="danger ghost">恢复全部默认配置</button>
         </div>
       </div>

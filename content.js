@@ -18,6 +18,8 @@
     triggerStyle: 'badge',
     triggerSize: 45,
     triggerSvg: '',
+    triggerIdleSec: 5,
+    triggerLeaveSec: 0.5,
     panelWidth: 460,
     panelHeight: 0,
     panelMaxHeight: 46,
@@ -71,7 +73,9 @@
   let zoom = 1;
   /** 面板最近一次的定位锚点，缩放变化时用来重算位置 */
   let lastAnchor = null;
-  /** 最近一次松手的位置：用来判断用户是从哪头拖选的 */
+  /** 最近一次鼠标位置（mousemove / mouseup 都更新）。浏览器不提供「当前鼠标在哪儿」
+      的查询接口 —— 坐标只挂在事件对象上，只能自己记一个。用它干两件事：按钮贴鼠标、
+      以及「键盘改选区」时把它清掉（那会儿手里这个是旧坐标，会指到别处去）。 */
   let lastMouse = null;
   /** 最近一次右键的位置。右键菜单的 onClicked 不给坐标，面板只能记着用户点在哪儿 */
   let lastRightClick = null;
@@ -364,6 +368,18 @@ ${TRIGGER_CSS}
   word-break: break-word;
 }
 .rt-src.hidden { display: none; }
+/* 直传那一屏：原文区贴的就是那张截图本身（原文在图上，贴文字没意义）。
+   图可能被页面 CSP 挡掉，挡了只剩下面那句说明 —— translate 里有兜底。 */
+.rt-src.has-img { max-height: 14em; }
+.rt-src .rt-srcimg {
+  display: block;
+  max-width: 100%;
+  max-height: 11em;
+  margin-bottom: .3em;
+  border-radius: 6px;
+  /* 截的图常常是浅色底，暗色主题下贴出来要有个底衬才看得清边界 */
+  background: #fff;
+}
 
 .rt-out {
   padding: .6em .7em;
@@ -624,31 +640,27 @@ ${TRIGGER_CSS}
     trigger.style.setProperty('--rt-tr-font', (size * 0.47 * k).toFixed(2) + 'px');
   }
 
-  /** 把 rect 按比例缩放（缩放变了，同一段文字在页面 CSS 像素里的坐标也会变） */
-  function scaleRect(r, k) {
+  /** 抄一份 rect。必须写成显式的六个字段：DOMRect 的 left/top/right/bottom 挂在原型上，
+      `{ ...rect }` 只会抄到 x / y / width / height 四个，另外四个是 undefined。 */
+  function copyRect(r) {
     if (!r) return null;
     return {
-      left: r.left * k,
-      right: r.right * k,
-      top: r.top * k,
-      bottom: r.bottom * k,
-      width: r.width * k,
-      height: r.height * k
+      left: r.left, right: r.right, top: r.top, bottom: r.bottom,
+      width: r.width, height: r.height
     };
   }
 
   function setZoom(next) {
     const z = Math.min(5, Math.max(0.25, Number(next) || 1));
     if (Math.abs(z - zoom) < 0.001) return;
-    const ratio = z / zoom;
     zoom = z;
     applyZoom();
 
-    // 位置是按页面 CSS 像素记的，缩放一变就得重算
-    if (panel.classList.contains('show')) {
-      const found = readSelection();
-      placePanel(found ? found.anchor.rect : scaleRect(lastAnchor, ratio));
-    }
+    /* 位置得按新缩放重算一遍（间距、面板宽度在 CSS 像素里都跟着 1/zoom 变，夹取也要
+       按新的视口算）。锚点**原样**拿去重算：标签页缩放只把视口尺寸改了，页面里元素的
+       CSS 坐标一动不动（`window.innerWidth` 1170 → 780，而同一个字的 x 还是 104）。
+       也**不重新去读选区** —— 鼠标划词时读出来的是鼠标位置，缩放一下面板就跳到鼠标那儿了。 */
+    if (panel.classList.contains('show')) placePanel(lastAnchor);
     if (trigger.classList.contains('show')) updateTrigger();
   }
 
@@ -665,14 +677,17 @@ ${TRIGGER_CSS}
     const onSchemeChange = () => {
       if ((prefs.theme || 'auto') === 'auto') applyTheme();
     };
-    if (lightQuery.addEventListener) lightQuery.addEventListener('change', onSchemeChange);
-    else if (lightQuery.addListener) lightQuery.addListener(onSchemeChange);
+    lightQuery.addEventListener('change', onSchemeChange);
   }
 
   /* ---- 位置 ---- */
 
   /** 面板 / 按钮与视口边缘的最小间距（物理像素，网页缩放后观感不变） */
   const EDGE = 12;
+
+  /** 按钮贴鼠标时离指针的偏移（物理像素）。必须拉开一点：压着指针的话按钮一出现就
+      命中 :hover，于是「鼠标停在按钮上不消失」永远为真，那个计时器再也没机会到点。 */
+  const MOUSE_GAP = 14;
 
   /**
    * 把面板夹进视口，保证它**整个**都看得见。
@@ -698,7 +713,8 @@ ${TRIGGER_CSS}
 
   function placePanel(anchor) {
     applyPanelSize();
-    if (anchor) lastAnchor = scaleRect(anchor, 1);
+    // 存一份副本：锚点是 DOMRect（活在页面里），下次缩放要拿它重算位置
+    if (anchor) lastAnchor = copyRect(anchor);
 
     const k = 1 / zoom;
     const w = panelWidth();
@@ -743,9 +759,53 @@ ${TRIGGER_CSS}
 
   function hidePanel() {
     panel.classList.remove('show');
+    /* 藏起来就等于用户不要这个结果了 —— 明确告诉后台停手。
+       后台只在收到新的 translate 时才 abort，这里藏了面板、请求还在跑完（OCR 那种慢的能跑几十秒）。 */
+    if (port) {
+      try {
+        port.postMessage({ type: 'abort' });
+      } catch {
+        /* 端口已断开 */
+      }
+    }
+  }
+
+  /* ---- 按钮自动消失 ----
+     三条规矩：出现之后鼠标一直不动，过 triggerIdleSec 秒就消失；鼠标停在按钮上时不算
+     （人明显在看它）；从按钮上移开又没点，过 triggerLeaveSec 秒消失，移回去就作废。
+     两个时间都在设置页里调，填 0 = 关掉那一项。 */
+  let trigIdleTimer = null;
+  let trigLeaveTimer = null;
+  /** 鼠标现在是不是停在按钮上（由 mousemove 那个监听维护） */
+  let trigHovered = false;
+  /** 按钮最近一次出现的时刻 —— 刚出现那一下不算「停在按钮上」，见 mousemove 里的说明 */
+  let trigShownAt = 0;
+
+  function clearTriggerTimers() {
+    if (trigIdleTimer) { clearTimeout(trigIdleTimer); trigIdleTimer = null; }
+    if (trigLeaveTimer) { clearTimeout(trigLeaveTimer); trigLeaveTimer = null; }
+  }
+
+  /** 主计时：从「按钮出现」或「鼠标又动了一下」开始数。
+      两个计时一起清 —— 显示之前残留的那个「移开短计时」要是不干掉，它到点会把刚
+      显示出来的按钮顺手抹掉（实测：鼠标刚好从按钮上滑过之后重划一次就踩到了）。 */
+  function armTriggerIdle() {
+    clearTriggerTimers();
+    const sec = Number(prefs.triggerIdleSec) || 0;
+    trigIdleTimer = sec > 0 ? setTimeout(hideTrigger, sec * 1000) : null;
+  }
+
+  /** 鼠标从按钮上移开：走那个「很短的时间」；没配就退回主计时 */
+  function armTriggerLeave() {
+    clearTriggerTimers();
+    const sec = Number(prefs.triggerLeaveSec) || 0;
+    if (sec > 0) trigLeaveTimer = setTimeout(hideTrigger, sec * 1000);
+    else armTriggerIdle();
   }
 
   function hideTrigger() {
+    clearTriggerTimers();
+    trigHovered = false;
     trigger.classList.remove('show');
   }
 
@@ -762,6 +822,70 @@ ${TRIGGER_CSS}
     dot.title = DOT_TIP[kind] || '';
   }
 
+  /* ---- 两种「铺界面」的公共骨架 ----------------------------------------
+     「进忙碌态」和「报失败」在多处出现（翻译开场 / OCR 开场 / 截图开场失败 /
+     结果失败 / OCR 失败）。各写一套的话，总线数一样，但改一处（比如多收一个诊断行、
+     换个灯的状态）就容易漏。收在这里，调用方只管传差异项。 */
+
+  /**
+   * 进忙碌态：清空结果区、写占位、灯转「进行中」、重试按钮禁用。
+   * 调用方各自再补与本次动作相关的部分（原文区怎么填、状态栏那句具体写什么）。
+   *
+   * @param {string}  placeholder 结果区空着时显示的灰字（「等待结果…」/「等待识别…」）
+   * @param {string}  statusText  状态栏那句
+   * @param {object}  [opts]
+   * @param {string}  [opts.statusKind] 状态栏语气（'warn' 等），不传就是普通色
+   * @param {boolean} [opts.clearSrc]   连原文区一起清空（OCR 开场要，翻译开场自己有内容要写）
+   * @param {boolean} [opts.cancelDelta] 先掐掉正在排队的流式分片（OCR 开场要）
+   */
+  function enterBusy(placeholder, statusText, opts = {}) {
+    if (opts.cancelDelta) cancelPendingDelta();
+    busy = true;
+    retryBtn.disabled = true;
+    outBox.classList.remove('empty');
+    outBox.textContent = '';
+    outBox.dataset.placeholder = placeholder;
+    if (opts.clearSrc) {
+      srcBox.textContent = '';
+      srcBox.classList.remove('has-img');
+    }
+    resetDiag();
+    setStatus(statusText, opts.statusKind || '');
+    setDot('on');
+  }
+
+  /* 退出忙碌态的完整仪式：取消挂起的流式渲染、放开重试按钮。
+     曾经这组三连在 5 个函数里各手抄一遍（showFailure / renderResult / showNoCachedResult /
+     done 和 fatal 的兜底分支）＋ portGone 一个两行变体 —— 收口不彻底，改一处漏一处
+     （827 行那条注释当初担心的就是这事）。没有挂起渲染时 cancelPendingDelta 是空操作，
+     portGone 里多调它也无害。 */
+  function leaveBusy() {
+    cancelPendingDelta();
+    busy = false;
+    retryBtn.disabled = false;
+  }
+
+  /**
+   * 报失败：结果区换成一句错、灯转红、诊断里留一行原因。
+   * 不进忙碌态、也不碰「原文区」—— 失败时原文照旧留在那儿给用户看。
+   *
+   * @param {string} why     写进状态栏、也写进诊断的那句原因
+   * @param {object} [opts]
+   * @param {string} [opts.diagKey]    诊断行的标题（默认「错误」）
+   * @param {string} [opts.placeholder] 结果区的灰字（默认「出错了」）
+   * @param {Array}  [opts.diag]       诊断行；不传就用 `[{k: diagKey, v: why}]`
+   *                                   （「没返回内容」那条要摊整块 buildDiag，所以留个口子）
+   */
+  function showFailure(why, opts = {}) {
+    leaveBusy();
+    outBox.classList.remove('empty');
+    outBox.textContent = '';
+    outBox.dataset.placeholder = opts.placeholder || '出错了';
+    setStatus(why, 'err');
+    setDot('err');
+    showDiag(opts.diag || [{ k: opts.diagKey || '错误', v: why, err: true }]);
+  }
+
   /* ---- 顶部的「原文」开关 ---- */
 
   function syncSrcBtn() {
@@ -771,19 +895,18 @@ ${TRIGGER_CSS}
     srcBtn.title = on ? '隐藏原文（当前显示中）' : '显示原文（当前隐藏中）';
   }
 
-  /** 把一项设置写回 storage —— 和设置页共用同一份 state */
-  /* 串行化：这里是「读整个 state → 改一个字段 → 写回去」，
-     连着写两次（比如快速点两下顶部那个「原文」按钮）两次读写会交错，
-     后完成的那次可能写的是先发起的值 —— 落盘的设置就和界面上的不一样了。 */
+  /* 写存档的唯一入口：**读整个 state → 让调用方改一改 → 写回去**。
+     串行化：连着写两次（比如快速点两下顶部那个「原文」按钮）两次读写会交错，
+     后完成的那次可能写的是先发起的值 —— 落盘的设置就和界面上的不一样了。
+     `mutate(st)` 返回 false 表示「这次不该写」（存档里没这块东西），直接跳过。 */
   let saveChain = Promise.resolve();
 
-  function saveSetting(key, value) {
+  function mutateState(mutate) {
     saveChain = saveChain.then(async () => {
       try {
         const raw = await chrome.storage.local.get('state');
         const st = raw && raw.state;
-        if (!st) return;
-        st.settings = { ...(st.settings || {}), [key]: value };
+        if (!st || mutate(st) === false) return;
         await chrome.storage.local.set({ state: st });
       } catch {
         /* 存不下就算了，本次会话内已经生效 */
@@ -792,22 +915,21 @@ ${TRIGGER_CSS}
     return saveChain;
   }
 
+  /** 把一项设置写回 storage —— 和设置页共用同一份 state */
+  function saveSetting(key, value) {
+    return mutateState((st) => {
+      st.settings = { ...(st.settings || {}), [key]: value };
+    });
+  }
+
   /* 写 state.ocr.imageConfigId —— 面板在图片模式下拨顶栏那个下拉时改的就是它。
      和 saveSetting 共用一条链，免得两次「读-改-写」互相盖掉。
      **必须先写下去再发请求**：后台是 loadState() 现读存档挑配置的（同换目标语言那个坑）。 */
   function saveImageConfigId(id) {
-    saveChain = saveChain.then(async () => {
-      try {
-        const raw = await chrome.storage.local.get('state');
-        const st = raw && raw.state;
-        if (!st || !st.ocr) return;
-        st.ocr.imageConfigId = id;
-        await chrome.storage.local.set({ state: st });
-      } catch {
-        /* 同上 */
-      }
+    return mutateState((st) => {
+      if (!st.ocr) return false;
+      st.ocr.imageConfigId = id;
     });
-    return saveChain;
   }
 
   /* ---- 底部「…」里的诊断 ---- */
@@ -911,6 +1033,10 @@ ${TRIGGER_CSS}
     port.onMessage.addListener(onPortMessage);
     port.onDisconnect.addListener(() => {
       port = null;
+      /* 扩展更新/重载或 SW 被杀都会走到这儿 —— 不复位的话 busy 永远是 true、
+         重试按钮永久禁用，这一屏没有任何恢复手段。只在忙碌时收场：
+         空闲时 SW 回收不该把已有结果抹成报错。 */
+      if (busy) portGone();
     });
     port.postMessage({ type: 'hello' });
     return port;
@@ -919,6 +1045,17 @@ ${TRIGGER_CSS}
   function ensurePort() {
     if (!port) connectPort();
     return port;
+  }
+
+  /** 拿到端口才发消息 —— 拿不到（扩展刚更新、端口还没连上）就报一句并放弃这次请求。
+      四个发送点共用，省得每处都手写一遍 `if (!p) { portGone(); return; }`。 */
+  function postOrFail(p, msg) {
+    if (!p) {
+      portGone();
+      return false;
+    }
+    p.postMessage(msg);
+    return true;
   }
 
   /* ---- 流式渲染 ---- */
@@ -976,9 +1113,7 @@ ${TRIGGER_CSS}
    * 所以这里连 busy / 重试按钮 也一并收口，调用方不用自己管。
    */
   function renderResult(r, ocr, action, fatal) {
-    cancelPendingDelta();
-    busy = false;
-    retryBtn.disabled = false;
+    leaveBusy();
     // 截图那条路的上下文跟着结果一起换：状态栏的「截图 OCR」和诊断里的图片信息都读它
     lastOcr = ocr || null;
     if (action) lastAction = action;
@@ -1000,13 +1135,10 @@ ${TRIGGER_CSS}
       return;
     }
 
-    outBox.classList.remove('empty');
-    outBox.textContent = '';
-    outBox.dataset.placeholder = fatal ? '出错了' : '没有返回内容';
     const why = (r && r.error) || (fatal ? '出错了' : '没有拿到译文');
-    setStatus(why, 'err');
-    setDot('err');
-    showDiag(fatal ? [{ k: '错误', v: why, err: true }] : buildDiag(r || {}));
+    showFailure(why, fatal
+      ? {}
+      : { placeholder: '没有返回内容', diag: buildDiag(r || {}) });
   }
 
   /** 这次的结果按配置归档 —— 同一段原文内，切回来就靠它 */
@@ -1019,9 +1151,7 @@ ${TRIGGER_CSS}
       有原文或图的时候不该走到这儿 —— 那条路会**直接发请求**（见 cfgSelect 的 change）。 */
   function showNoCachedResult(configId) {
     const hit = configs.find((c) => c.id === configId);
-    cancelPendingDelta();
-    busy = false;
-    retryBtn.disabled = false;
+    leaveBusy();
     resetDiag();
     outBox.classList.remove('empty');
     outBox.textContent = '';
@@ -1030,12 +1160,19 @@ ${TRIGGER_CSS}
     setStatus(hit ? `已切到「${hit.name}」，点 ↻ 翻译` : '点 ↻ 翻译');
   }
 
+  /* 吃一份配置列表：面板顶栏下拉用的 `configs`（带 img 标记）和图片模式专用的
+     `imageConfigs` 一次算完 —— `ready` 和设置页推过来的 `applyState` 都走这里，
+     两处各算一遍的话迟早只改一处（`imageCapable()` 是 content 侧的那份判据）。 */
+  function applyConfigList(list) {
+    configs = (list || []).map((c) => ({ id: c.id, name: c.name, img: !!c.img }));
+    imageConfigs = configs.filter((c) => c.img).map((c) => ({ id: c.id, name: c.name }));
+  }
+
   function onPortMessage(msg) {
     if (!msg) return;
 
     if (msg.type === 'ready') {
-      configs = (msg.configs || []).map((c) => ({ id: c.id, name: c.name, img: !!c.img }));
-      imageConfigs = configs.filter((c) => c.img).map((c) => ({ id: c.id, name: c.name }));
+      applyConfigList(msg.configs);
       if (typeof msg.imageConfigId === 'string') imageConfigId = msg.imageConfigId;
       if (Array.isArray(msg.targetLangs)) targetLangs = msg.targetLangs;
       activeConfigId = msg.activeConfigId || (configs[0] && configs[0].id) || '';
@@ -1051,7 +1188,10 @@ ${TRIGGER_CSS}
       // 所以它的 start / delta 还会继续来，不挡住就把人家刚铺好的结果冲掉了。
       if (pendingConfigId !== shownConfigId()) return;
       cancelPendingDelta();
-      setStatus('请求中…');
+      // 同一条请求里 model 变量填了多行时，后台会逐个试 —— 每次开始试一个就带一句
+      // statusText（形如「（Qwen3-32B）」）。只有一个 model（或没写 {{model}}）时它是空串，
+      // 状态就还是老样子「请求中…」，看不出一丝变化。
+      setStatus(msg.statusText ? `请求中…${msg.statusText}` : '请求中…');
       setDot('on');
       outBox.classList.add('empty');
       outBox.textContent = '';
@@ -1074,15 +1214,7 @@ ${TRIGGER_CSS}
     }
 
     if (msg.type === 'ocr-error') {
-      busy = false;
-      retryBtn.disabled = false;
-      cancelPendingDelta();
-      outBox.classList.remove('empty');
-      outBox.textContent = '';
-      outBox.dataset.placeholder = '出错了';
-      setStatus(msg.message || '截图识别失败', 'err');
-      setDot('err');
-      showDiag([{ k: '截图 OCR', v: msg.message || '截图识别失败', err: true }]);
+      showFailure(msg.message || '截图识别失败', { diagKey: '截图 OCR' });
       return;
     }
 
@@ -1091,8 +1223,7 @@ ${TRIGGER_CSS}
       if (!text) {
         setStatus('没识别出文字', 'err');
         setDot('err');
-        busy = false;
-        retryBtn.disabled = false;
+        leaveBusy();
         return;
       }
       // 认出来的这段就是「原文」，接着走和划词一模一样的翻译链路 ——
@@ -1129,9 +1260,7 @@ ${TRIGGER_CSS}
         renderResult(r, lastOcr, lastAction, false);
       } else {
         // 这次结果归另一个配置，只进缓存，别去动眼前这个配置的界面（切回去就能看到）
-        cancelPendingDelta();
-        busy = false;
-        retryBtn.disabled = false;
+        leaveBusy();
         // 兜底：眼前这个配置连缓存都没有（正常到不了这儿 —— 切到没翻过的配置时
         // 会当场发新请求，而那条会把这条顶掉）
         if (!resultCache.has(shownConfigId())) showNoCachedResult(shownConfigId());
@@ -1145,18 +1274,27 @@ ${TRIGGER_CSS}
       if (pendingConfigId === shownConfigId()) {
         renderResult(r, lastOcr, lastAction, true);
       } else {
-        cancelPendingDelta();
-        busy = false;
-        retryBtn.disabled = false;
+        leaveBusy();
       }
     }
   }
 
-  /* 一条配置能不能翻图 —— 判据只有一个：**图片请求模板非空**。
-     和设置页 OCR 栏那份「图片配置」列表、后台 `lib/store.js` 的 `canTranslateImage`
-     是同一件事（content script 不能 import，只能在这儿再写一遍）。 */
+  /* 一条配置能不能翻图 —— 判据只有一个：**轮换链里随便哪一条的图片请求模板非空**
+     （主请求，或者某条勾上的后备请求）。和设置页 OCR 栏那份「图片配置」列表、
+     后台 `lib/store.js` 的 `canTranslateImage` 是同一件事
+     （content script 不能 import，只能在这儿再写一遍）。 */
   function imageCapable(c) {
-    return !!(c && String(c.imageRequest || '').trim());
+    if (!c) return false;
+    /* 口径必须和 `canTranslateImage`（requestChain）一致：主请求被取消勾选时**不算数** ——
+       链里根本没有它。这份镜像少一个条件，两边的「图片配置」列表就会跟着
+       「最后一次 storage 变化」漂（设置页说不能翻图、面板说能）。 */
+    const on = [
+      ...(c.mainEnabled !== false ? [c] : []),
+      ...(Array.isArray(c.fallbacks) ? c.fallbacks.filter((f) => f.enabled !== false) : [])
+    ];
+    // 一条都没勾时 requestChain 会退回第一条 —— 这里跟着退，别让两边各说各话
+    if (!on.length && c) on.push(c);
+    return on.some((r) => !!String(r.imageRequest || '').trim());
   }
 
   /* 面板此刻「用的是哪条」= 顶栏那个下拉显示的那条。
@@ -1238,8 +1376,33 @@ ${TRIGGER_CSS}
 
   /* ---- 翻译 ---- */
 
+  const DIRECT_SRC_NOTE = '（这张截图直接发给了模型，没有先做外置 OCR）';
+
+  /**
+   * 直传那一屏：把截的图贴到原文区。
+   * 页面的 CSP 可能挡住 data: 图，`error` 一到就退回那句说明 —— 说明不能丢，
+   * 它是「这段原文为什么是张图」的唯一交代。
+   */
+  function renderSrcImage(dataUrl) {
+    srcBox.textContent = '';
+    srcBox.classList.add('has-img');
+    const img = document.createElement('img');
+    img.className = 'rt-srcimg';
+    img.alt = '截取的图';
+    img.addEventListener('error', () => {
+      img.remove();
+      srcBox.classList.remove('has-img');
+      srcBox.textContent = DIRECT_SRC_NOTE;
+    });
+    img.src = dataUrl;
+    const note = document.createElement('div');
+    note.textContent = DIRECT_SRC_NOTE;
+    srcBox.append(img, note);
+  }
+
   function translate(text, configId, ocr) {
-    const limit = Number(prefs.maxChars) || 8000;
+    // Math.max 兜负数（负的 limit 会把 slice(0, -n) 变成从尾部倒砍），与 background 同一口径
+    const limit = Math.max(1, Number(prefs.maxChars) || 8000);
     let payload = String(text || '');
     let truncated = false;
     if (payload.length > limit) {
@@ -1283,38 +1446,26 @@ ${TRIGGER_CSS}
       resultCache.clear();
     }
 
-    busy = true;
-    retryBtn.disabled = true;
-    outBox.classList.remove('empty');
-    outBox.textContent = '';
-    outBox.dataset.placeholder = '等待结果…';
-
-    // 原文区在直传模式下没有文字可放，就写一句它是怎么来的 ——
-    // 空着的话用户会以为哪里坏了
-    srcBox.textContent = hasImage
-      ? '（这张截图直接发给了模型，没有先做外置 OCR）'
-      : (payload.length > 400 ? payload.slice(0, 400) + ' …' : payload);
-    syncSrcBtn();
-    resetDiag();
-    setStatus(
+    // 状态栏那句随「是不是截图 / 有没有截断」变，先算好再交给公共骨架
+    enterBusy(
+      '等待结果…',
       hasImage ? '正在看图…' : (truncated ? `内容过长，已截断到 ${limit} 字` : '…'),
-      !hasImage && truncated ? 'warn' : ''
+      { statusKind: !hasImage && truncated ? 'warn' : '' }
     );
-    setDot('on');
+
+    // 原文区：直传时原文就是那张图，贴图（OCR 中转时原文是认出来的文字，照旧）
+    if (hasImage) renderSrcImage(ocr.image);
+    else {
+      srcBox.classList.remove('has-img');
+      srcBox.textContent = payload.length > 400 ? payload.slice(0, 400) + ' …' : payload;
+    }
+    syncSrcBtn();
     // 原文区是**开面板之后**才填进去并显示出来的（showPanel 定位时它还是空的），
     // 这里让面板长高了几十像素 —— 不重新夹一次，贴着视口底部开的面板就会切底。
     keepPanelInView();
 
     const p = ensurePort();
-    if (!p) {
-      setStatus('扩展已更新，请刷新页面后重试', 'err');
-      setDot('err');
-      busy = false;
-      retryBtn.disabled = false;
-      return;
-    }
-
-    p.postMessage({
+    postOrFail(p, {
       type: 'translate',
       text: payload,
       configId: picked,
@@ -1354,24 +1505,26 @@ ${TRIGGER_CSS}
     lastOcrAnchor = anchor || null;
     lastOcr = null;
     currentText = '';
-    busy = true;
-    retryBtn.disabled = true;
-    cancelPendingDelta();
-    outBox.classList.remove('empty');
-    outBox.textContent = '';
-    outBox.dataset.placeholder = '等待识别…';
-    srcBox.textContent = '';
-    resetDiag();
-    setStatus(statusText);
-    setDot('on');
+    // 掐掉上一屏排队的流式分片 + 连原文区一起清（OCR 开场没有原文可留）
+    enterBusy('等待识别…', statusText, { cancelDelta: true, clearSrc: true });
+
+    /* 打断还在跑的翻译流：后台只在收到新的 translate 时才 abort，识别中的面板会被
+       旧翻译的 delta 涂回旧译文、旧 done 还会把忙碌态提前复位成「翻译成功」——
+       面板已经切到 OCR 屏了，旧结果谁都不要了，跟 hidePanel 同一个理由。 */
+    if (port) {
+      try {
+        port.postMessage({ type: 'abort' });
+      } catch {
+        /* 端口已断开 */
+      }
+    }
 
     return ensurePort();
   }
 
   /** 端口连不上（扩展更新过、页面还是旧脚本）时的统一收场 */
   function portGone() {
-    busy = false;
-    retryBtn.disabled = false;
+    leaveBusy();
     setStatus('扩展已更新，请刷新页面后重试', 'err');
     setDot('err');
   }
@@ -1379,11 +1532,22 @@ ${TRIGGER_CSS}
   /** 剪切板那条路的入口：图从剪切板来，background 负责读 */
   function startOcr(anchor) {
     const p = beginOcrPanel(anchor, '正在读取剪切板…');
-    if (!p) {
-      portGone();
+    postOrFail(p, { type: 'ocr' });
+  }
+
+  /**
+   * 重试「截图那一步就失败」的那一屏（含直传）：要的是**重发刚才那张图**。
+   * 图在哪：直传那张 content 自己存着（lastOcr.image，见 translate），本地重发；
+   * OCR 那两条路（剪切板 / 框选）图在后台手里，发 reuse 让它接着用上一次那张 ——
+   * 那时候再去读剪切板就是错的了（用户可能早复制了别的东西）。
+   */
+  function retryShot() {
+    if (lastOcr && lastOcr.direct && lastOcr.image) {
+      translate('', '', { direct: true, image: lastOcr.image, bytes: lastOcr.bytes });
       return;
     }
-    p.postMessage({ type: 'ocr' });
+    const p = beginOcrPanel(lastOcrAnchor, '正在重试…');
+    postOrFail(p, { type: 'ocr', reuse: true });
   }
 
   /* ---- 框选截图 ---- */
@@ -1413,15 +1577,17 @@ ${TRIGGER_CSS}
       mount();
       showPanel(null);
       hideTrigger();
-      busy = false;
-      retryBtn.disabled = false;
-      resetDiag();
-      setStatus('截图失败：' + error, 'err');
-      setDot('err');
+      showFailure('截图失败：' + error);
       return;
     }
     if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return;
 
+    /* 覆盖层**不铺截图**，只铺一层压暗的挖洞（`.veil` 那条超大 box-shadow）。
+       页面就在下面、原样可见 —— 用户看到的是「直接对着页面框」，不是「先截一张再框」。
+       位图只在**松手那一刻**才用来裁出框里那块（见 pointerup）。
+       好处是框选期间还能滚页面 / 翻页，裁到的永远是**松手时那一屏**的对应区域。
+       代价是动态内容（视频 / 轮播）在拖框期间会动 —— 和系统截屏工具一样。 */
+    const SHOT_TIP = '拖动框选要翻译的区域（可滚动页面）· Esc 或右键取消';
     const hostEl = document.createElement('div');
     hostEl.setAttribute('data-rt-shot', '');
     hostEl.style.cssText = 'position:fixed;inset:0;z-index:2147483647;';
@@ -1429,9 +1595,14 @@ ${TRIGGER_CSS}
     root.innerHTML = `
 <style>
   * { box-sizing: border-box; }
-  .img {
-    position: fixed; inset: 0; width: 100%; height: 100%;
-    object-fit: fill; user-select: none; -webkit-user-drag: none;
+  /* 这层才是**真正接住鼠标**的东西：铺满整屏、透明、可命中。
+     不能用 box-shadow 那层当命中面 —— box-shadow 不参与命中测试，
+     而且它自己写的是 pointer-events:none（挖洞要求它不能挡住页面）。
+     所以「压暗」和「接指针」必须拆成两层。 */
+  .veil {
+    position: fixed; inset: 0;
+    cursor: crosshair;
+    background: rgba(0, 0, 0, .45);
   }
   .sel {
     position: fixed; display: none;
@@ -1447,13 +1618,11 @@ ${TRIGGER_CSS}
     pointer-events: none; white-space: nowrap;
   }
 </style>
-<img class="img" alt="">
+<div class="veil"></div>
 <div class="sel"></div>
-<div class="tip">拖动框选要翻译的区域 · Esc 或右键取消</div>
+<div class="tip">${SHOT_TIP}</div>
 `;
-    const img = root.querySelector('.img');
     const sel = root.querySelector('.sel');
-    img.src = dataUrl;
 
     const finish = () => {
       window.removeEventListener('keydown', onKey, true);
@@ -1486,46 +1655,44 @@ ${TRIGGER_CSS}
     });
     const moveSel = (cur) => {
       const r = normRect(start, cur);
+      // 夹在视口内：拖到窗口外时不至于框住看不见的地方
       sel.style.left = r.left + 'px';
       sel.style.top = r.top + 'px';
-      sel.style.width = r.width + 'px';
-      sel.style.height = r.height + 'px';
+      sel.style.width = Math.min(r.width, window.innerWidth - r.left) + 'px';
+      sel.style.height = Math.min(r.height, window.innerHeight - r.top) + 'px';
     };
 
     let start = null;
 
-    root.addEventListener('pointerdown', (e) => {
+    /* 事件挂在 **hostEl**（一个真实、可命中的元素）上，不挂 shadow root ——
+       shadow root 不是事件目标，绑在上面只有当事件从内部某个**可命中元素**冒泡上来才触发。
+       以前内部唯一铺满的那层写的是 pointer-events:none，于是「按住拖框」这条路一直是断的
+       （脚本直接派发事件能过，真人点不到）。现在有 .veil 兜底，
+       但监听仍挂在 hostEl 上更稳：起点在遮罩内、终点拖到遮罩外的场景也不丢事件。 */
+    hostEl.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
-      if (!img.complete || !img.naturalWidth) return;
       start = { x: e.clientX, y: e.clientY };
       sel.style.display = 'block';
       moveSel({ x: start.x, y: start.y });
+      // 把后续 pointermove / pointerup 都锁到 hostEl，拖到窗口外也能收到 up
+      try { hostEl.setPointerCapture(e.pointerId); } catch { /* 有些环境不支持，不影响主线 */ }
       e.preventDefault();
+      e.stopPropagation();
     });
-    root.addEventListener('pointermove', (e) => {
+    hostEl.addEventListener('pointermove', (e) => {
       if (start) moveSel({ x: e.clientX, y: e.clientY });
     });
-    root.addEventListener('pointerup', (e) => {
+    hostEl.addEventListener('pointerup', (e) => {
       if (!start || e.button !== 0) return;
       const rect = normRect(start, { x: e.clientX, y: e.clientY });
       start = null;
+      try { hostEl.releasePointerCapture(e.pointerId); } catch { /* 忽略 */ }
       // 没怎么拖就松手：当误触，整个取消
       if (rect.width < 4 || rect.height < 4) {
         finish();
         return;
       }
-
-      const k = img.naturalWidth / Math.max(1, img.clientWidth || window.innerWidth);
-      const sx = Math.round(rect.left * k);
-      const sy = Math.round(rect.top * k);
-      const sw = Math.max(1, Math.round(rect.width * k));
-      const sh = Math.max(1, Math.round(rect.height * k));
-      const canvas = document.createElement('canvas');
-      canvas.width = sw;
-      canvas.height = sh;
-      canvas.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
-      const cropped = canvas.toDataURL('image/png');
-
+      // 先把覆盖层拆掉：再把图喂给 OCR 的时候用户可以继续翻页面
       const anchorRect = {
         left: rect.left,
         top: rect.top,
@@ -1536,16 +1703,59 @@ ${TRIGGER_CSS}
       };
       finish();
 
-      const p = beginOcrPanel(anchorRect, '正在识别截图…');
-      if (!p) {
-        portGone();
-        return;
-      }
-      p.postMessage({ type: 'ocr', dataUrl: cropped });
+      cropShot(dataUrl, rect).then((cropped) => {
+        if (!cropped) {
+          /* 直接在面板上报失败（beginOcrPanel 已让它进忙碌态，showFailure 负责退出去）。
+             曾经这里是给后台发 { type: 'ocr-error' } —— 后台根本没有那个 handler，
+             消息被静默丢掉，面板就卡死在忙碌态（「裁图失败」四个字谁都看不见）。 */
+          const p = beginOcrPanel(anchorRect, '截图失败');
+          // 端口没连上时 showFailure 没人送，busy 已经被 beginOcrPanel 置上 —— 得有兜底
+          if (p) showFailure('裁图失败');
+          else portGone();
+          return;
+        }
+        postOrFail(beginOcrPanel(anchorRect, '正在识别截图…'), { type: 'ocr', dataUrl: cropped });
+      });
     });
 
     (document.documentElement || document.body).appendChild(hostEl);
     shotHost = hostEl;
+  }
+
+  /** 从整块可见区域的位图里裁出 rect（视口 CSS 坐标）那一块。
+      captureVisibleTab 的位图 = **整块可见区域 × dpr**，含页面自己那条滚动条；
+      而 rect 是在**内容区**坐标系里量的（不含滚动条）。所以先把右边/下边那一条切掉，
+      比例再按「位图 − 那一条」算。没有滚动条时 cutX / cutY 都是 0 —— 等于没动。 */
+  function cropShot(dataUrl, rect) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const dpr = img.naturalWidth / Math.max(1, window.innerWidth) || 1;
+        const cutX = Math.max(0, Math.round((window.innerWidth - document.documentElement.clientWidth) * dpr));
+        const cutY = Math.max(0, Math.round((window.innerHeight - document.documentElement.clientHeight) * dpr));
+        const srcW = Math.max(1, img.naturalWidth - cutX);
+        const srcH = Math.max(1, img.naturalHeight - cutY);
+        const viewW = Math.max(1, document.documentElement.clientWidth);
+        const viewH = Math.max(1, document.documentElement.clientHeight);
+        const kx = srcW / viewW;
+        const ky = srcH / viewH;
+        const sx = Math.max(0, Math.min(Math.round(rect.left * kx), srcW - 1));
+        const sy = Math.max(0, Math.min(Math.round(rect.top * ky), srcH - 1));
+        const sw = Math.max(1, Math.min(Math.round(rect.width * kx), srcW - sx));
+        const sh = Math.max(1, Math.min(Math.round(rect.height * ky), srcH - sy));
+        const cvs = document.createElement('canvas');
+        cvs.width = sw;
+        cvs.height = sh;
+        try {
+          cvs.getContext('2d').drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+          resolve(cvs.toDataURL('image/png'));
+        } catch {
+          resolve(null);
+        }
+      };
+      img.onerror = () => resolve(null);
+      img.src = dataUrl;
+    });
   }
 
   /* ---- 划词监听 ---- */
@@ -1563,6 +1773,27 @@ ${TRIGGER_CSS}
     return false;
   }
 
+  /**
+   * 「活动那一端」的光标位置 —— 键盘扩展选区（Shift+方向键 / Shift+Home…）时贴它。
+   * 键盘改选区的那一刻，手里的 lastMouse 是上一次鼠标动作留下的**旧坐标**，拿它当锚点
+   * 会指到页面别处去；选区自己知道光标在哪：focusNode / focusOffset 就是正在动的这一端。
+   * 拿不到（Shadow DOM 里几何量全丢那个形态）返回 null，交给调用方兜底。
+   */
+  function caretRect(sel) {
+    if (!sel || !sel.rangeCount || !sel.focusNode) return null;
+    try {
+      const r = document.createRange();
+      r.setStart(sel.focusNode, sel.focusOffset);
+      r.collapse(true);
+      const b = r.getBoundingClientRect();
+      // 全 0 = 量不到，别把它当成「左上角有个光标」
+      if (!b || (b.width === 0 && b.height === 0)) return null;
+      return b;
+    } catch {
+      return null;
+    }
+  }
+
   function readSelection() {
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) return null;
@@ -1575,6 +1806,14 @@ ${TRIGGER_CSS}
     // 所以 Shadow DOM 内部的输入框认不出来 —— 认不出就放行，宁可多弹一次。
     if (isEditable(sel.anchorNode)) return null;
 
+    // 鼠标划词：按钮直接贴鼠标，一个字节的选区几何量都不看。
+    // 以前是从选区里挑「第一行 / 最后一行」再挑离鼠标近的那一头 —— 一拖一大段、或者
+    // 那一行特别长的时候（双击选段、页面元素多、在空旷处上下划），挑出来的角离鼠标
+    // 还是很远，得再把鼠标挪过去点。鼠标位置既不怕整段框对到最长那行，也不怕重定目标。
+    if (lastMouse) {
+      return { text, atMouse: true, anchor: { rect: pointRect(lastMouse.x, lastMouse.y) } };
+    }
+
     let rect;
     let segments;
     try {
@@ -1585,30 +1824,17 @@ ${TRIGGER_CSS}
       return null;
     }
 
-    // 同样是 Shadow DOM：文字拿得到，几何量却全丢了（rect 全 0、clientRects 空）。
-    // 不知道贴哪儿就用鼠标松开的位置当锚点 —— 零尺寸点，和右键菜单那条路
-    // 同一种形态（placePanel 本来就吃得下）。键盘划词（没有鼠标位置）只能放弃。
-    if (!rect || (rect.width === 0 && rect.height === 0)) {
-      if (!lastMouse) return null;
-      rect = pointRect(lastMouse.x, lastMouse.y);
-      segments = [rect];
-    }
+    // 几何量全丢（Shadow DOM 里划词：rect 全 0、clientRects 空）—— 上面又没有鼠标位置
+    // 可用，贴哪儿都不知道，只能放弃。
+    if (!rect || (rect.width === 0 && rect.height === 0)) return null;
 
-    // 选中多行时，整段的框会把右边界对齐到最长那行，离鼠标（选区末尾）很远。
-    // 所以取「第一行 / 最后一行」各自的矩形，贴着字放按钮。
+    // 键盘扩展选区：贴「光标那一行」的角
+    const care = caretRect(sel);
+    if (care) return { text, anchor: { rect: care } };
+
+    // 兜底：贴最后一行末尾
     const tail = segments.length ? segments[segments.length - 1] : rect;
-    let anchor = { rect: tail, side: 'after' };
-
-    // 倒着拖选时鼠标停在选区开头，按钮就贴开头
-    if (lastMouse && segments.length > 1) {
-      const head = segments[0];
-      const dist2 = (x, y) => (lastMouse.x - x) ** 2 + (lastMouse.y - y) ** 2;
-      if (dist2(head.left, head.top) < dist2(tail.right, tail.bottom)) {
-        anchor = { rect: head, side: 'before' };
-      }
-    }
-
-    return { text, rect, tail, anchor };
+    return { text, anchor: { rect: tail } };
   }
 
   function updateTrigger() {
@@ -1647,17 +1873,20 @@ ${TRIGGER_CSS}
 
     let x;
     let y;
-    if (found.anchor.side === 'after') {
-      // 贴着最后一个字的右下角
+    if (found.atMouse) {
+      // 贴在指针的右下方，右下角放不下就整块翻到左上（翻过去同样离指针 MOUSE_GAP，
+      // 指针始终不在按钮里）
+      const off = MOUSE_GAP * k;
+      x = seg.left + off;
+      y = seg.bottom + off;
+      if (x + size > vw - gap) x = seg.left - size - off;
+      if (y + size > vh - gap) y = seg.bottom - size - off;
+    } else {
+      // 贴着光标（或最后一行）的右下角，放不下就翻到左上
       x = seg.right + gap;
       y = seg.bottom + gap;
       if (x + size > vw - gap) x = seg.left - size - gap;
       if (y + size > vh - gap) y = seg.top - size - gap;
-    } else {
-      x = seg.left - size - gap;
-      y = seg.top - size - gap;
-      if (x < gap) x = seg.right + gap;
-      if (y < gap) y = seg.bottom + gap;
     }
     x = Math.max(gap, Math.min(x, vw - size - gap));
     y = Math.max(gap, Math.min(y, vh - size - gap));
@@ -1665,6 +1894,8 @@ ${TRIGGER_CSS}
     trigger.style.left = x + 'px';
     trigger.style.top = y + 'px';
     trigger.classList.add('show');
+    trigShownAt = Date.now();
+    armTriggerIdle();
     trigger.dataset.pendingText = found.text;
     trigger.__anchor = found.anchor.rect;
   }
@@ -1679,8 +1910,38 @@ ${TRIGGER_CSS}
     onSelectionMaybeChanged();
   }, true);
 
+  // 鼠标位置只能从事件里自己记（浏览器没有「查当前鼠标在哪」的接口）。
+  // 光靠 mouseup 不够用：双击选段、Shift+点击、以及键盘改选区之后，手里那个坐标都是旧的。
+  // 按钮那两个计时也挂在这儿 —— 别拆成 mouseenter / mouseleave：指针从按钮上移开时浏览器
+  // 是 `mouseleave` 之后紧跟一个 `mousemove`，那个 mousemove 会顺手把「移开短计时」清掉
+  // （于是「移开才消失」永远不生效）。一个事件源自己判断在不在按钮上，就没这个次序问题。
+  document.addEventListener('mousemove', (e) => {
+    lastMouse = { x: e.clientX, y: e.clientY };
+    if (!trigger.classList.contains('show')) return;
+
+    if (e.composedPath && e.composedPath().includes(trigger)) {
+      // 停在按钮上 = 人明显在看它，不计时。刚显示的那一下不算（按钮理论上不会压在指针
+      // 底下，贴鼠标留了 MOUSE_GAP、翻边也留了；只有视口小到夹取兜不住时才可能）
+      if (Date.now() - trigShownAt < 250) return;
+      trigHovered = true;
+      clearTriggerTimers();
+      return;
+    }
+    // 从按钮上移开（刚才还停在上面）→ 走那个「很短的时间」；否则就是鼠标在动 → 重新起算
+    if (trigHovered) { trigHovered = false; armTriggerLeave(); return; }
+    // 已经在「移开」的倒计时里了：指针继续往别处走，别拿主计时把它盖掉。
+    // 指针离开按钮是一**串** mousemove，不是一下 —— 盖掉的话「移开就消失」就变成
+    // 按主计时消失了（kniph 实测：「移开后用的还是按钮自动消失时间」）。
+    if (trigLeaveTimer) return;
+    armTriggerIdle();
+  }, { capture: true, passive: true });
+
   document.addEventListener('keyup', (e) => {
-    if (e.key === 'Shift' || e.key === 'Escape' || e.shiftKey) onSelectionMaybeChanged();
+    if (e.key === 'Shift' || e.key === 'Escape' || e.shiftKey) {
+      // 键盘改的选区：鼠标坐标是上一次动作留下的旧值，清掉它，让按钮去贴光标那一行
+      if (e.key !== 'Escape') lastMouse = null;
+      onSelectionMaybeChanged();
+    }
   }, true);
 
   document.addEventListener('mousedown', (e) => {
@@ -1735,9 +1996,9 @@ ${TRIGGER_CSS}
 
   retryBtn.addEventListener('click', () => {
     if (busy) return;
-    // 截图那一步就失败时 currentText 还是空的，重试得重新去认一遍图
+    // 截图那一步就失败（含直传）时 currentText 还是空的，重试得拿刚才那张图重来一遍
     if (!currentText) {
-      if (lastAction === 'ocr') startOcr(lastOcrAnchor);
+      retryShot();
       return;
     }
     translate(currentText, shownConfigId());
@@ -1881,10 +2142,9 @@ ${TRIGGER_CSS}
   function applyState(state) {
     if (!state) return;
     if (Array.isArray(state.configs)) {
-      // img 得在这儿算：设置页里刚填/刚清掉「图片请求模板」时，面板要跟着变
+      // img 得在这儿现算：设置页里刚填/刚清掉「图片请求模板」时，面板要跟着变
       // （ready 只在连端口那一刻发一次，靠它就会停在旧的一版）
-      configs = state.configs.map((c) => ({ id: c.id, name: c.name, img: imageCapable(c) }));
-      imageConfigs = configs.filter((c) => c.img).map((c) => ({ id: c.id, name: c.name }));
+      applyConfigList(state.configs.map((c) => ({ ...c, img: imageCapable(c) })));
     }
     if (state.ocr) imageConfigId = String(state.ocr.imageConfigId || '');
     if (state.activeConfigId) activeConfigId = state.activeConfigId;

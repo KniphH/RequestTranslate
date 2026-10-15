@@ -27,7 +27,9 @@ lib/
   store.js             配置存储、内置示例、导入导出、版本迁移
 tools/
   make-icons.py        纯标准库生成图标
-  pack.py              打包 dist/*.zip（传商店 / 挂 Release）
+  pack.py              打包 dist/*.zip（跑完全量测试才打，`--skip-test` 应急、`--no-strip` 不剥注释）
+  strip-comments.mjs   打包时用的注释剥离器（词法级，见下）+ test-strip.mjs 它的自测
+  verify-pack.py       打包后验包：语法 / 行号守恒 / 剥得干净（幂等）
   check-globals.mjs    静态检查：找出「调用了但没定义」的函数
   check-dom.mjs        静态检查：JS 里引用的 id / class 是否真实存在
   test-lib.mjs         解析/转义/提取/适配器/OCR 的单元测试
@@ -89,7 +91,15 @@ Bing 网页版翻译是**两步**：先 GET `bing.com/translator`，从 630KB �
 
 ### 小圆点的定位
 
-贴选区**末尾那个字**的右下角，不是整个选区外框的右下角（跨行选中时外框右边界会跑到最长那一行的末尾）。倒着拖选（鼠标停在选区开头）时反过来贴开头。
+**鼠标划词：直接贴鼠标**，一个字节的选区几何量都不看 —— 松手点右下方 `MOUSE_GAP`（14 物理像素），右下角放不下就整块翻到左上（翻过去离指针还是 14px，指针始终不在按钮里）。选区几何量靠不住：跨行时外框的右边界会跑到**最长那一行**的末尾，双击选段、页面元素多、在空旷处上下划的时候，从选区里挑出来的「角」离手指能差好几百像素。
+
+**键盘扩展选区：贴光标那一行**（`caretRect()`，`focusNode` / `focusOffset` 那一端）的右下角。浏览器**不提供**「当前鼠标在哪」的查询接口 —— 坐标只挂在事件对象上，所以实测里 `lastMouse` 是上一次鼠标动作留下的**旧坐标**，拿它当锚点会指到页面别处去。为此 `keyup`（Shift / 方向键那条路）里会**主动把它清成 null**，`readSelection()` 据此分流。
+
+- `MOUSE_GAP` 必须拉开：按钮压在指针底下会立刻命中 `:hover`，于是「鼠标停在按钮上不消失」永远为真，那个计时器再没机会到点。`mousemove` 里那个「刚出现 250ms 内不算 hover」是给「视口小到夹取兜不住」留的后手。
+- **两个计时只有一个事件源**（`mousemove`），别拆成 `mouseenter` / `mouseleave`：指针离开按钮时浏览器发的是 `mouseleave` **紧跟一个 `mousemove`**，那个 `mousemove` 会把刚设好的「移开短计时」清掉 —— 于是「移开才消失」永远不生效（实测踩到过）。`mousemove` 里用 `composedPath().includes(trigger)` 自己判断在不在按钮上。
+- 显示时（`armTriggerIdle`）要把**两个**计时一起清掉：上一次残留的「移开短计时」会把刚显示出来的按钮顺手抹掉（鼠标刚好从按钮上滑过之后重划一次就踩到了）。
+- 按键页缩放重算位置时**别重新读选区**（`setZoom` → `placePanel(lastAnchor)`）：读出来的是鼠标位置，缩放一下面板就跳到鼠标那儿去了。顺带记一条：**标签页缩放只改视口尺寸，页面里元素的 CSS 坐标不动**（`window.innerWidth` 1170 → 780，同一个字的 x 还是 104），所以锚点原样拿去重算就够了，不要乘比例。
+- 抄 rect 用 `copyRect()`，**不要 `{ ...rect }`**：`DOMRect` 的 `left/top/right/bottom` 挂在原型上，展开只会得到 `x/y/width/height`。
 
 ### 划词：哪些地方拿得到选区
 
@@ -150,35 +160,121 @@ Bing 网页版翻译是**两步**：先 GET `bing.com/translator`，从 630KB �
 - **OCR 供应商也是一段可编辑的请求模板**（v7，和配置栏同一套管线）：`fillOcrTemplate` 填 `{{image}}` / `{{imageBase64}}` / `{{imageUrlEncoded}}` → `parseRequest` 解析 → fetch → `extractContent(json, responsePath, '\n')`。提示词**不是占位符**，直接写在模板文本里。`request` 留空才走老字段路径兜底（`buildOcrBody`，只为异常存档留着）。
 - **提示词的内容不能随手写**：DeepSeek-OCR 只认训练时那几个固定预设，官方那条是 `<image>` 标记 + 换行 + `Free OCR.`。**换成别的措辞（哪怕意思一模一样的中文）就是把它推出训练分布，输出会退化** —— 实测会跑去生成 `<table>` 表格、识别率也掉。所以内置模板里那句不是随便写的，`test-lib` 有断言钉着这个字面量。
   - **落到模板里有两层转义**：JS 模板字符串里要写 `\\n`（两个反斜杠），生成出来的模板文本里才是字面的 `\n`，再经 `JSON.parse` 才得到真正的换行。**少写一个反斜杠就是裸换行 → JSON 解析直接失败**。老字段路径的 `DEFAULT_OCR_PROMPT` 反过来，那里是真值（JS 里写 `\n` 就是换行），`JSON.stringify` 会自己转义。
-- **`buildOcrRequest()`（内部）+ `previewOcrRequest()`（打码层）是组装的唯一真相源**，`runOcr` 发的和设置页预览的是同一份。Authorization 在展示层打码（`maskAuthHeaders`），真请求别拿打码那份发。`.preview` 必须写 `flex: none`。
+- **`buildOcrRequest()`（内部）+ `previewOcrRequest()`（打码层）是组装的唯一真相源**，`runOcr` 发的和设置页预览的是同一份。展示层打码统一走 `maskRequest`（url / headers / body 都按名字含 key 的变量打，见「配置存储」那节），真请求别拿打码那份发。`.preview` 必须写 `flex: none`。
 - **「读响应」也只有一处：`lib/engine.js` 的 `readResponseBody()`** —— 整体 JSON / `Content-Type` 是 `event-stream` 的 SSE / NDJSON / 纯文本，四类推断加跨分片拼装全在里面；`runRequest`（翻译）和设置页那两个「测试」（`runOcr` / `runImageTranslate`）都调它。原先 OCR 那两个自己写 `JSON.parse(await res.text())`，实机就炸在**图片模板里带 `"stream": true`** 的接口上（Ling 那种回 SSE）：面板那头走引擎翻得好好的，设置页这个「测试」却报「返回的不是 JSON」。它返回一份纯数据（`mode` / `text` / `raw` / `finalData` / `aborted` / `error` / 几个统计），传输途中的 AbortError **不当错误往外抛** —— 「手动中断，以下是已收到的部分」是引擎自己的措辞，OCR 那边不需要这层。OCR 侧判「回的根本不是 JSON」靠 `mode === 'text'`（或 `mode === 'json'` 却没解析出对象）；`joiner` 传 `'\n'`，百度那种 `words_result` 行数组要一行一行拼。**改它必跑 `test-engine` 全量 + `test-lib` 里那两条 SSE 用例。**
 - **老字段 → 模板的无损搬家**在 `normalizeOcrProvider` 一处完成（`ocrProviderToTemplate`）：渲染后与旧 `buildOcrBody` 逐字节一致（键序 model→messages→max_tokens?→temperature；`{{image}}` 落在 shell 单引号 + JSON 双引号两层，data URL 两层转义恒等）。**老形状存档（没有 request 字段）整体优先**，不然内置模板里的 `{{apiKey}}` 会顶掉用户存在字段里的真 Key。
 - **百度 OCR 是模板化的直接收益**：token 挂 URL 查询参数、`x-www-form-urlencoded` body、`words_result` 行数组 —— 以前这种协议得写适配器，现在就是一段模板（`builtin-baidu-ocr`）。`extractContent` 的自动探测加了 `words_result`。模板的 form 体带 `language_type=auto_detect`：**这个参数不写就是 `CHN_ENG`（中英混合），日文的假名会被当成中文读**（kniph 实测报过），百度没有 OpenAI 那种「天然自动识别」。有它就能钉死一种语言（`JAP` / `KOR` / `DUT` …）。
 - **剪切板只能在 offscreen 文档里读**：content script 读不到（拿不到焦点、没有权限），所以临时开一个 `offscreen.html`，读完就关（省内存），不是常驻。
 - **不猜 `blob.type`**：Windows 截图工具丢出来的那一项类型可能是**空串**，直接用会拼出 `data:;base64,…`，接口那边直接拒。所以按**文件头**认 MIME（PNG / JPEG / GIF / BMP / WEBP 魔数）。
 - **大图的 base64 要分块转**：几十万字节一次性 `String.fromCharCode.apply` 会把调用栈撑爆。
+- **OCR 栏和配置栏共用同一套 UI 骨架**（kniph 2026-10-14 要求「把配置栏的推进覆盖到 OCR 栏」）：请求模板也是 `details.preview.tpl-fold`（同骨架、同一条 CSS、同一种折叠手势，占位符标签排放在 `.fold-body` 里当第一个孩子），**OCR 供应商也是「主请求 + 后备」**（`#btn-ocr-add-fallback` + `normalizeOcrItem`，链模型和配置栏共用 `lib/requests.js`，`runOcr` 按顺序试、成了就报 `from` = 「后备 N」），测试结果走配置栏那个 `resultBlockHtml`（没认出文字就折起来、块头带「为什么挂」）。
+  - ⚠️ **直传模式（`#ocr-editor.is-imgcfg`）的隐藏清单要单独加 `#ocr-blocks` / `#btn-ocr-add-fallback`** —— 那套隐藏是按 `#editor` 的**直接子元素逐个点**的，把 `.field` 换成一组请求块之后它就不在清单里了，症状是「模式变了但旧东西还在」（这个坑 2026-10-09 就记过一次）。
+  - ⚠️ **判「`<details>` 收起来了」不能用 `offsetParent`**：这个 Edge 上收起的 `<details>` 的 `offsetParent` 仍然不是 `null`（内容是用 `content-visibility` 那套隐的），e2e 里要量**几何**（框高缩到只剩标题栏那行）。
+- **框选截图 = 直接对着页面框，位图只在松手那一刻才拿来裁** —— 覆盖层**不铺底图**（早期版本铺过，见下），只有一层压暗的挖洞（`.sel` 那条 `box-shadow: 0 0 0 100000px rgba(0,0,0,.45)`）+ 提示条。页面就在下面、原样可见，用户看到的是「直接对着页面框」，不是「先截一张再框」。好处是**框选期间还能滚页面 / 翻页**（裁到的永远是**松手时那一屏**的对应区域），代价是动态内容（视频 / 轮播）拖框期间会变 —— 和系统截屏工具一致（kniph 明确接受）。
+  - **「压暗」和「接指针」必须是两层**（`content.js` 里那层 `.veil`）：挖洞那层要求 `pointer-events: none`（不然它挡住页面，就滚不动了），而 `box-shadow` **根本不参与命中测试** —— 只铺挖洞层的话，**真人按住鼠标框选不了**（kniph 报过「点半天没反应」；脚本**直接派发事件**能过，所以 e2e 全绿也照样是这个 bug）。所以另起一层 `.veil`（`position:fixed; inset:0`、透明背景、`cursor:crosshair`）专门接指针。
+  - **事件挂在 `hostEl` 上，不挂 shadow root**：shadow root **不是事件目标**，绑在上面只有当事件从内部某个**可命中元素**冒泡上来才触发。`hostEl` 是真实可命中的元素，起点在遮罩内、终点拖到遮罩外的场景也不丢事件；配合 `hostEl.setPointerCapture(e.pointerId)` 保证拖出窗口也能收到 `pointerup`。
+  - **测这类 bug 必须用真鼠标**：`shotDrag` 那套 `dispatchEvent` 绕过命中测试，测不出「吃不到鼠标」。e2e 里加了两条：`document.elementFromPoint(x, y)` 必须指回遮罩；以及 Playwright **真鼠标** `mouse.down/move/up` 拖一遍，断言遮罩收掉且真发了请求。
+  - **为什么非「先整屏再裁」不可**：`chrome.tabs.captureVisibleTab` **没有区域参数**，只能抓整块可见区域。`getDisplayMedia` / `chrome.tabCapture` 要弹窗授权且拿到的是视频流；DOM 重画会丢图片 / canvas / 跨域 iframe。系统 `Win+Shift+S` 同理。
+  - **坐标系那件事（位图含滚动条、拖框坐标不含）**：`captureVisibleTab` 的位图 = `innerWidth × innerHeight × dpr`（**含页面自己那条滚动条**），而拖框坐标是在**内容区**坐标系里量的（`documentElement.clientWidth`，不含滚动条）。差的就是那一条（实机 `innerW 1178 / clientW 1163` → 位图 `1767×1214`）。这一刀**只在 `cropShot()` 里落一次**：先按 `cutX/cutY = Math.round((inner − client) × dpr)` 把右边 / 下边那一条切掉，比例再按「位图 − 那一条」算（`kx = srcW / viewW`、`ky = srcH / viewH`，夹在位图内）。**没有滚动条时 `cutX / cutY` 都是 0** —— 等于没动（`test-lib` 第 23 节钉着这条不变量）。
+  - **`cropShot()` 是异步的（返回 Promise）**：松手后**先把覆盖层拆掉**再裁图，这样「把图喂给 OCR」那段时间用户可以继续翻页面。`new Image()` 加载失败 / canvas 跨域报错都 `resolve(null)`，上层转成 `ocr-error`，不炸。
+  - **旧设计（已删，别捡回来）**：早期是「先整屏截图 → 覆盖层铺一张底图 → 用户对着底图裁」。病灶有两个：① 底图用 `width:100%; height:100%` 拉伸铺满内容区 → 含滚动条的位图被压扁（横向约 1.3%）、滚动条被拖着显示，**看着就像「框里进来一条」**；② 按位图坐标算源矩形 → 整块偏移 → `drawImage` 一缩一放 → **整个画面偏移一下**（kniph 报的）。当时的补丁是「在覆盖层底图上先切掉那一条」，A 方案直接把底图整个拿掉，这两个病灶连根没了。
+  - **测它必须在有头窗口里造一条真滚动条**（`documentElement.style.overflowY = 'scroll'`，经典滚动条占布局）：content script 跑在**隔离世界**里，页面改 `window.innerWidth` 它根本看不见，伪不出「位图比内容区宽一条」。断言只有一条硬的：**框满整屏时裁出来的宽 = 内容区宽**，以及两档（无滚动条 / 有滚动条）的宽度差 = 滚动条宽。尺寸都从**假 OCR 接口收到的请求体**里解 PNG 头读 —— content script 的 `canvas.toDataURL` 钩不到。
 - **「机制坏了」和「里面没图」分开报**：读不到剪切板（浏览器没放开权限）不会冒充「剪切板里没有图片」。
-- **图片直传时「翻图用哪条配置」是独立选中的**：勾了「禁用外置 OCR」后，设置页 OCR 栏左栏整栏换成「图片配置」，那是 `state.configs` 的**过滤视图**（判据只有一个：`canTranslateImage` —— 图片请求模板非空），选中项存在 `state.ocr.imageConfigId`，跟顶栏那条 `activeConfigId` 互不影响。**不是另一份配置数据** —— 增删改只在「配置」栏（`＋ 新建供应商` 在直传模式下收起）。这样翻图前不用先回顶栏把配置切成支持视觉的那条，也不会把图误发给纯文字接口。选错了不会炸：`background.js` 走 `pickRequestConfig()`，`imageConfigId` 指向的那条 `imageRequest` 若是空的（或那 id 已不存在），自动回退到顶栏那条。左栏切换由 `renderOcrDisabled()` 一处收口（`#ocr-editor.is-imgcfg` 那几条 CSS 负责把右边供应商字段压掉，只留一句说明）。
+- **图片直传时「翻图用哪条配置」是独立选中的**：勾了「禁用外置 OCR」后，设置页 OCR 栏左栏整栏换成「图片配置」，那是 `state.configs` 的**过滤视图**（判据只有一个：`canTranslateImage` —— 图片请求模板非空），选中项存在 `state.ocr.imageConfigId`，跟顶栏那条 `activeConfigId` 互不影响。**不是另一份配置数据** —— 增删改只在「配置」栏（`＋ 新建配置` 在直传模式下收起）。这样翻图前不用先回顶栏把配置切成支持视觉的那条，也不会把图误发给纯文字接口。选错了不会炸：`background.js` 走 `pickRequestConfig()`，`imageConfigId` 指向的那条 `imageRequest` 若是空的（或那 id 已不存在），自动回退到顶栏那条。左栏切换由 `renderOcrDisabled()` 一处收口（`#ocr-editor.is-imgcfg` 那几条 CSS 负责把右边供应商字段压掉，只留一句说明）。
 - **同一份列表在面板顶栏也有一个入口**：图片那一屏顶栏的下拉列的就是这批配置（`ready` 消息里每条带 `img` 标志），选中的也是 `state.ocr.imageConfigId` —— 在那拨一下等于回设置页改选中项，所以拨完要写回存档（见上面「顶栏那个配置下拉有两种模式」）。判据收在 `lib/store.js` 的 `canTranslateImage` 一处，`content.js` 里那份 `imageCapable()` 是镜像（content script 不能 import，`test-lib` 有同形断言钉着）。
 - **OCR 栏那块「测试」和「请求预览」在直传模式下会换对象**：不测这条 OCR 供应商，改测左栏选中的那条**图片配置的「图片请求模板」**（`runImageTranslate`，和 `runOcr` 共用 `buildOcrRequest` 那套图片占位符装配，差别只在措辞按「译文」）。理由：勾上之后这条路原本没有任何地方能试 —— 只能右键截一张图才知道配没配对。实现上是**同一块 UI**（`#o-test-field` / `.preview` 在 `.is-imgcfg` 下不藏，其余 `.field` 照旧隐藏），只是换标签 / 换提示 / 换数据源；CSS 里那条 `> .field:not(#o-test-field)` 就是为了放它过去。**换对象的三处都得跟着刷**：勾开关、切回 OCR 页签、点左栏另一条（后两处顺手把上次的测试结果收起来 —— 那已经不是这条的了）。
   - 「用不上的字段压暗」那条 `.is-off` 规则**已经删掉**：它和 `.is-imgcfg` 是同一个开关 toggle 的，而供应商字段早被整栏 `display: none` 了，压暗只剩「测试」和请求预览两块挨着 —— 那两块这时**还在用**，看着像被禁用、点了没反应。`e2e-ui` 用 `getComputedStyle().opacity` 钉着「两种模式下都是 1」。
+- **`↻` 重发的是「刚才那张图」**：截图那一步就失败（含直传）时 `currentText` 还是空串，重试入口是 `content.js` 的 `retryShot()`。直传那张图 content 自己存着（`lastOcr.image`，见 `translate`），本地重发；OCR 那两条路（剪切板 / 框选）图从来没进过页面，发 `{type:'ocr', reuse:true}` 让后台接着用**上一次真正用过的那张**（`background.js` 里端口作用域的那个 `lastShot`），而不是再读一遍剪切板。旧实现发的是不带图的 `{type:'ocr'}`，后台只能去读剪切板 —— 用户在那之后复制了别的东西，重试就发了一张毫不相干的图（kniph 报的）。只有真拿到图才写 `lastShot`（失败那几次不算）；MV3 的 SW 被回收 / 端口重建后它会空，那时退回读剪切板。两条路都由 `test-lib` 第 27 节 + `e2e-ui` 第 10 节（**重试前把剪切板换成另一张**再断言发出去的还是原来那张）钉着。
+- **直传那一屏的原文区贴的就是那张截图本身**（`renderSrcImage`）：原文就是图，贴文字没意义。OCR 中转那条路原文是认出来的文字，照旧贴文字 —— 所以 `renderSrcImage` **只有一个调用点**（`test-lib` 钉着）。页面 CSP 可能挡住 `data:` 图：`img` 的 `error` 一到就撤掉图、只留那句「没有先做外置 OCR」（说明不能丢，它是「这段原文为什么是张图」的唯一交代）。图有 11em 高度上限，`.rt-src.has-img` 把容器那条 6em 上限抬到 14em —— 不然图和那句话挤不进去。
 
 ---
 
 ## 存储与迁移（`lib/store.js`）
 
 - 占位符转义看「落在几层引号里」，从内到外逐层转（`quoteStackAt` / `escapeInContext`），**不是**看「两侧紧挨着什么字符」。配套：`tokenize` 在 normal 状态认 `\'`。**改这块必跑 test-lib 第 21 节 + e2e 的「OCR 文本带撇号」。**
-- 一条配置带两段模板：`config.request` 翻文字、`config.imageRequest` 翻图。挑哪段只认 `requestTemplateFor(config, context)`，别在别处再判一次。`{{imagePart}}` 是「一段模板两用」的备选，必须裸写、只能放最后。
-- 挑**哪条配置**只认 `pickRequestConfig(state, configId, hasImage)`（紧跟 `requestTemplateFor` 之后）：文字走传进来的 / 存档里 `activeConfigId` 那条；图片在勾了「禁用外置 OCR」时优先看 `state.ocr.imageConfigId`，**那条的 `imageRequest` 非空才改道**，否则回退。`background.js` 就这一个入口（它 import 里已经没有 `getConfig` 了）。单测在 `test-lib` 第 15d 节。
+- **`{{targetCode}}` 可以按配置改写法**（各家接口代码不一样：DeepL 要 `ZH-HANS`、Google 要 `zh-CN`、百度要 `zh`）：请求文本里写一块 `#@lang` —— `#@lang` 单独一行，下面紧跟若干 `# 键 = 值` 行，**遇到空行就结束**；键写语言名或代码都认、不分大小写；命中不了的回落到内置表 `TARGET_LANG_CODES`，所以**不用抄全**（DeepL 那条预设只示范了 4 行）。
+  - **整块必须在 `renderTemplate` 里被吃掉、不进输出** —— 原始 HTTP 报文风格把「空行之后的全部」当 body（`request-parser.js` 的 `parseRawHttp`），尾巴上的声明块不剥就会被**吞进请求体**（只有 JSON 解析失败时才靠 `repairJsonBody` 剥 `#` 行抢救，不能依赖）。剥掉之后位置就自由了，所以放末尾当附录是安全的。渲染时剥还有个副作用是好的：设置页预览里看到的就是真发出去的那份。
+  - **`TARGET_LANG_CODES` 删不掉**，它的身份是「**Bing 适配器专用 + 兜底**」：Bing 配置的 `request` 是空串、`runRequest` 里有 adapter 就忽略 `requestText`（`engine.js`），适配器只拿到 `vars`（只有语言名）—— 那条路上**根本没有请求文本可以写 `#@lang`**。另外「没写表的配置」也靠它兜底，否则 `{{targetCode}}` 会变空串（`missing` 只在「key 不在表里」时记，塞个空串进去就是静默失败）。README「配置怎么写」里有完整表可抄。
+- 一条配置带两段模板：`config.request` 翻文字、`config.imageRequest` 翻图。挑哪段只认 `requestTemplateFor(item, context)`，别在别处再判一次。`{{imagePart}}` 是「一段模板两用」的备选，必须裸写、只能放最后。**参数是「请求条目」不是 config** —— 主请求和后备同形（见下面那条）。
+- 挑**哪条配置**只认 `pickRequestConfig(state, configId, hasImage)`（紧跟 `requestTemplateFor` 之后）：文字走传进来的 / 存档里 `activeConfigId` 那条；图片在勾了「禁用外置 OCR」时优先看 `state.ocr.imageConfigId`，**那条能翻图（`canTranslateImage`）才改道**，否则回退。`background.js` 就这一个入口（它 import 里已经没有 `getConfig` 了）。单测在 `test-lib` 第 15d 节。
+- **后备请求**（一个配置里挂几条请求，主请求挂了按顺序往下试）：主请求那几个字段仍躺在配置**顶层**（`adapter` / `request` / `imageRequest` / `path` / `responseMode`），后备躺在 `config.fallbacks[]`，每条都是**完整的一条请求**（自己的 `id` / `enabled` + 同名字段，**没有 `name`**），另加 `config.mainEnabled`（默认 true）。**老存档没这两个字段 = 行为一个字节都不变。**
+  - 三个出口在 `lib/store.js`：`mainRequest(config)` 把顶层字段包成和后备**同形**的条目（`main: true`）、`allRequests(config)` 返回「主 + 全部后备（不管勾没勾）」（设置页按它画块）、`requestChain(config)` 只返回**勾上的**；**一条都没勾时退回主请求** —— 一条配置存在却什么都不发是个没人看得懂的死状态。
+  - **后备没有名字这个字段**：它叫什么由**它在链里的位置**决定，`allRequests` 里现算 `name: \`后备 ${i + 1}\``（所以调序后名字跟着变）。让用户改名就得处理重名 / 空名，而这个名字只出现在状态行和块头上，改它没有任何价值（kniph 2026-10-13 定的）。
+  - **`enabled !== false` 而不是 `!!enabled`**：缺字段 = 勾上。`normalizeRequestItem` / `allRequests` / `content.js` 的镜像 `imageCapable` 三处必须同口径（这个语义漂移被「把函数抠出来真跑对答案」的同形测试抓到过，源码字面量比对测不出来）。
+  - 两层循环：外层 `requestChain`、内层「管模型的变量填多行就换一个」（`modelVarFor` + `splitVarValues`）。**成功判据仍然只有 `if (result && result.text) break;` 一处** —— 内层 break 之后再判一次并 break 外层。两层都只跑一轮 = 老行为。
+  - 状态行：主请求只报 model（老样子），切到后备才带上名字（那个名字就是 `allRequests` 现算的 `后备 N`）—— `bits = [item.main ? '' : item.name, model].filter(Boolean).join(' · ')`，拼不出就是空串。
+  - `canTranslateImage(config)` = **轮换链里随便哪一条**的 `imageRequest` 非空。三处同口径：设置页「图片配置」列表、面板顶栏图片模式那个下拉、`pickRequestConfig` 的入围条件（`content.js` 里是同一句的镜像）。
+  - 设置页把模板收进 `#req-blocks`，`blockHtml()` 一套模板渲染主请求与后备（请求模板 → 图片模板 → 响应格式 → 提取路径，见下）；折叠状态 `blockFold`（`Map`）**只在内存、不进存档**，**没记过的一律收起（主请求也一样）** —— 一进来就是一列整齐的标题，页面短得多；启用勾是 `.rb-enable`，后备还有 ↑↓× 。
+  - 「图片配置」那条线一律走链：判据用 `canTranslateImage`，取模板用 `options.js` 的 `imageItem(c)`（链里**第一条**填了图片模板的条目，可能是某条后备），`runImageTranslate` 收的也是那个条目（读 `imageRequest` / `path`）。**别再读 `c.responsePath`** —— 配置上没这个字段（提取路径在顶层就叫 `path`，`responsePath` 是 OCR 供应商那边的另一个字段），原来那处一直是 `undefined`。
+  - 真机轮换由 `e2e-ui` 的 ②.7 节反证：主请求指 `/chainfail`（必 500），勾上的后备真发、没勾的一次都不发、顺序是先主再后备；全不勾时退回主请求。`test-lib` 第 15e / 15f 节钉数据形状与设置页那条线的接线。**设置页块头的几何（不溢出 / ▾ × 真鼠标点得到 / 收得起删得掉）由 `e2e-ui` 第 7 节（配置列表那节）末尾那组真机断言钉着** —— 那儿量的是 `scrollWidth - offsetWidth` 和 `elementFromPoint`，不是「处理器有没有绑」（绑着但点不到正是 kniph 报的那两个 bug 的形态）。
+  - **两段模板（文字 / 图片）只有一处渲染**：`options.js` 的 `templateFieldHtml()`，骨架是 `details.preview.tpl-fold > summary + .fold-body > textarea + .hint`。原来是两条完全不同的写法（`.field` + `<label>` + 裸 textarea / `details` + `.fold-body`），字号、hint 间距、文本框最小高度（300 vs 150）全各写一份 —— kniph 2026-10-14 报的「完全是两套布局结构，明明可以复用一套代码」。参数只有四个：类名属性串、标题、默认摊不摊开、给适配器条目 `hidden`。**类名以整段属性串传入**（`'class="preview tpl-fold rb-only-request"'`）而**不是**插值：`check-dom` 从 `class="…"` 字面量收类名，插值那段它认不出（同一坑见 `renderBlocks`）。
+  - **折叠手势全站统一成「点那一条的标题栏」**：请求块点 `.rb-head`（角上那枚 ▾ 降级成**指示器**，点它靠冒泡走同一条路，不再有自己的 toggle 分支）；模板那段、预览块、测试结果块都是 `<details>` 原生行为。kniph 2026-10-14 报的「有的地方点顶部、有的地方点角落」。块头里的控件要放过：`.rb-on`（勾选框）和 `.rb-mini`（↑↓×）不折叠 —— 判据是 `!e.target.closest('.rb-on, .rb-mini')`。
+  - 往模板框里插标签（`insertAtCursor`）前**要把模板那层折块摊开**：收起的 `<details>` 里 `selectionStart` 恒为 0、`focus()` 是空操作，字会插到最前头而且看不见（和「收起时点标签」那条是同一个坑，只是多了一层折叠）。
 - **配置级新字段**走 `normalizeConfig` 补默认，**不用迁移**；全新存档走 `freshConfigs()`。
 - **新增一条内置配置**才要 `STORAGE_VERSION +1` + 迁移（v3→v4 补 `builtin-deepl`，插在内置 DeepSeek 后面，找不到锚点就 append，用户自己排的顺序一概不动）。
 - **改「已有内置项」的默认值**要迁移的前提是「字段还单独存在」。v7 起 OCR 供应商整体模板化，老字段转换收在 `normalizeOcrProvider` 单一真相源里，v4→v5 那套「逐字比对老默认值再归位」的字段手术已随之删除 —— 老用户的 PaddleOCR 原样转成模板，不再强制换模型。
 - **v7→v8 是模板化之后第一次改内置供应商的默认模板**（硅基流动补 `<image>\n` 提示词前缀、百度补 `language_type=auto_detect`），判据还是「逐字还等于老默认值」：`lib/store.js` 里那两段老模板是**冻死的字面量**（不能从 `OCR_PROVIDERS` 反推，那个早改过了）。**这里不能像 `configs` 那样把字段 `delete` 掉** —— `request` 一没，`normalizeOcrState` 会把它当成「老形状」走 `ocrProviderToTemplate`，拿空 endpoint 重新拼一段废模板出来；要显式写上新默认值。用户自己钉了 `language_type=JAP` 的那种，一个字节都不能动。
-- 新增设置项 `{...默认, ...stored}` 合并即可，不用迁移；但**改已有字段的默认值**要迁移。
+- 新增设置项 `{...默认, ...stored}` 合并即可，不用迁移；但**改已有字段的默认值**要迁移。**改已有字段的「类型 / 形状」**（例：`ocrHintHidden` boolean → `hiddenHints` 数组）也**不是**迁移，而是在 `loadState` / `importState` 里读一次映射（见 `store.js` 的 `normalizeHiddenHints`）—— 老键要 `delete` 掉，别留在存档里当残渣。
 - **导出 / 导入**：`kind` / `version` / `exportedAt` 三个元字段必须写在 `...state` **之后** —— 顺序反了导进来的旧 `exportedAt` 会顶掉这次新写的（`version` 是**文件格式**版本，不是 `STORAGE_VERSION`）。`importState` 返回的 `exportedAt` 在 `options.js` 里用解构单独拎出来，别 spread 进 state。
-- **API Key 会在三个地方露脸**：变量栏的值（**默认打码**，点眼睛才看）、配置 / OCR 的请求预览（`maskApiKey` / `maskAuthHeaders` 打码）、以及**请求模板原文本身**（那是一整段可编辑文本，写死在里面的 key 没法打码，只能提醒用户）。变量栏打码走 `-webkit-text-security: disc`，**不用 `<input type="password">`** —— 后者会招来密码管理器的保存提示，还有 Edge 自带那个原生眼睛（跟我们这个按钮重复）。注意这是**防肩窥**不是加密：值仍是明文存的，导出文件里也照样有。
+- **API Key 会在三个地方露脸**：变量栏的值（**名字里含 key 的才默认打码**，点眼睛才看）、配置 / OCR 的请求预览与「测试」结果（`lib/engine.js` 的 `maskRequest`）、以及**请求模板原文本身**（那是一整段可编辑文本，写死在里面的 key 没法打码，只能提醒用户）。变量栏打码走 `-webkit-text-security: disc`，**不用 `<input type="password">`** —— 后者会招来密码管理器的保存提示，还有 Edge 自带那个原生眼睛（跟我们这个按钮重复）。注意这是**防肩窥**不是加密：值仍是明文存的，导出文件里也照样有。
+- **变量栏每条变量占两行：名字一行、值一行**（`renderVars` 里的 `.var-row` > 两条 `.var-line` + `.var-k` 小标签，kniph 2026-10-14：「自定义变量一排下来实在太局促了」）。原来是一张表（名字 | 值 | 眼睛 ✕）：表格自动布局把名字列压到一百来像素（`SILICONFLOW_CN_API_KEY` 这种 21 字的名字当场截掉），值也只剩四百来像素 —— 而值才是唯一会长的那栏（多行的 model 列表 / 长 key / 提示词）。改完之后名字框定宽 `260px`（放得下长名字）、值独占整行（实机 602px），眼睛贴着它管的那一栏、`✕` 收在块尾。**内置变量那张只读表不动**（`.vars.builtin`，名字列 170px）。
+  - 值还是 `textarea` + JS 按 `scrollHeight` 撑高（`growTextarea` / `growVarValues` 只认 `#vars-body` 里的 `[data-kind="value"]`，跟行是 `tr` 还是 `div` 无关）。
+- **打码跟着变量走，不跟着字段名走**（kniph 2026-10-13 定的）：判据是变量名里含 `key`（不区分大小写，`isSecretVar`），命中的那些值的**每一处出现**都换掉 —— 地址查询串（`?key=…`）、任意请求头、请求体，一次全覆盖。老实现只认 `Authorization` 头，URL 里的 key 一直明文摆着（他贴过来的 `...streamGenerateContent?alt=sse&key=AQ.Ab8RN6..` 就是这么漏的）。三处细节：
+  - **值替换 + 头部兜底两步走**：先按变量扫值，再对 `Authorization` 兜一次（key 写死没走变量的那种）。第二步前会看有没有 `…（已隐藏）` 记号，**打完的不能再打** —— 否则叠成两层后缀。
+  - **太短的值不替换**（< 4 字符）：一个 2 字符的「密钥」会把预览里所有同名片段都涂掉，反而看不清。
+  - **空值什么都不换**：`{{apiKey}}` 没填时地址原样；`Authorization: Bearer ` 打成 `Bearer （还没填）` —— 前缀统一重排成一个空格（解析出来的头值已经被 trim，照原样拼会少掉那个空格）。
+  - `maskRequest(req, vars)` 返回**新对象**，不改传进来的那份：真发出去的是 `parseRequest` 的结果，两边绝不能是同一个引用。
+- **管模型的变量填多行 = 换 model 重试**（一行一个值）。值按**行**拆成候选（`splitVarValues`，一行一个、丢空行、trim 首尾但保留中间空格 —— model id 里可能有 `/` 和空格）。只有一行 = 普通单值，**没有任何新行为**，老存档零迁移；找不到那个变量时调用方完全不启用循环。
+  - **「哪个变量管模型」= 这条请求的模板里用到的占位符里，名字含 `model` 的那个**（不区分大小写 —— `model` / `MODEL` / `Model` / `GEMINI_MODEL` / `model_name` 都算，`lib/template.js` 的 `modelVarFor(template, vars)`）。原来只认**死名字** `model`，于是 `{{GEMINI_MODEL}}` 这种写法整段多行值被原样塞进地址、用户还很纳闷「模型轮换怎么没用」（kniph 报的）。
+    - **看模板而不是扫变量表**：变量是**全局的**（所有配置共用一张表），一个人完全可以同时存着 `GEMINI_MODEL` 和 `DEEPSEEK_MODEL`，扫表挑不出该轮换哪一个；看模板就永远挑得准。模板里有多个含 model 的占位符时取**第一个**；引用了但变量表里没有 → **不算**（占位符写错了不该凭空开一轮重试）。
+  - ⚠️ **覆盖时要用命中的那个键名**：`background.js` 里是 `{ ...vars, [mkey]: model }`，**不是** `{ ...vars, model }` —— 写死覆盖 `model` 的话，模板里的 `{{GEMINI_MODEL}}` 根本没被换掉，表面看就是「轮换没生效」（这个 bug 和上面那条是同一个用户报的）。所以候选也在**链循环里**算（每条后备的模板可能不一样），不再提到循环外。
+  - **每个渲染边界都要过 `firstModelVars(template, vars)`**（engine 的 `runRequest` / `previewRequest`、ocr 的 `buildOcrRequest`）：一次请求只用一个 model。漏了这一下，整段多行值会被**原样塞进模板**，地址里出现四个 model 串成一串、请求根本发不出去。收敛放渲染边界而不是设置页，是因为设置页只是众多入口之一（OCR 那条路以前就漏了）。
+  - **回退循环在 `background.js` 的 translate 分支，绝不进 `lib/engine.js` 的 `runRequest`**：`runRequest` 是「一次调用 = 一次请求」，返回值面板 / 诊断 / 设置页测试四处共用，改成内部循环会把流式 `onDelta` 和 `result.model` / `ttfbMs` 的语义全搅乱。后台每个候选各调一次 `runRequest`、传进去的本来就是单值，过 `firstModelVars` 等于没变。
+  - **成功判据只有一处**：`if (result && result.text) break;`。HTTP 错误 / 空结果 / 解析失败都让 `text` 为空，自然落进「继续试」。
+  - **「已取消」（abort）必须立刻退出循环**：它来自「后台收到新的 translate 时中止上一次」（切配置 / 重新触发），不是用户按停（**这个插件根本没有停止按钮**）。若把它当失败继续试下一个 model，结果是白白多发几次请求（返回值还会被 `if (mySeq !== seq)` 丢掉）。
+  - 状态行：每次开始试一个 model 都把 `statusText`（形如 `（Qwen3-32B）`）随 `start` 带给面板；**拼不出 model 名就是空串**，状态退回老样子「请求中…」。面板不判断「第几个」。
+  - 设置页「发送」测试 = **把这条链按顺序跑一遍，和面板同一套规矩**：按 `requestChain(cfg)` 逐条发，每条请求自己再逐个试 model（谁管模型看模板，见上），拿到译文就停。原来**只发第一个** model —— 第一个恰好挂了就报一片红，用户会得出「这条配置坏了」（而面板会轮换、明明是好的），kniph 2026-10-14 报的。
+    - 实现上先 `chain.map()` 排出 `plan[i] = { item, requestText, mkey, attempts }`，**在循环外一次算好** —— 徽章里的「一共几次」和实际发出去的次数必须是同一份数。
+    - 徽章**不写「按顺序试 N 条」**（会被读成「N 条都会发」，kniph 报过这个歧义）。**不轮换时**（`total === chain.length`）文案一字不改：「链上共 N 条请求」+「第 i 条拿到译文，后面 N 条没跑」/「N 条都没拿到译文」。**轮换时**单位换成**次发送**（一条请求要发好几回，混着数会读错）：「model 逐个试，最多发 N 次」+「第 i 条第 j 个 model 拿到译文，还有 N 次没发」。
+    - 轮换时每个结果块头上挂一枚 model 徽章（`testItemHtml` 的 `opts.model`）—— 好几块长得一样，不标出来分不清哪块是哪个。
+    - **没拿到译文的块默认折起来**（`<details class="test-fold">`，判据 `!r.text`）：一次测试可能挂好几个 model，全摊开就是好几屏「错误 + 完整请求体 + 原始响应」（kniph 报的「测试完直接冒出来这么多」）。拿到译文的那块保持摊开 —— 那才是要看的。块头一行用 `shortError()` 交代「为什么挂」：错误正文多半是 `HTTP 503 —— {json}`，直接截前 N 字只会看到 `{`，所以先当 JSON 读、取 `error.message`，读不出来才压平空白截断。
+    - 配置预览一次只摊一个 model（一次请求就是一个 model），备注里补一句「`model` 变量填了 N 个候选，上面摊的是第一个」—— 否则看到地址里只有第一个会以为扩展不认后面几行。
 
 ---
+
+## 设置页右栏：一列「请求块」
+
+配置栏右栏是 `#req-blocks` 容器 + **一套模板**渲出来的若干块：第一块是主请求（内容就是配置顶层那些字段），后面是各条后备请求。`blockHtml(item, idx, lastIdx)` 画一条块（**字段顺序：两段模板挨着、两个「响应」字段挨着收尾**——响应那两项管的是整条请求回来的东西、两段模板共用，夹在模板中间会被读成「只管上面那一段」，kniph 2026-10-14 报的），`renderBlocks(cfg)` 按 `allRequests(cfg)` 整批画，`readBlock()` / `collectEditor()` 按 DOM 顺序写回（第一块 → 配置顶层，其余 → 各自那条后备）。**主请求和后备同形**，所以模板只一套、两段模板的规矩也一样。
+
+- **块里没有「类型」下拉了**（`选项：自定义请求 / 内置适配器` 那个，kniph 2026-10-13 删的）：内置适配器只有 `bing` 一个、而且只有内置预设 `builtin-bing` 会用上它，用户自己加/改的配置全是自定义请求 —— 一个「只有一个非默认值的二选一」不值一行控件。现在**类型从数据上看**：`.`req-block` 上的 `data-adapter` 有值就是内置通道（`blockHtml` 里 `isAdapter`），空的（或没这属性）就是请求模板。`data-adapter` 同时是 `readBlock()` 取 `adapter` 的**唯一来源**。内置通道那条不再给下拉，只摊一行只读的 `.rb-adapter-note` + hint；`syncBlockMode()` 与 change 里的 `rb-kind` / `rb-adapter` 分支一并删掉。**要加第二个适配器时，得先把这套「选类型」的控件请回来。**
+- **折叠状态 `blockFold`（`Map`）只在内存、不进存档**：`foldOpen(id)` 就是 `blockFold.get(id) === true` —— **没记过的一律收起，主请求也一样**（kniph 2026-10-13；原来主请求默认展开，页面一进来就很长）。收起时块体是 `display: none`，所以**跟块里字段打交道前要先摊开**：`＋ 加一条后备请求` 会 `blockFold.set(新 id, true)`，点上面那排标签也会把目标块摊开（否则 `selectionStart` 恒为 0、`focus()` 是空操作，字会插到最前头还看不见）。
+- **块头那个「主请求 / 后备 N」是只读的 `<span class="rb-tag">`，不许再变回 `<input>`**。原来那儿是一条 `<input type="text" class="rb-name">` 让用户改名，被本文件那条全局 `input[type="text"] { width: 100% }`（选择器权重 0,1,1 > 单类 0,1,0）撑满整行，把右边的 ↑↓×▾ 顶出块外、再被 `.req-block` 的 `overflow: hidden` 裁掉 —— 实机量到块头宽 1527px 而容器只有 1370px，`elementFromPoint` 在按钮坐标上返回的是 `#editor`，于是「收不起、删不掉」。名字改成按位置现算（`allRequests` 里 `后备 ${i + 1}`）之后那个输入框连根没了。`test-lib` 第 15f 节钉着「js 与 css 里都不许出现 `.rb-name`」。
+- **⚠️ 事件必须全部委托到 `els.blocks`**（块是动态画的，别在每个块上各挂一遍），连带两个坑：
+  - `insertAtCursor()` 里那个 `dispatchEvent(new Event('input'))` **必须带 `{ bubbles: true }`**。委托之后不冒泡的合成事件到不了容器上 —— 症状是「点标签插进去后框里的字变了、存档和预览都没跟」（`e2e-ui` 抓到的就是 `grew=8` 但 `imageRequest` 还是老值）。
+  - `check-dom.mjs` 是**从 `class="…"` 字面量里收类名**的，模板字符串里插值的 class 会漏收。所以「折叠 / 勾掉压暗」这两个状态**不写进模板**，改成在 `renderBlocks` 里 `classList.toggle('open' / 'rb-off', …)` 贴上去，模板里保持 `class="req-block"` 字面量。
+- **那排占位符标签长在每一段模板里面**（`.fold-body` 的第一个孩子，kniph 2026-10-14：「变量是在请求模板内的…你就不能都统一到里面吗」）：两段模板（请求 / 图片请求）各有一排，OCR 栏那块也有自己的一排（`CHIPS` 8 个 / `OCR_CHIPS` 4 个）。`bindChips(container)` 插进**当前光标所在的那个框**（`focusedTemplate`，只认同一个 `container` 里的），没点过任何框就落到主请求那段模板；两栏各调一次，别串台。
+- 「测试」按 `requestChain(cfg)` **顺序逐条跑**、拿到译文就停；结果头的徽章是「链上共 N 条请求」+「第 i 条拿到译文，后面 N 条没跑」（**别写成「按顺序试 N 条」**，那会被读成「要发 N 条」）。请求预览把**全部块**摊出来（每条都带自己的 vars）。
+
+---
+
+## 两栏右栏的头部：一份函数画两个（+ 固定占位的说明槽）
+
+**右栏头部 = 一句说明 → 名称 → 一句说明**，由 `options.js` 的 `editorHeadHtml()` **一处渲染**，
+两栏各调一次（容器是 HTML 里的 `#cfg-head` / `#ocr-head`）。kniph 2026-10-14 报的「强迫症」：
+原来两栏各写一份，于是补丁也各打各的（配置栏靠多加一句话、OCR 栏靠给备注 `min-height`），
+「顾头不顾尾」，请求块差 76px（140 vs 216），切页签整块上下跳。
+
+- **改一处两边一起变**，想让它们不齐都做不到。e2e 里钉着：把 id 和文案抹掉之后，
+  两栏头部的 `innerHTML` 必须**逐字相同**（`#cfg-head` vs `#ocr-head`）。
+- 每一段说明待在一个**固定占位的槽**里（`.hint-slot { min-height: 39px }`，槽内 `.hint` 去掉
+  下外边距）。为什么非得是槽：说明**能被用户收掉**（`.hint-off` = `display: none`）、备注
+  **时有时无**（自建那条为空）—— 靠文字的自然高度凑，一点「不再显示」行数就不对称了。
+- 上面那槽可以放**互斥**的几句（OCR 栏是 `#o-hint` / `#imgcfg-hint` 二选一），同一槽 ⇒ 换哪句都不动位置。
+- ⚠️ 头部那几个输入框（`#f-name` / `#o-name` / `#o-note` / `#imgcfg-hint`）是**画完才取的**
+  （`els.cfgHead.querySelector('#f-name')`）。**别在别处按 id 直接取** —— `check-dom.mjs` 认的是
+  「HTML 里写死的 id」，脚本拼出来的它认不到（class 那边倒是认），会报「HTML 里没有这个 id」。
+- **已知边界**：槽只是下限（不是定死高度）。窗口窄到让说明换行、或者备注本身超过一行时，
+  仍会差一行（~21px）。要彻底消掉只能把头部区定死高度 + 裁字，不值得。
 
 ## 设置页左栏：条目必须 `width: 100%`
 
@@ -188,13 +284,28 @@ Bing 网页版翻译是**两步**：先 GET `bing.com/translator`，从 630KB �
 
 ---
 
-## 两个列表共用一套排序
+## 三处左栏共用一套行（连排序都统一：三处都能拖）
 
-「配置」栏和 OCR 栏那份「图片配置」长得一样、操作也一样，所以 `options.js` 只有一套实现：`sortableRow()`（手柄 + 条目 + ↑↓）、`moveButton()`、`dropSpot()`、`bindSortDrag()`。四个的 `listEl` / `onMove` 都是参数 —— 加第三个可排序列表时照着传就行，别复制一份出来改。
+「配置」栏 / OCR 供应商 / 「图片配置」三处左栏长得一样、操作也一样，所以 `options.js` 只有一套实现：`sortableRow()`（手柄 + 条目 + ↑↓）、`moveButton()`、`dropSpot()`、`bindSortDrag()`。`listEl` / `onMove` 都是参数 —— 加列表时照着传就行，别复制一份出来改。
+
+- **三处一律都能排**（kniph 2026-10-14：「连排序的用处也统一」）。原来供应商那栏是「顺序没意义 → `canSort: false` + `.cfg-slot` 同宽空位对齐」的特例；留着它等于**同一套逻辑里还藏着一个分支**，所以整块删了（e2e 现在**真点 ↓、真拖**，只验「有按钮」不算）。`.cfg-mv` 固定 `width: 39px` 就是为了三处行宽一致，不然切模式时列表会「跳一下」。
+  - ⚠️ **统一之后 CSS 里不许再按 id 给某一处开特例**。原来那两条补丁（OCR 列表还没有 `.cfg-row` 时的宽度 / 间距）统一之后一条是死的、另一条给条目加了 `margin-bottom: 3px` —— 行高因此比另外两处高 3px（63 vs 60），肉眼就是「三个列表不一样高」。e2e 现在**连行高一起量**，test-lib 静态盯 `#ocr-list .cfg-item` / `.list-body > .cfg-item` 不许再出现。
+  - ⚠️ 行的 `data-id` 挂在 **`.cfg-row`** 上、不在 `.cfg-item` 上（三处一致）。谁要按 id 找行就读 `.cfg-row`（e2e 里原来读 `.cfg-item` 的地方踩过：id 读不到 → 切供应商没切过去 → 后面 OCR 测试拿空供应商发请求，一片 401）。
+- 三处都能排了 ⇒ 左栏那句 `.list-tip`「可拖动排序」**两种模式都挂着**（HTML 里不再 `hidden`，JS 里也不再按模式切）。
+- 页脚的「已保存」两栏各有一个（`#save-status` / `#o-save-status`），`setSaveStatus()` **一次写全部 `.save-status`** —— 两栏共用一个存档，提示必须同步。
 
 拖动排序用 **pointer 事件**而不是 HTML5 的 `draggable`（后者触屏压根不触发，原生拖影在设置页里也脏），代价是插入指示线得自己画（`.drop-before` / `.drop-after` / `.dragging`），落点用坐标算（`dropSpot`）而不做命中测试 —— 拖动时指针是「抓」在手柄上的，`elementFromPoint` 只会把手柄自己还回来。
 
 **`to` 的口径要分清**：「配置」栏给的是完整数组下标；「图片配置」是 `state.configs` 的**过滤视图**，给的是过滤视图下标，得再过一层 `moveVisibleItem(all, visibleIds, from, to)` 换算成完整数组上的落点。**排序动的一定是 `state.configs` 本身**（另存一份顺序就是第二个真相源），副作用是「配置」栏的先后跟着一起变 —— 同一份数据，预期内的，所以两个列表都要重画。
+
+## 说明文字的「不再显示」
+
+设置页的说明文字很多，每条都能自己收掉（kniph 2026-10-14：「这种注释太多了」）。
+
+- HTML 里给说明加 `data-hint="<稳定 id>"`，**按钮由 `applyHintHides()` 统一补**（十几处各贴一遍按钮既啰嗦又迟早漏一处）。id 要**稳定**：它进存档（`settings.hiddenHints`），按位置自动编号会在加一条说明之后错位。
+- 收起用 **`.hint-off` 类**（`display: none !important`），**不用 `hidden` 属性** —— 有几条说明的 `hidden` 是**模式逻辑**在管的（OCR ↔ 图片直传的测试说明），一个属性两个主人迟早打架。
+- 状态存 `settings.hiddenHints`（数组）。老存档里那个 boolean `ocrHintHidden`（那时候只有 OCR 栏顶那一句能收）在 `store.js` 的 `normalizeHiddenHints()` 里读一次映射成 `['ocr']` 并抹掉老键 —— **这不是版本迁移**，是「改字段类型」的兼容读取（`{...默认, ...stored}` 救不了）。
+- **没做恢复入口**（他只要「点了不再显示」）：要恢复就清 `hiddenHints`。别在没确认之前加「恢复全部」按钮。
 
 `moveItem` / `moveVisibleItem` 的 `to` 都是「**移除之后**」的坐标，往下挪时和「移除之前」差一位（经典 off-by-one）。两者算下来没动就**返回原数组引用**，调用方靠 `next === arr` 跳过重渲染。
 
@@ -228,20 +339,30 @@ Bing 网页版翻译是**两步**：先 GET `bing.com/translator`，从 630KB �
 
 ## 开发与验证
 
+**平时只跑受改动影响的那一层，全量留到打包前**（kniph 2026-10-14 定的 —— 每改一处就 `npm test`
+等于每次都等真实浏览器那一分多钟）。对应关系大致是：
+
+| 改了什么 | 跑什么 |
+| --- | --- |
+| `lib/*.js` | `npm run test:lib`（改了 `engine.js` / `adapters.js` 再加 `npm run test:engine`） |
+| `options.js` / `options.html` / `options.css` | `npm run test:ui`（+ `npm run check`，选择器和类名对不上它先报） |
+| `content.js` / `popup.js` | `npm run test:ui` + `npm run check` |
+| 准备打包 / 发版 | **`npm test` 全量**（四项都跑） |
+
 ```bash
-npm test              # 静态检查 + 单元 + 端到端 + 真实浏览器 UI（926 项）
+npm test              # 全量：静态检查 + 单元 + 端到端 + 真实浏览器 UI（1406 项）
 npm run check         # 只跑两项静态检查
 npm run test:lib      # 解析器 / 模板 / 提取
 npm run test:engine   # 本地 mock 服务器，验证各类响应格式
 npm run test:ui       # 开真实 Edge 加载扩展，量 DOM 实际尺寸
 npm run perf          # 量性能：主线程任务时间 + 进程 CPU，四档流式负载对照
 npm run icons         # 重新生成图标
-npm run pack          # 出 dist/request-translate-<版本>.zip（传商店 / 挂 Release 用）
+npm run pack          # 跑 npm test → 剥注释出包 → 验包（语法 / 行号 / 剥得干净）
 ```
 
 `npm run perf` 只跑指定档位可以快很多：`PERF_ONLY=heavy npm run perf`（可选档位 `normal` / `fewLong` / `manyShort` / `heavy`）。
 
-拆开看是 `test-lib` 535 项、`test-engine` 87 项、`e2e-ui` 302 项，另加两项静态检查。各层补的盲区不同：
+拆开看是 `test-lib` 810 项、`test-engine` 89 项、`test-strip` 19 项、`e2e-ui` 486 项，另加两项静态检查。各层补的盲区不同：
 
 - **`check-globals`** — 语法检查看不出 `bindConfigList()` 这种「调用了但没写」，只有运行时才炸。它把注释、字符串、正则字面量剥掉之后逐个比对调用与声明。也可以指定文件：`node tools/check-globals.mjs lib/engine.js`。新增 `lib/*.js` 记得加进目标清单（含 `offscreen.js`）。识别**解构出来的对象参数**（`function f({ a, b })`）要单独一条正则 —— 只写 `\(([^()]*)\)` 的话 `{ a, b }` 整块留下来、拆开后每片都带花括号，一个都认不出来，里面的 `a` / `b` 反倒被报成「没定义」（`moveButton({ … onMove })` 踩过）。
 - **`check-dom`** — 比对 JS 里的 `$('#id')` / `querySelector('.x')` / `closest('.x')`，和「HTML 里写死的**加上** JS 里拼出来的」类名，防的是「选择器指向不存在的元素，启动时炸在 null 上」。正则里的坑：`querySelectorAll?` 那个 `?` 只管最后一个 `l`，**所有 `querySelector('.x')` 从来没被扫到**，得写 `querySelector(?:All)?`。
@@ -252,10 +373,16 @@ npm run pack          # 出 dist/request-translate-<版本>.zip（传商店 / �
   - 截图 OCR 那段会**往系统剪切板里真塞一张 PNG**（PowerShell `-STA` + `System.Windows.Forms.Clipboard::Set*`）再跑全链路，而且必须开**有头**窗口 —— 无头 Chromium 的剪切板是桩实现，读回来永远是空的
   - 「换配置」一节用两个假配置各带 `?tag=`，靠假接口被打的次数和译文里的标记钉住三条：切回翻过的**一个请求都不发**、切到没翻过的**当场就翻**、流还在飞时用户切走了别的配置的流不许糊到这一屏上
   - 往测试页 `html` 写一条 `scrollbar-color`，验面板里的滚动条**不吃网页配色**
+  - **框选截图那节末尾加两档**（验「右边那条滚动条不会被裁进去」）：先 `overflow-y: hidden` 断言「框满整屏 = 原样裁出整张，老行为不变」，再换成 `overflow-y: scroll` 造一条**真**滚动条，断言裁出来的宽正好少了那一条（实机 1178 → 1163，差 15）。两个硬点：① content script 跑在**隔离世界**里，页面伪 `window.innerWidth` 它看不见，只能造真滚动条；② 裁出来的尺寸只能从**假 OCR 接口收到的请求体**里解 PNG 头读（content script 的 `canvas.toDataURL` 钩不到）。A 方案后覆盖层里**没有 `.img` 了**，脚手架断言改成「有 `.veil` 接指针层 + `.sel` 挖洞层」+「提示条写了可滚动页面」
+  - **框选那节必须有真鼠标用例**：`shotDrag()` 那套 `dispatchEvent` **绕过命中测试**，测不出「覆盖层吃不到鼠标」（踩过：真人框选不了，脚本却全绿）。所以另加两条：`document.elementFromPoint(x, y)` 必须指回遮罩（`hitIsHost`），以及 Playwright **真鼠标** `mouse.down/move/up` 拖一遍，断言遮罩收掉且真发了请求
   - 按钮样式那节把「自定义」两个分支都走一遍（填了图标 / 没填用示例顶着），在页面上量计算样式确认**真的没有底色**
   - 「导出 / 导入」真点一次导出、把下载的文件读出来解析，再拿它改一份「别的设备导出的」塞回去，顺带走「点取消什么都不动」「坏文件」「别的软件的 JSON」三条失败路径
   - 最后两节：**顶栏换目标语言**（把 `{{targetCode}}` 接进假接口查询串，拨一下下拉就断言请求真带着 `tag=EN` 重发了一条），以及**流式输出不甩着滚动条跑**（`/streamlong` 长流式路由把面板撑出滚动条，断言吐到一半和吐完之后 `scrollTop` 都是 0 —— 光断言「没滚」不够，得同时断言「内容确实长到该滚了」，不然是空跑）
   - 长流式那节的收尾顺手量**结果区最大高度**：从设置页改 `panelMaxHeight`（走 storage + `onChanged` 那条真路），量 `getComputedStyle('.rt-out').maxHeight` 换算的 px 对不对得上 `vh × innerHeight × --rt-zoom`，**同时**断言 `clientHeight` 真的跟着变 —— 只看 max-height 的话，「写了个变量但没生效」会漏过去
+  - 最后一节量**按钮贴哪儿 / 什么时候自己消失**：鼠标那一路断言「离松手点正好 14px」（纵向也量）；键盘那一路用**真鼠标拖**出选区（脚本造的选区 Chrome 不让键盘改）再把鼠标扔到 `(900, 600)`，按真 Shift 键后断言按钮贴的是实测光标那一行、且离那个旧鼠标坐标 100px 以上；自动消失那几条把两个时间临时拨成 `2.5 / 1.5` 秒，依次验「停在按钮上不消失」「移开就消失」「移回则作废」「停着不动自己消失」「填 0 就不消失」。三个要点：
+    - **往按钮上放鼠标之前必须先按 Esc 关掉面板** —— 两个都是 fixed，面板会盖住按钮，鼠标就落到面板上了（踩过一次，断言全绿着错）
+    - **动手前先 `page.bringToFront()`**：这一节前面已经开过 `opt` / `opt2` / `opt3` 好几个页签，`page` 早退到后台，而后台页上的鼠标事件会被拖成**1 秒一个**（`steps:6` 实测 6 秒；单独复现同样的页面只要 60ms）—— 靠计时器判的用例会被这一步拖垮
+    - **「移回则作废」那条是在跟计时器抢时间**：往返一律用**单步**移动（一个 mousemove）压到最短，并加一条「往返耗时 < 计时器」的脚手架断言 —— 环境一慢就让它直接报「脚手架太慢」，别让「按钮到点自己没了」冒充成「作废生效了」
 - 量面板时**别让请求去够真实网络**，做本地假接口再把它指过去。
 
 ### 改完代码怎么生效
@@ -263,6 +390,18 @@ npm run pack          # 出 dist/request-translate-<版本>.zip（传商店 / �
 在扩展管理页点一下「重新加载」，**然后刷新目标网页** —— 两件都要做。
 
 只重新加载扩展不够：已经在开着的页面里跑的是**旧的那份 content script**，它不会自己换成新的（而且扩展一重新加载，旧脚本手里的 `chrome.*` 就失效了）。症状很好认：设置页明明是新的、预览也对，网页上却还是老样子。
+
+### 包里的源码是剥了注释的，仓库里那份是完整的
+
+`npm run pack` 会先把 `.js/.css/.html` 剥一遍注释再打进 zip。**源码里的注释一个字都不动** —— 注释是给克隆仓库的人看的，装着扩展的人不会打开 `content.js`。
+
+- **必须词法地剥，不能用正则**：`"https://a.com"` 里的 `//`、正则字面量 `/a\/b/`、模板串 `${x} // 文本` 都会被正则误伤。`tools/strip-comments.mjs` 是一个逐字符的词法器（区分代码/行注释/块注释/字符串/正则/模板串），`tools/test-strip.mjs` 是它的自测（19 项，重点全在「该留的留住了」）。
+  `check-globals.mjs` 里也有一个词法器，但那个把**字符串内容也抹了**（它只想看代码结构），打包不能用。
+- **换行和空行全留着**（`tidyBlankLines` 现在是原样返回）。DEFLATE 之后空行几乎不占体积，而留着它们意味着扩展万一在用户那儿炸了、报错栈的行号**仍能对上 GitHub 上的源码**。别为了省几百字节把它删掉。
+- **剥完当场验语法**：每个 `.js` 都过一遍 `node --check`，剥坏了直接退出非零 —— 装上才发现面板打不开就晚了。
+- **`tools/verify-pack.py` 验三件事**：① 15 个 js 全过 `node --check`；② 每个文件行数和仓库一致；③ **幂等** —— 把包里那份再剥一遍结果必须逐字相同。
+  第三条是唯一站得住的「剥干净了」判据。**别用「仓库里有的字样包里也得有」**：注释里举的例子（`{{变量}}`、`https://x`）本来就该消失，这么判会误报一串（真踩过）。
+- 想看带注释的包：`npm run pack -- --no-strip`。
 
 ---
 

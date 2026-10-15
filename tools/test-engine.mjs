@@ -222,6 +222,7 @@ function curlFor(path, extra = '') {
 console.log('\n1. 标准 SSE 流式');
 {
   const deltas = [];
+  const before = received.length;
   const r = await runRequest({
     requestText: curlFor('/sse', ',"stream":true'),
     vars,
@@ -234,6 +235,14 @@ console.log('\n1. 标准 SSE 流式');
   check('记录了耗时', typeof r.ms === 'number' && r.ms >= 0, r.ms);
   eq('自动识别的路径', r.usedPath, 'choices[0].delta.content');
   eq('响应格式判定', r.request.style, 'curl');
+
+  /* result.request 是**给人看的那份** —— 设置页会把「实际请求」整块摊开，
+     Authorization 必须在这里就打好码（配置栏的「测试」漏过一次，写了明文 key）。
+     但真发出去的那份不能被打码，否则请求当场就废。 */
+  eq('记给用户看的请求里 key 打码了（配置栏「测试」会把这块摊开）',
+    r.request.headers.Authorization, 'Bearer sk-tes…（已隐藏）');
+  eq('真发出去的那份还是原文（打码只影响展示层）',
+    received[before].headers.authorization, 'Bearer sk-test-123');
 }
 
 console.log('\n2. 全量替换式 SSE');

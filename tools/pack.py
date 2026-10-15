@@ -4,6 +4,14 @@
 用法：
     python tools/pack.py            # 出 dist/request-translate-<版本>.zip
     python tools/pack.py --crx      # 自用：顺便出一个 crx（**不随 Release 发布**）
+    python tools/pack.py --skip-test  # 跳过打包前的全量测试（应急出口，平时别用）
+    python tools/pack.py --no-strip    # 包里的注释不剥（默认剥 —— 源码留着，只在包里剥）
+
+**包里的源码是剥掉注释的，仓库里那份是完整的**（kniph 2026-10-14）：
+注释是给克隆仓库的人看的，装着扩展的人不会打开 content.js。
+但**换行/空行全留着** —— DEFLATE 之后几乎不占体积，而留着它们意味着
+万一扩展在用户那儿炸了、报错栈的行号仍能对上 GitHub 上的源码。
+`tools/verify-pack.py` 打包后验三件事：语法、行号守恒、剥得干净（幂等）。
 
 只收「运行时」文件：manifest 引用的那些 + lib/ + icons/ + _locales/ + 两个说明文件。
 tools/ docs/ .git/ 这些开发用的东西一个都不进包。
@@ -80,10 +88,56 @@ def collect():
     return files
 
 
-def make_zip(files, out):
+STRIPPABLE = (".js", ".css", ".html")
+
+
+def strip_sources(files):
+    """把 .js/.css/.html 剥掉注释，产出一个临时目录（返回它；没东西可剥则返回 None）。
+
+    **源码里注释保留，只在包里剥**（kniph 2026-10-14）：注释是给克隆仓库的人看的，
+    装着扩展的人不会打开 content.js。而空行/换行**留着** —— DEFLATE 之后几乎不占体积，
+    留着换行的好处是万一扩展炸了、报错栈的行号仍能对上 GitHub 上的源码。
+
+    剥完的每个 .js 都会过一遍 `node --check`（在 minify-sources.mjs 里），
+    剥坏了当场非零退出 —— 装上才发现面板打不开就晚了。
+    """
+    targets = [f for f in files if f.endswith(STRIPPABLE)]
+    if not targets:
+        return None
+
+    tmp = ROOT / "dist" / ".stripped"
+    if tmp.exists():
+        shutil.rmtree(tmp)
+    tmp.mkdir(parents=True, exist_ok=True)
+
+    r = subprocess.run(
+        ["node", str(ROOT / "tools" / "minify-sources.mjs"), str(tmp), *targets],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if r.returncode != 0:
+        print(r.stdout)
+        print(r.stderr)
+        sys.exit("剥注释失败（或剥坏了语法），没有打包。")
+    print(r.stderr.strip())  # 「剥注释：277,765 → 181,051 字节…」
+    return tmp
+
+
+def make_zip(files, out, stripped=None):
+    """写 zip。`stripped` 非空时用剥过注释的版本（那个目录里没有的文件照旧读源码）。"""
+
+    def source(name):
+        if stripped is not None:
+            p = stripped / name
+            if p.is_file():
+                return p
+        return ROOT / name
+
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for name in files:
-            z.write(ROOT / name, name)
+            z.write(source(name), name)
     if out.read_bytes()[:2] != b"PK":
         sys.exit("写出来的不是 zip（魔数不对）！")
 
@@ -165,7 +219,7 @@ def crx_inner_zip(crx_path):
     return data[16 + pk + sig :]
 
 
-def make_crx(files, version, out_dir):
+def make_crx(files, version, out_dir, stripped=None):
     edge = next((p for p in EDGE_CANDIDATES if Path(p).is_file()), None)
     if not edge:
         sys.exit("没找到 Edge，没法打 crx（zip 已经出好了）")
@@ -178,7 +232,9 @@ def make_crx(files, version, out_dir):
     for name in files:
         dst = staging / name
         dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(ROOT / name, dst)
+        # 和 zip 用同一份内容（剥过注释的），否则 zip 和 crx 里是两个东西
+        src = stripped / name if (stripped and (stripped / name).is_file()) else ROOT / name
+        shutil.copy2(src, dst)
 
     cmd = [edge, f"--pack-extension={staging}", "--no-message-box", f"--user-data-dir={profile}"]
     if key.is_file():
@@ -213,11 +269,39 @@ def make_crx(files, version, out_dir):
     return out
 
 
+def run_tests():
+    """打包前跑一遍全量测试 —— 出去了就收不回来，别带着挂掉的测试发版。
+    `skip-npm` 是应急出口：测试环境和打包环境不是一台机器时（比如在别的机器上只管出包）。"""
+    print("跑全量测试（npm test）…")
+    r = subprocess.run(
+        ["npm", "test", "--silent"], cwd=ROOT, shell=True, capture_output=True, text=True
+    )
+    if r.returncode != 0:
+        print(r.stdout[-4000:])
+        print(r.stderr[-2000:])
+        sys.exit("测试没过，没有打包。")
+    # 只把结论那几行打出来，全量输出刷屏没意义
+    for line in (r.stdout or "").splitlines():
+        if "失败" in line or "通过" in line:
+            print("  " + line.strip())
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=None, help="zip 输出路径，默认 dist/request-translate-<版本>.zip")
     ap.add_argument("--crx", action="store_true", help="顺便打一个 crx")
+    ap.add_argument(
+        "--skip-test", action="store_true", help="跳过打包前的全量测试（默认是要跑的）"
+    )
+    ap.add_argument(
+        "--no-strip",
+        action="store_true",
+        help="包里的注释不剥（默认是剥掉的 —— 源码保留，只在包里剥）",
+    )
     args = ap.parse_args()
+
+    if not args.skip_test:
+        run_tests()
 
     version = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))["version"]
     # 一定要 resolve 成绝对路径 —— Edge 的 --pack-extension 不认相对路径（直接退 22）
@@ -226,13 +310,14 @@ def main():
     out.parent.mkdir(parents=True, exist_ok=True)
 
     files = collect()
-    make_zip(files, out)
+    stripped = None if args.no_strip else strip_sources(files)
+    make_zip(files, out, stripped)
     size = out.stat().st_size
     print(f"版本 {version} → {out}")
     print(f"zip：{len(files)} 个文件，{size:,} 字节（{size / 1024:.1f} KB），魔数 PK ✓")
 
     if args.crx:
-        crx = make_crx(files, version, out.parent)
+        crx = make_crx(files, version, out.parent, stripped)
         csize = crx.stat().st_size
         print(f"crx：{crx}，{csize:,} 字节（{csize / 1024:.1f} KB）")
 

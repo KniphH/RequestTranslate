@@ -7,13 +7,15 @@
     "check": "node tools/check-globals.mjs && node tools/check-dom.mjs",
     "check:globals": "node tools/check-globals.mjs",
     "check:dom": "node tools/check-dom.mjs",
-    "test": "node tools/check-globals.mjs && node tools/check-dom.mjs && node tools/test-lib.mjs && node tools/test-engine.mjs && node tools/e2e-ui.mjs",
+    "test": "node tools/check-globals.mjs && node tools/check-dom.mjs && node tools/test-lib.mjs && node tools/test-engine.mjs && node tools/test-strip.mjs && node tools/e2e-ui.mjs",
     "test:lib": "node tools/test-lib.mjs",
     "test:engine": "node tools/test-engine.mjs",
+    "test:strip": "node tools/test-strip.mjs",
     "test:ui": "node tools/e2e-ui.mjs",
     "perf": "node tools/perf-probe.mjs",
     "icons": "python tools/make-icons.py",
-    "pack": "python tools/pack.py",
+    "pack": "python tools/pack.py && python tools/verify-pack.py",
+    "verify:pack": "python tools/verify-pack.py",
     "pack:crx": "python tools/pack.py --crx"
   }
 }

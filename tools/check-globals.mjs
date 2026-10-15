@@ -27,7 +27,8 @@ const DEFAULT_TARGETS = [
   'lib/adapters.js',
   'lib/trigger-styles.js',
   'lib/clipboard.js',
-  'lib/ocr.js'
+  'lib/ocr.js',
+  'lib/requests.js'
 ];
 
 // 也可以指定文件：node tools/check-globals.mjs a.js b/c.js

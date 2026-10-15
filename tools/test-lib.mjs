@@ -17,19 +17,24 @@ globalThis.chrome = {
 };
 
 const { tokenize, parseRequest, parseCurl, parseRawHttp, repairJsonBody } = await import('../lib/request-parser.js');
-const { renderTemplate, escapeJsonString, imageContentPart, targetCodeOf, TARGET_PRESETS } = await import('../lib/template.js');
+const {
+  renderTemplate, escapeJsonString, imageContentPart, targetCodeOf, TARGET_PRESETS,
+  splitVarValues, modelCandidates, modelVarFor, firstModelVars, isSecretVar
+} = await import('../lib/template.js');
 const { parsePath, getByPath, extractContent, describeShape } = await import('../lib/extract.js');
 const {
   DEFAULT_CONFIGS, DEFAULT_SETTINGS, moveItem, moveVisibleItem, dropIndex, buildVars,
-  requestTemplateFor, pickRequestConfig, canTranslateImage, freshConfigs, loadState, exportState, importState
+  pickRequestConfig, canTranslateImage, freshConfigs, loadState, exportState, importState
 } = await import('../lib/store.js');
-const { previewRequest } = await import('../lib/engine.js');
+// 「主请求 + 后备」那套链函数住在 lib/requests.js —— 配置和 OCR 供应商共用（见该文件头注）
+const { uid, normalizeRequestItem, mainRequest, allRequests, requestChain, requestTemplateFor } = await import('../lib/requests.js');
+const { previewRequest, maskRequest } = await import('../lib/engine.js');
 const { toBingLang, hasAdapter } = await import('../lib/adapters.js');
 const {
   OCR_MENU_ID, OCR_MENU_TITLE, OCR_PROVIDERS, BUILTIN_OCR_IDS,
   SHOT_MENU_ID, SHOT_MENU_TITLE,
   DEFAULT_OCR_PROMPT,
-  normalizeOcrProvider, normalizeOcrState, defaultOcrState, activeOcrProvider,
+  normalizeOcrProvider, normalizeOcrItem, normalizeOcrState, defaultOcrState, activeOcrProvider,
   buildOcrBody, pickOcrText, describeOcrError, ocrErrorHint,
   normalizeMaxTokens, previewOcrRequest, runOcr, runImageTranslate, shotMenuItem,
   fillOcrTemplate, ocrProviderToTemplate
@@ -714,6 +719,26 @@ image={{imageUrlEncoded}}`;
   eq('认得出的预设原样留着', vGood.settings.triggerStyle, 'globe');
   check('没改东西就不写盘', written === null);
 
+  /* settings.hiddenHints（2026-10-14）：说明文字「不再显示」从 boolean 换成一张表。
+     老存档那个 `ocrHintHidden` 要读成 `['ocr']`，并把老键抹掉 ——
+     `{...默认, ...stored}` 那套合并救不了「改字段类型」，只能在这儿映射一次。 */
+  const freshHints = await load({ version: STORAGE_VERSION, settings: {} });
+  eq('新存档：hiddenHints 默认空表',
+    JSON.stringify(freshHints.settings.hiddenHints), JSON.stringify([]));
+  const oldHintOn = await load({ version: 8, settings: { ocrHintHidden: true } });
+  eq('老存档：ocrHintHidden=true 映射成 [\'ocr\']',
+    JSON.stringify(oldHintOn.settings.hiddenHints), JSON.stringify(['ocr']));
+  eq('老键抹掉了（别留在存档里）', 'ocrHintHidden' in oldHintOn.settings, false);
+  const oldHintOff = await load({ version: 8, settings: { ocrHintHidden: false } });
+  eq('老存档里没点过 → 还是空表',
+    JSON.stringify(oldHintOff.settings.hiddenHints), JSON.stringify([]));
+  const keptHints = await load({ version: STORAGE_VERSION, settings: { hiddenHints: ['vars', 'cfg-test'] } });
+  eq('已经是新表的原样保留',
+    JSON.stringify(keptHints.settings.hiddenHints), JSON.stringify(['vars', 'cfg-test']));
+  const dirtyHints = await load({ version: STORAGE_VERSION, settings: { hiddenHints: ['vars', 3, null] } });
+  eq('表里的垃圾值丢掉（只留字符串）',
+    JSON.stringify(dirtyHints.settings.hiddenHints), JSON.stringify(['vars']));
+
   globalThis.chrome.storage.local = original;
 }
 
@@ -1138,6 +1163,114 @@ section('15. 截图 OCR：供应商状态 / 请求体 / 取文字');
   } finally {
     globalThis.fetch = realFetch;
   }
+
+  /* ---- 主 + 后备：主请求挂了自动试后备（和「配置」栏**同一套链**，kniph 2026-10-14）---- */
+  const ocrChainProvider = (extra) => normalizeOcrProvider({
+    name: '链',
+    request: 'curl http://127.0.0.1/bad -d "{}"',
+    responsePath: '',
+    ...extra
+  });
+  try {
+    const hits = [];
+    globalThis.fetch = async (url) => {
+      hits.push(String(url));
+      if (String(url).includes('/bad')) {
+        return { ok: false, status: 503, text: async () => '{"error":{"message":"overloaded"}}' };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ choices: [{ message: { content: '后备认出来的字' } }] })
+      };
+    };
+
+    const withFb = await runOcr({
+      provider: ocrChainProvider({
+        fallbacks: [{ id: 'fb1', enabled: true, request: 'curl http://127.0.0.1/good -d "{}"', path: '' }]
+      }),
+      dataUrl: 'data:image/png;base64,AAA'
+    });
+    eq('主请求挂了 → 拿到后备认出来的字', withFb.text, '后备认出来的字');
+    check('先发主请求、挂了才发后备（顺序对）',
+      hits.length === 2 && hits[0].includes('/bad') && hits[1].includes('/good'), JSON.stringify(hits));
+    eq('报一声是哪一条成的', withFb.from, '后备 1');
+
+    hits.length = 0;
+    const mainOk = await runOcr({
+      provider: ocrChainProvider({
+        fallbacks: [{ id: 'fb1', enabled: true, request: 'curl http://127.0.0.1/good -d "{}"', path: '' }]
+      }),
+      dataUrl: 'data:image/png;base64,AAA',
+      // 主请求换成能通的
+    });
+    check('（脚手架）主请求这条路本来是坏的', hits[0].includes('/bad'), JSON.stringify(hits));
+
+    // 主请求能通 → 一条后备都不发
+    hits.length = 0;
+    const goodMain = normalizeOcrProvider({
+      name: '主通',
+      request: 'curl http://127.0.0.1/good -d "{}"',
+      fallbacks: [{ id: 'fb1', enabled: true, request: 'curl http://127.0.0.1/never -d "{}"', path: '' }]
+    });
+    const only = await runOcr({ provider: goodMain, dataUrl: 'data:image/png;base64,AAA' });
+    eq('主请求就通 → 只用主请求', only.text, '后备认出来的字');
+    check('一条后备都没发（拿到结果就停，和配置栏一个规矩）',
+      hits.length === 1 && hits[0].includes('/good'), JSON.stringify(hits));
+    eq('主请求成的也报一声', only.from, '主请求');
+
+    // 主请求没勾、后备勾着 → 只跑后备（启用勾是唯一开关，和配置栏一个规矩）
+    hits.length = 0;
+    const mainOff = normalizeOcrProvider({
+      name: '主没勾',
+      request: 'curl http://127.0.0.1/bad -d "{}"',
+      mainEnabled: false,
+      fallbacks: [{ id: 'fb1', enabled: true, request: 'curl http://127.0.0.1/good -d "{}"', path: '' }]
+    });
+    const onlyFb = await runOcr({ provider: mainOff, dataUrl: 'data:image/png;base64,AAA' });
+    check('主请求没勾 → 只发勾上的那条后备（主请求一次都不发）',
+      hits.length === 1 && hits[0].includes('/good'), JSON.stringify(hits));
+    eq('照样报一声是哪一条成的', onlyFb.from, '后备 1');
+
+    // 一条都没勾 → 退回主请求（别让「什么都不发」成为没人看得懂的死状态）
+    hits.length = 0;
+    const noneOn = normalizeOcrProvider({
+      name: '全不勾',
+      request: 'curl http://127.0.0.1/bad -d "{}"',
+      mainEnabled: false,
+      fallbacks: [{ id: 'fb1', enabled: false, request: 'curl http://127.0.0.1/good -d "{}"', path: '' }]
+    });
+    const dead2 = await runOcr({ provider: noneOn, dataUrl: 'data:image/png;base64,AAA' })
+      .then(() => null, (e) => e);
+    check('全不勾 = 只跑主请求（和配置栏的 requestChain 同一个规矩）',
+      hits.length === 1 && hits[0].includes('/bad'), JSON.stringify(hits));
+    check('主请求也挂了就把错误抛出来（不静默返回空）', !!dead2, String(dead2 && dead2.message));
+
+    // 全挂 → 抛最后一个错（detail 里带着那一条的请求）
+    hits.length = 0;
+    const allBad = normalizeOcrProvider({
+      name: '全挂',
+      request: 'curl http://127.0.0.1/bad -d "{}"',
+      fallbacks: [{ id: 'fb1', enabled: true, request: 'curl http://127.0.0.1/bad2 -d "{}"', path: '' }]
+    });
+    const dead = await runOcr({ provider: allBad, dataUrl: 'data:image/png;base64,AAA' })
+      .then(() => null, (e) => e);
+    check('两条都挂了就抛错（不静默返回空）', !!dead, String(dead && dead.message));
+    check('错误里带着最后那一条的请求（对得上页面上摊开的那份）',
+      String(dead && dead.request && dead.request.url).includes('/bad2'),
+      String(dead && dead.request && dead.request.url));
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+
+  /* normalizeOcrItem 和 requests.js 的 normalizeRequestItem 必须同一个口径 */
+  eq('两个归一化函数：缺字段 = 勾上',
+    normalizeOcrItem({}).enabled, normalizeRequestItem({}).enabled);
+  eq('两个归一化函数：显式 false 都认',
+    normalizeOcrItem({ enabled: false }).enabled, normalizeRequestItem({ enabled: false }).enabled);
+  eq('OCR 条目只存它用得上的字段（别往导出文件里塞 adapter/imageRequest/responseMode）',
+    JSON.stringify(Object.keys(normalizeOcrItem({})).sort()),
+    JSON.stringify(['enabled', 'id', 'path', 'request']));
 
   /* ---- 模板路径真跑一次（百度形状：token 挂 URL + form 体 + 行数组响应）---- */
   try {
@@ -1577,15 +1710,401 @@ section('15d. 谁去翻译这一条：文字用顶栏那条，图片可另指一
     canTranslateImage({ imageRequest: 123 }) === true && canTranslateImage({ imageRequest: null }) === false);
 
   /* content script 不能 import，content.js 里那份 imageCapable() 必须是同一句 ——
-     这条钉的是「别只改一边」，断了就把两边一起改。 */
+     这条钉的是「别只改一边」。**不比对源码字面量**（改个空格就误报），
+     而是把 content.js 那个函数抠出来真跑一遍，和 canTranslateImage 逐例对答案。 */
   const contentSrc = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
-  check('content.js 里那份镜像判据和 canTranslateImage 同形',
-    /function imageCapable\(c\) \{\s*\n\s*return !!\(c && String\(c\.imageRequest \|\| ''\)\.trim\(\)\);/.test(contentSrc),
-    'content.js 的 imageCapable() 变样了 —— 和 lib/store.js 的 canTranslateImage 对不上了');
-  /* 后台随 ready 发 img 标志，面板照着它过滤 —— 别退回「页面自己猜一份」 */
+  const capSrc = /function imageCapable\(c\) \{[\s\S]*?\n  \}/.exec(contentSrc);
+  const imageCapable = capSrc ? new Function('return (' + capSrc[0] + ')')() : null;
+  check('能从 content.js 里抠出 imageCapable()', typeof imageCapable === 'function');
+
+  const capSamples = [
+    ['只有文字模板', { id: 'a', request: 'r' }],
+    ['主请求有图片模板', { id: 'b', request: 'r', imageRequest: 'img' }],
+    ['主请求的图片模板只有空白', { id: 'c', request: 'r', imageRequest: '  \n' }],
+    ['图片模板在后备上', { id: 'd', request: 'r', fallbacks: [{ request: 'r2', imageRequest: 'img' }] }],
+    ['那条后备被勾掉了', { id: 'e', request: 'r', fallbacks: [{ imageRequest: 'img', enabled: false }] }],
+    ['两条后备，有图片模板那条没勾', {
+      id: 'f', request: 'r',
+      fallbacks: [{ imageRequest: '', enabled: true }, { imageRequest: 'img', enabled: false }]
+    }],
+    ['两条后备，有图片模板那条勾着', {
+      id: 'g', request: 'r',
+      fallbacks: [{ imageRequest: '', enabled: true }, { imageRequest: 'img', enabled: true }]
+    }],
+    ['主请求不勾、后备有图片模板', { id: 'h', request: 'r', mainEnabled: false, fallbacks: [{ imageRequest: 'img' }] }],
+    /* 主请求有图片模板但被取消勾选、后备没有 —— 旧版 imageCapable 无条件把主请求算进
+       「on」，会说能翻图；requestChain 里根本没有主请求，说不能。两边的「图片配置」
+       列表跟着最后一次 storage 变化漂。这条样例就是钉这个口径差的。 */
+    ['主请求有图片模板但被取消勾选、后备没有', { id: 'h2', request: 'r', imageRequest: 'img', mainEnabled: false, fallbacks: [{ request: 'r2' }] }],
+    ['主请求有图片模板但不勾、一条后备都没勾（requestChain 退回第一条）', { id: 'h3', request: 'r', imageRequest: 'img', mainEnabled: false, fallbacks: [{ request: 'r2', enabled: false }] }],
+    ['fallbacks 不是数组（手改坏的存档）', { id: 'i', request: 'r', fallbacks: null }],
+    ['不是字符串的 imageRequest', { id: 'j', request: 'r', imageRequest: 123 }],
+    ['整条都是 null', null]
+  ];
+  for (const [label, c] of capSamples) {
+    eq('同形 · ' + label, imageCapable(c), canTranslateImage(c));
+  }
+  check('后台随 ready 发 img 标志，面板照着它过滤 —— 别退回「页面自己猜一份」',
+    /img: canTranslateImage\(c\)/.test(readFileSync(new URL('../background.js', import.meta.url), 'utf8')));
+}
+
+section('15e. 后备请求：一个配置里挂几条请求，主请求挂了往下试');
+{
+  /* 形状：主请求还是配置顶层那几个字段（零迁移），后备躺在 config.fallbacks[] 里。
+     「勾」是唯一的开关；一条都没勾时退回主请求（配置存在却什么都不发是个死状态）。 */
+  const cfg = (extra = {}) => ({
+    id: 'c1', name: '甲', adapter: '', request: '主', imageRequest: '', path: '', responseMode: 'auto',
+    ...extra
+  });
+  // 后备**没有 name 字段** —— 名字由 allRequests 按位置现算（见下面那几条断言）
+  const fb = (extra = {}) => ({
+    id: 'f-' + Math.random().toString(36).slice(2, 6), enabled: true,
+    adapter: '', request: '备', imageRequest: '', path: '', responseMode: 'auto', ...extra
+  });
+
+  const main = mainRequest(cfg());
+  eq('主请求的字段从配置顶层包出来', main.request, '主');
+  eq('主请求标着 main（状态行靠它决定要不要加「后备」前缀）', main.main, true);
+  eq('老存档没有 mainEnabled → 主请求算启用的', main.enabled, true);
+  eq('mainEnabled 显式 false 才算不勾', mainRequest(cfg({ mainEnabled: false })).enabled, false);
+
+  eq('一条后备都没有时，链就是主请求一条', allRequests(cfg()).length, 1);
+  eq('allRequests 按「主 + 后备」的顺序', allRequests(cfg({ fallbacks: [fb({ request: 'A' }), fb({ request: 'B' })] }))
+    .map((r) => r.request).join(''), '主AB');
+  eq('链只收勾上的', requestChain(cfg({ fallbacks: [fb({ request: 'A' }), fb({ request: 'B', enabled: false })] }))
+    .map((r) => r.request).join(''), '主A');
+  eq('主请求不勾就从第一条后备开始',
+    requestChain(cfg({ mainEnabled: false, fallbacks: [fb({ request: 'A' })] })).map((r) => r.request).join(''), 'A');
+  eq('全都不勾 → 退回主请求（不然这条配置什么都不发）',
+    requestChain(cfg({ mainEnabled: false, fallbacks: [fb({ enabled: false })] })).map((r) => r.request).join(''), '主');
+  eq('传 null 给空数组，别炸', requestChain(null).length, 0);
+
+  /* 每一块自带类型 / 响应格式 / 提取路径 —— 「每条后备是完整的一条请求」。 */
+  const mixed = requestChain(cfg({
+    fallbacks: [fb({ adapter: 'bing', responseMode: 'text', path: 'a.b', request: '' })]
+  }));
+  eq('后备带着自己的适配器', mixed[1].adapter, 'bing');
+  eq('后备带着自己的响应格式', mixed[1].responseMode, 'text');
+  eq('后备带着自己的提取路径', mixed[1].path, 'a.b');
+  eq('适配器型后备没有请求模板也照样入链', mixed.length, 2);
+
+  /* 模板挑哪一段：一个**条目**两段模板（老规则，只是从 config 挪到了条目上） */
+  eq('没图就用普通那段', requestTemplateFor({ request: 'T', imageRequest: 'I' }, {}), 'T');
+  eq('有图优先用图片那段', requestTemplateFor({ request: 'T', imageRequest: 'I' }, { image: 'data:' }), 'I');
+  eq('图片那段留空就回退普通那段', requestTemplateFor({ request: 'T', imageRequest: '  ' }, { image: 'data:' }), 'T');
+  eq('条目是 null 给空串', requestTemplateFor(null), '');
+
+  /* 归一化：老存档（只有顶层字段）读进来不许多出东西，新字段各就各位。
+     走真正的 loadState（把 mock 的 storage 临时换成一份老存档），别绕开迁移那条路。 */
+  const realGet = globalThis.chrome.storage.local.get;
+  globalThis.chrome.storage.local.get = async () => ({
+    state: {
+      version: 8,
+      configs: [
+        { id: 'old', request: '主' },
+        { id: 'new', request: '主', fallbacks: [{ request: '备' }] },
+        { id: 'bad', request: '主', fallbacks: [{ request: '备', responseMode: '乱写' }] }
+      ],
+      settings: {},
+      ocr: {}
+    }
+  });
+  const loaded = await loadState();
+  globalThis.chrome.storage.local.get = realGet;
+
+  const oldCfg = loaded.configs.find((c) => c.id === 'old');
+  eq('老存档读出来 fallbacks 是空数组', JSON.stringify(oldCfg.fallbacks), '[]');
+  eq('老存档读出来 mainEnabled 是 true', oldCfg.mainEnabled, true);
+  eq('老存档那条的链只有主请求一条', requestChain(oldCfg).length, 1);
+
+  const newCfg = loaded.configs.find((c) => c.id === 'new');
+  check('后备**不带** name 字段（名字按位置现算，不进存档）', !('name' in newCfg.fallbacks[0]),
+    JSON.stringify(newCfg.fallbacks[0]));
+  eq('名字由 allRequests 现算：第一条叫「后备 1」', allRequests(newCfg)[1].name, '后备 1');
+  eq('名字跟着位置走（两条 → 后备 1 / 后备 2，主请求用自己的配置名）',
+    allRequests(cfg({ name: '甲', fallbacks: [fb({ request: 'A' }), fb({ request: 'B' })] }))
+      .map((r) => r.name).join('/'), '甲/后备 1/后备 2');
+  eq('后备默认是勾上的', newCfg.fallbacks[0].enabled, true);
+  eq('后备的响应格式非法值兜回 auto',
+    loaded.configs.find((c) => c.id === 'bad').fallbacks[0].responseMode, 'auto');
+  check('后备各自有 id（增删 / 折叠状态都按它认）', !!newCfg.fallbacks[0].id);
+
+  /* 后台那两层循环：外层请求链、内层 model 候选 —— 两个 for 都在，且顺序是对的 */
   const bgSrc = readFileSync(new URL('../background.js', import.meta.url), 'utf8');
-  check('background.js 的 ready 用 canTranslateImage 发 img + imageConfigId',
-    /img: canTranslateImage\(c\)/.test(bgSrc) && /imageConfigId: state\.ocr\.imageConfigId/.test(bgSrc));
+  check('外层按 requestChain 走', bgSrc.includes('const chain = requestChain(config)'));
+  check('外层循环写在 model 循环外面',
+    bgSrc.indexOf('for (let r = 0; r < chain.length') < bgSrc.indexOf('for (let i = 0; i < attempts.length'));
+  check('每换一条请求都重挑模板（图片那次才用得上图片模板）',
+    /const requestText = requestTemplateFor\(item, msg\.context \|\| \{\}\)/.test(bgSrc));
+  check('每条请求跑自己的适配器 / 路径 / 响应格式',
+    bgSrc.includes('adapter: item.adapter') && bgSrc.includes('path: item.path') &&
+    bgSrc.includes('responseMode: item.responseMode'));
+  check('这条请求拿到译文就跳出外层（不再试后面的后备）',
+    /for \(let i = 0; i < attempts\.length[\s\S]{0,1600}?if \(result && result\.text\) break;\s*\}\s*\n\s*\/\/[^\n]*\n\s*if \(result && result\.text\) break;/.test(bgSrc),
+    '外层那个 break 或者它的注释没了');
+  check('状态行只在后备那几条上带名字（主请求还是老样子「请求中…（model）」）',
+    bgSrc.includes("const label = item.main ? '' : (item.name || '');") &&
+    bgSrc.includes("const bits = [label, model].filter(Boolean).join(' · ');"));
+  check('setState 不会写错：试每一轮都不写存档', !/chrome\.storage\.local\.set\(\{ state \}\)/.test(bgSrc.split('if (msg.type === \'translate\')')[1] || ''));
+}
+
+section('15f. 设置页的「图片配置」那条线也认后备');
+{
+  /* 设置页原来自己写 `c.imageRequest` 判「能不能翻图」—— 图片模板挂在**后备**上的配置
+     在「图片配置」列表里会看不见，预览和「测试图片配置」也会摊错那一段。
+     现在一律走链：判据用 store 的 canTranslateImage，取模板用 imageItem。 */
+  const opt = readFileSync(new URL('../options.js', import.meta.url), 'utf8');
+  const ocr = readFileSync(new URL('../lib/ocr.js', import.meta.url), 'utf8');
+
+  check('列表的入围判据直接用 canTranslateImage（没自己抄一份 c.imageRequest）',
+    opt.includes('return state.configs.filter(canTranslateImage);'));
+  check('canTranslateImage 真的 import 进来了',
+    /import\s*\{[\s\S]*?\bcanTranslateImage\b[\s\S]*?\}\s*from\s*'\.\/lib\/store\.js'/.test(opt));
+  check('找图片模板只有一个入口 imageItem（链里第一条填了图片模板的条目）',
+    /function imageItem\(c\) \{[\s\S]{0,220}requestChain\(c\)\.find\(/.test(opt));
+  check('列表副标题摊的是 imageItem 那条（不是主请求那段）',
+    opt.includes('sub: it ? summarizeUrl(it.imageRequest,'));
+  check('预览的直传分支摊的也是 imageItem，字段用 path',
+    opt.includes('const it = imageItem(imageTestConfig());') &&
+    opt.includes('return it ? { request: it.imageRequest, responsePath: it.path } : null;'));
+  check('「测试图片配置」传的是**条目**（runImageTranslate 要 imageRequest / path）',
+    opt.includes('await runImageTranslate({ config: item || target,'));
+  check('测到的是后备那条时把它名字也报出来（不然不知道是谁成的）',
+    opt.includes('const label = item && !item.main ? `${target.name} · ${item.name}` : target.name;'));
+
+  /* runImageTranslate 认的是**条目**的 path。原来读 `c.responsePath` —— 配置上压根
+     没这个字段（提取路径在顶层叫 path），所以那条一直是 undefined（等于没指定路径）。 */
+  check('runImageTranslate 读条目的 path', ocr.includes('responsePath: c.path'));
+  /* （注意 `responsePath` 这个名字在 OCR 供应商那边是另一个字段，是真字段 ——
+     这里钉的只是「从配置 / 条目上读」的那种写法不许再出现。） */
+  check('那个不存在的 c.responsePath 已经清干净（配置条目上只有 path）',
+    !ocr.includes('responsePath: c.responsePath') && !/(^|[^a-z])c\.responsePath/.test(opt));
+
+  /* 块头那个「主请求 / 后备 N」**是只读标签**，不是输入框 —— 这条是防回归。
+     原来那儿是一条 `<input type="text" class="rb-name">`，被 options.css 里
+     `input[type="text"] { width: 100% }`（权重 0,1,1 > 单类 0,1,0）撑满整行，
+     把右边的 ↑↓×▾ 顶出块外、再被 `.req-block` 的 overflow:hidden 裁掉 ——
+     kniph 实测「收不起、删不掉」就是这个。名字改成按位置现算之后那个 input 必须消失。 */
+  check('块头是只读标签 .rb-tag（主请求 / 后备 N）', opt.includes('class="rb-tag"'));
+  /* 只查**代码**里有没有 `.rb-name`（注释里留一段根因说明是允许的 —— 那段正是「别再把它加回来」
+     的告诫）。所以先把注释扒掉再比。 */
+  const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+  const css = readFileSync(new URL('../options.css', import.meta.url), 'utf8');
+  check('块头里那条 `.rb-name` 输入框没再长回来（代码里 js 与 css 都不许有）',
+    !stripComments(opt).includes('rb-name') && !stripComments(css).includes('rb-name'));
+  check('collectEditor 不再往存档里写后备的 name',
+    !/item\.name\s*=/.test(opt) && !opt.includes('name: node.querySelector'));
+
+  /* 「类型」下拉（自定义请求 / 内置适配器）已删（kniph 2026-10-13）：内置适配器只有 Bing 一个、
+     而且只有内置预设会用上它，用户自己加的配置全是自定义请求 —— 一个「只有一个非默认值的
+     二选一」不值得占一行控件。类型改成**从数据上看**：块上 `data-adapter` 有值就是内置通道。 */
+  check('块里没有「类型」下拉了（rb-kind / 会变的适配器下拉 / syncBlockMode 都清干净）',
+    !opt.includes('rb-kind') && !opt.includes('syncBlockMode') &&
+    !opt.includes('class="rb-adapter"') && !opt.includes('KIND_OPTIONS'));
+  check('类型改成从数据上看：块上带 data-adapter，readBlock 从它取',
+    opt.includes('data-adapter="${escapeHtml(item.adapter') &&
+    /const adapter = node\.dataset\.adapter \|\| ''/.test(opt));
+  check('内置通道那条只摊一行只读的 .rb-adapter-note（不再给下拉）',
+    opt.includes('class="rb-adapter-note"') && opt.includes('adapterLabel('));
+
+  /* 请求块默认**全收起**（含主请求，kniph 2026-10-13 定的）。 */
+  check('折叠默认值是「收起」（没记过就是 false，不再有「主请求默认展开」那条特例）',
+    /function foldOpen\(id\) \{\s*return blockFold\.get\(id\) === true;/.test(opt));
+  /* 收起时块体是 display:none：点标签要先把那块摊开，不然字插到看不见的框里、还插在最前头。 */
+  /* 标签现在长在**块里面**（配置栏 / OCR 栏同一套 bindChips）：插之前要把块摊开，
+     不然收起的 <details> 里 selectionStart 恒为 0、focus() 是空操作。 */
+  check('点标签会先把收着的块摊开（bindChips，两栏共用）',
+    /function bindChips\(container\)/.test(opt) &&
+      /block\.classList\.add\('open'\);\s*\n\s*blockFold\.set\(block\.dataset\.id, true\);/.test(opt) &&
+      (opt.match(/bindChips\(els\.\w+\);/g) || []).length === 2);
+
+  /* 测试结果的徽章：原来的「按顺序试 2 条」会被读成「2 条都会发」，而实际拿到译文就停。 */
+  check('徽章说「链上共 N 条请求」，不再写「按顺序试 N 条」',
+    opt.includes('链上共 ${chain.length} 条请求') && !opt.includes('按顺序试 ${chain.length} 条'));
+  check('成功徽章报清「第几条成的 / 后面几条没跑」',
+    opt.includes('第 ${i + 1} 条拿到译文') && opt.includes('，后面 ${left} 条没跑'));
+  check('一条都没成时也给个交代（不是只留一排失败块）', opt.includes('条都没拿到译文'));
+
+  /* ---- 两段模板共用一套骨架（kniph 2026-10-14：「完全是两套布局结构，明明可以复用一套代码」）----
+     原来是：一条 `.field` + `<label>` + 裸 textarea，另一条 `<details>` + `<summary>` + `.fold-body`，
+     连带字号 / hint 间距 / 文本框最小高度都各写一份。现在只有 `templateFieldHtml` 一处渲染。 */
+  check('两段模板由同一个函数渲染（定义 1 处 + 调用 2 处，图片那条带 ocr 开关）',
+    /function templateFieldHtml\(\{ wrapAttrs/.test(opt) &&
+      (opt.match(/templateFieldHtml\(\{/g) || []).length === 3 &&
+      (opt.match(/\$\{ocr \? '' : templateFieldHtml\(\{/g) || []).length === 1);
+  /* 骨架 = details > summary + .fold-body > （标签排 → 文本框 → 说明）。
+     标签排 2026-10-14 从「浮在框上面」搬进 .fold-body（kniph：「变量是在请求模板内的…你就不能都统一到里面吗」），
+     说明行多了个可选的 data-hint（「不再显示」的键），所以末尾那段不能用 `>` 死锚。 */
+  check('两段模板的骨架一样（details > summary + .fold-body > 标签排 + textarea + .hint）',
+    /<summary>\$\{escapeHtml\(title\)\}<\/summary>[\s\S]{0,240}class="fold-body"/.test(opt) &&
+      /class="fold-body"[\s\S]{0,120}\$\{chips \? chipsHtml\(chips\) : ''\}[\s\S]{0,120}<textarea \$\{boxAttrs\}/.test(opt) &&
+      /<textarea \$\{boxAttrs\}[\s\S]{0,220}<p class="hint"[\s\S]{0,90}>\$\{hint\}/.test(opt));
+  /* 两段模板**一项都不差**：标签排和「不再显示」那段说明两处都有（图片那条原来两样都没有 ——
+     kniph：「变量是在请求模板内的…你就不能都统一到里面吗」）。 */
+  check('两段模板都带标签排、说明都能收（chips ×2 + img-tpl 那个键）',
+    (opt.match(/chips: opts\.chips/g) || []).length === 2 &&
+      /dismiss: 'img-tpl'/.test(opt) && /dismiss: ocr \? 'ocr-tpl' : 'cfg-tpl'/.test(opt));
+  check('折叠样式只有一份（.tpl-fold），.img-tpl 只剩「这是图片那条」这个身份',
+    /\.tpl-fold \.fold-body \{/.test(css) && /\.tpl-fold \.hint \{/.test(css) && !/\.img-tpl\s*\{/.test(css));
+  check('两段文本框共用一条样式，最小高度也一样（原来一个 300 一个 150）',
+    /\.rb-request,\s*\n\.rb-image-request,\s*\n#o-request \{[\s\S]{0,300}min-height: 300px/.test(css) &&
+      !/\.rb-image-request \{ min-height/.test(css));
+
+  /* ---- 折叠手势统一：**点块头**（整条标题栏）就折，角落那个 ▾ 只是指示器 ----
+     kniph 2026-10-14 报的「有的地方点一下顶部收起，有的地方点一下角落的按钮」。 */
+  check('点块头折叠，并且放过块头里的控件（勾选框 / ↑↓×）',
+    /const head = e\.target\.closest\('\.rb-head'\);[\s\S]{0,120}if \(head && !e\.target\.closest\('\.rb-on, \.rb-mini'\)\)/.test(opt));
+  check('▾ 不再是独立手势（它自己那条 toggle 分支已经删掉）',
+    !/btn\.classList\.contains\('rb-fold'\)/.test(opt));
+  check('块头 cursor: pointer + 文字不可选（拖选文字会顺手把块折了）',
+    /\.rb-head \{[\s\S]{0,260}cursor: pointer;[\s\S]{0,80}user-select: none;/.test(css));
+  check('▾ 不再带按钮的底 / hover（免得看着像个独立手势）',
+    /\.rb-mini:hover:not\(:disabled\) \{/.test(css) && !/\.rb-mini:hover:not\(:disabled\),\s*\n\.rb-fold:hover/.test(css));
+  check('往框里插标签前先把模板那层折块摊开（收起时 selectionStart 恒为 0）',
+    /textarea\.closest\('details\.tpl-fold'\)[\s\S]{0,80}fold\.open = true/.test(opt));
+
+  /* ---- 同样的推进也要覆盖到 OCR 栏（kniph 2026-10-14）----
+     OCR 那栏只有一段模板，所以是「换骨架」：原来 `.field` + label + 裸 textarea，现在和配置栏
+     一样是 `details.preview.tpl-fold`（折叠手势、字号、内边距、高度全共用一条 CSS）。 */
+  const optHtml = readFileSync(new URL('../options.html', import.meta.url), 'utf8');
+  /* OCR 栏的请求块是 JS 画的（renderOcrBlocks）—— 和配置栏同一个 blockHtml，
+     只差 chips / ocr 两个参数。所以断言落在「HTML 里有容器 + JS 里有渲染函数」上。 */
+  check('OCR 栏也是同一套请求块（HTML 里 #ocr-blocks 容器，JS 里 renderOcrBlocks 复用 blockHtml）',
+    /<div id="ocr-blocks"><\/div>/.test(optHtml) &&
+      /* 两栏都调同一个 `renderBlocksInto`，块 HTML 只有它一处在画（抄第二遍必然分叉） */
+      /function renderBlocksInto\(host, owner, opts\) \{[\s\S]{0,200}blockHtml\(it, i, all\.length - 1, opts\)/.test(opt) &&
+      /function renderOcrBlocks\(p\) \{\s*renderBlocksInto\(els\.ocrBlocks, p, \{ chips: OCR_CHIPS, ocr: true \}\);/.test(opt) &&
+      /<button type="button" id="btn-ocr-add-fallback"/.test(optHtml));
+  check('两栏都走同一个 renderBlocksInto（配置栏传 CHIPS，OCR 栏传 OCR_CHIPS + ocr）',
+    /function renderBlocks\(cfg\) \{\s*renderBlocksInto\(els\.blocks, cfg, \{ chips: CHIPS \}\);/.test(opt) &&
+      opt.includes('OCR_CHIPS') &&
+      /* 别把绘制逻辑又搬回两栏各自里 */
+      (opt.match(/blockHtml\(it, i, all\.length - 1/g) || []).length === 1);
+  check('OCR 的条目没有「图片模板 / 响应格式」两项（用不到，别摆出来）',
+    (opt.match(/\$\{ocr \? '' : templateFieldHtml\(\{/g) || []).length === 1 &&
+      /mode-field rb-only-request"\$\{hideReq\}>/.test(opt) &&
+      (opt.match(/\$\{ocr \? '' : `<div class="field mode-field/g) || []).length === 1);
+  check('OCR 供应商也能加后备（#btn-ocr-add-fallback + normalizeOcrItem）',
+    opt.includes('els.btnOcrAddFallback.addEventListener') &&
+      opt.includes('normalizeOcrItem({ request: p.request })') &&
+      /export function normalizeOcrItem\(f\)/.test(ocr));
+  check('折块体里那排占位符标签有自己的间距（.tpl-fold .fold-body > .chips）',
+    /\.tpl-fold \.fold-body > \.chips \{ margin-bottom/.test(css));
+  check('直传模式的隐藏清单里有它（用后代选择器 —— 头部那组在 #ocr-head 里，是孙代，> 会落空）',
+    /#ocr-editor\.is-imgcfg #ocr-blocks[,{]/.test(css) &&
+      // 别再改回 > 直接子代：.editor-head / #o-hint / #o-note 都在 #ocr-head（孙代）里
+      !/#ocr-editor\.is-imgcfg > (\.editor-head|#o-hint|#o-note)/.test(css));
+  check('OCR 的测试结果也走同一个外壳（resultBlockHtml）',
+    /els\.ocrTestResult\.innerHTML = resultBlockHtml\(\{/.test(opt));
+
+  /* ---- 三处左栏**同一套行**（kniph 2026-10-14：「把它们统一成同样的操作逻辑，尽量复用代码」）----
+     原来 OCR 供应商那份是自己拼的裸 <button class="cfg-item">：没有手柄 / ↑↓ 那两列，
+     和另外两处的行宽不一致（同一个栏里切模式都能看出列表"跳一下"）。 */
+  check('三处左栏都走 sortableRow（定义 1 处 + 调用 3 处：配置 / OCR 供应商 / 图片配置）',
+    (opt.match(/sortableRow\(\{/g) || []).length === 4);
+  /* 「连排序的用处也统一」（kniph 2026-10-14 在「三个部分都要复用同一套逻辑」上挑的那一条）：
+     三处一律可拖 / 可上下移 ⇒ `canSort` 那个分支和它对齐用的 `.cfg-slot` 空位**整块删掉** ——
+     留着就是「同一套逻辑里还藏着一个特例」。 */
+  check('三处都能排：canSort 分支和它那个同宽空位（.cfg-slot）都清掉了',
+    !opt.includes('canSort') && !opt.includes('cfg-slot') && !/\.cfg-slot/.test(css));
+  check('OCR 供应商那栏也有自己的排序入口（moveOcrProvider + bindSortDrag）',
+    /function moveOcrProvider\(id, to\)/.test(opt) &&
+      /bindSortDrag\(els\.ocrList, moveOcrProvider\)/.test(opt) &&
+      /onMove: moveOcrProvider/.test(opt));
+  check('↑↓ 那两枚按钮有固定宽度（三类行才对得齐）',
+    /\.cfg-mv \{[\s\S]{0,160}width: 39px/.test(css));
+  /* 三处共用一套行 ⇒ CSS 里**不许再按 id 给某一处开特例**。以前那两条补丁
+     （OCR 列表没有 .cfg-row 时的宽度 / 间距）统一之后一条是死的、另一条给条目加了 3px
+     下外边距 —— 行高因此比另外两处高 3px（63 vs 60），肉眼就是「三个列表不一样高」。 */
+  check('CSS 里没有按 id 给左栏行开特例（#ocr-list .cfg-item / .list-body > .cfg-item 都删掉）',
+    !stripComments(css).includes('#ocr-list .cfg-item') &&
+      !stripComments(css).includes('.list-body > .cfg-item'));
+  /* 那句「照着内置那条改…」从 OCR 栏的新建预填里删掉之后（2026-10-14 上半轮），
+     kniph 又要它回到**配置栏**（那才是「照着内置那条改」的地方），并且它顺手把两栏的
+     上三行凑成一样高 —— 详见下面「两栏上三行同构」。所以判据是：
+     ① 这句话在 HTML 里、挂在 data-hint 上（能「不再显示」）；② JS 里不再往备注里预填它。 */
+  check('「照着内置那条改…」挪到配置栏当一句静态说明（不再预填进新建那条的备注）',
+    /hint: 'cfg-intro',[\s\S]{0,140}照着内置那条改/.test(opt) &&
+      !/normalizeOcrProvider\(\{[\s\S]{0,400}照着内置那条改/.test(opt));
+
+  /* ---- 两栏上三行同构：一句说明 → 名称 → 一句说明 → 请求块 ----
+     kniph 2026-10-14 的「强迫症」：配置栏原来少上面那一句，请求块比 OCR 栏高 76px
+     （140 vs 216），切页签时上下跳。三行必须**同款**（都 .hint.wide），否则又差 19px。 */
+  /* 头部**只能是同一个函数画出来的**（kniph 2026-10-14：「你完全可以把代码进行一个
+     复用啊」）—— 定义 1 处 + 调用 2 处，HTML 里两栏各留一个空容器。手抄两份的话，
+     「配置栏多加一句话 / OCR 栏给备注留 min-height」这种一边一套的补丁就长出来了。 */
+  check('两栏头部由同一个函数画（定义 1 处 + 调用 2 处，HTML 里只有两个空容器）',
+    (opt.match(/editorHeadHtml\(\{/g) || []).length === 3 &&
+      /<div id="cfg-head"><\/div>/.test(optHtml) &&
+      /<div id="ocr-head"><\/div>/.test(optHtml) &&
+      !stripComments(optHtml).includes('editor-head') &&
+      !stripComments(optHtml).includes('data-hint="cfg-intro"'));
+  check('头部那几个输入框是画完才取的（按 id 直接取会让 check-dom 报「HTML 里没有」）',
+    /els\.name = els\.cfgHead\.querySelector\('#f-name'\)/.test(opt) &&
+      /els\.oName = els\.ocrHead\.querySelector\('#o-name'\)/.test(opt) &&
+      /els\.oNote = els\.ocrHead\.querySelector\('#o-note'\)/.test(opt));
+  /* ⚠️ 靠「文字自然高度」凑对齐是不行的：说明**能被用户收掉**（.hint-off = display:none），
+     备注**时有时无**（自建那条为空）—— 一收一空，两栏的行数就不对称了（kniph 一点
+     「不再显示」就不齐，截图回来问「改了没」）。所以两处说明各包一个**固定占位的槽**。 */
+  check('四段说明各待在一个**定死高度**的槽里（height + 裁剪，不是 min-height）',
+    (opt.match(/class="hint-slot"/g) || []).length === 2 &&
+      /\.hint-slot \{[\s\S]{0,240}height: 39px;[\s\S]{0,60}overflow: hidden;[\s\S]{0,20}\}/.test(css) &&
+      /\.hint-slot > \.hint \{[\s\S]{0,240}margin-bottom: 0;[\s\S]{0,200}-webkit-line-clamp: 1/.test(css));
+  check('槽里的说明被收掉也不塌（槽自己撑高，不靠文字）',
+    !/#o-note \{[^}]*min-height/.test(css));
+  check('OCR 栏的备注（#o-note）跟在名称后面那一槽，不在整栏最底下',
+    /bottom: { id: 'o-note' }/.test(opt));
+  check('两栏页脚各有一个「已保存」，setSaveStatus 一起写（两栏共用一个存档）',
+    /querySelectorAll\('\.save-status'\)/.test(opt) &&
+      (optHtml.match(/class="save-status"/g) || []).length === 2);
+  /* 三处都能排了（kniph 2026-10-14 定的「连排序的用处也统一」），所以那句
+     「可拖动排序」在两种模式下都挂着 —— 不再跟着模式 hidden。 */
+  check('左栏那句「可拖动排序」两种模式都挂着（三处都能排了）',
+    /<span class="list-tip" id="ocr-list-tip"[^>]*>可拖动排序<\/span>/.test(optHtml) &&
+      !/ocrListTip/.test(opt));
+  /* 名称那一行也是同一个模板出来的（`for="${nameId}"`）—— 两栏只有 id 不同。
+     原来在 HTML 里各写一份，改一处漏一处就是「两个栏长得不一样」的开端。 */
+  check('两栏的「名称」label 是同一个模板出来的（只有 id 不同）',
+    /<label for="\$\{nameId\}">名称<\/label>/.test(opt) &&
+      !stripComments(optHtml).includes('<label for="f-name">'));
+  /* 「供应商」这个说法只在 OCR 栏有，配置栏叫「配置」 —— 同一个东西两个名字
+     （kniph 2026-10-14：「『供应商』也改成『配置』」）。判据：HTML 里再没有这个词。 */
+  check('OCR 栏不再说「供应商」，统一叫「配置」',
+    !stripComments(optHtml).includes('供应商') &&
+      /id="ocr-list-title">OCR 配置</.test(optHtml) &&
+      /id="btn-ocr-new"[^>]*>＋ 新建配置</.test(optHtml) &&
+      /id="btn-ocr-delete"[^>]*>删除配置</.test(optHtml) &&
+      opt.includes("'OCR 配置'"));
+
+  /* ---- 说明文字的「不再显示」（kniph 2026-10-14：「这种注释太多了」）---- */
+  /* 头部那几句现在由 `editorHeadHtml()` 拼出来（两栏共用），id 写在调用参数里
+     （`hint: 'cfg-intro'`）—— 所以静态收集要把这两处合起来看。 */
+  const hintIds = [
+    ...[...optHtml.matchAll(/data-hint="([^"]+)"/g)].map((m) => m[1]),
+    ...[...opt.matchAll(/\bhint:\s*'([a-z-]+)'/g)].map((m) => m[1])
+  ];
+  check('每条静态说明都挂了 data-hint，且 id 不重复（id 要稳定：它进存档）',
+    hintIds.length >= 15 && new Set(hintIds).size === hintIds.length, `${hintIds.length} 条`);
+  check('按钮由 applyHintHides 统一补（HTML 里不再手写「不再显示」按钮）',
+    !optHtml.includes('id="o-hint-hide"') && /function applyHintHides\(\)/.test(opt) &&
+      opt.includes("b.textContent = '不再显示'"));
+  check('收起用 .hint-off 类，不用 hidden 属性（有几条的 hidden 归模式逻辑管，一个属性不能两个主人）',
+    /\.hint-off \{ display: none !important; \}/.test(css) &&
+      /classList\.toggle\('hint-off'/.test(opt) && /classList\.add\('hint-off'\)/.test(opt));
+  check('点过就落盘（settings.hiddenHints）', /hiddenHints = \[\.\.\.new Set\(\[\.\.\.\(state\.settings\.hiddenHints/.test(opt));
+
+  /* 字段顺序：**两段模板挨着、两个「响应」字段挨着收尾**。
+     响应格式原来夹在两段模板中间 —— 读起来像「只管上面那一段」，而它管的是整条请求回来的东西
+     （两段模板共用，见 `readResponseBody` 收的 `item.responseMode` / `item.path`）。kniph 2026-10-14 报的。 */
+  {
+    const iReq = opt.indexOf(`boxAttrs: 'class="rb-request"'`);
+    const iImg = opt.indexOf(`boxAttrs: 'class="rb-image-request"'`);
+    const iMode = opt.indexOf('class="field mode-field rb-only-request"');
+    const iPath = opt.indexOf('响应提取路径（留空自动识别）');
+    check('块里字段顺序：请求模板 → 图片模板 → 响应格式 → 提取路径（响应那两项挨在一起）',
+      iReq > 0 && iReq < iImg && iImg < iMode && iMode < iPath,
+      JSON.stringify({ iReq, iImg, iMode, iPath }));
+  }
 }
 
 section('16. 剪切板图片：类型识别 / data URL / base64');
@@ -1765,6 +2284,53 @@ section('18. 目标语言：下拉挑语言，接口要的代码自动转');
   ));
   eq('设置成日语后，DeepL 收到的是 JA', JSON.parse(jp.request.body).target_lang, 'JA');
   eq('DeepL 那条一次警告都不该有', jp.notes.length, 0);
+
+  /* ---- 请求文本里自带的语言代码表：#@lang ---- */
+  const langVars = { target: '简体中文', targetCode: 'ZH-HANS', text: 'hi' };
+  const rl = (tpl) => renderTemplate(tpl, langVars).text;
+
+  eq('配置里声明了 zh 就用它的',
+    rl('#@lang\n# 简体中文 = zh\ncurl {{targetCode}}'), 'curl zh');
+  eq('写在尾部也一样（请求在前、词表在后）',
+    rl('curl {{targetCode}}\n\n#@lang\n# 简体中文 = zh'), 'curl zh\n');
+  eq('键写代码也认（ZH-HANS）',
+    rl('#@lang\n# ZH-HANS = zh-cn\ncurl {{targetCode}}'), 'curl zh-cn');
+  eq('大小写不挑（zh-hans 也命中）',
+    rl('#@lang\n# zh-hans = zh-cn\ncurl {{targetCode}}'), 'curl zh-cn');
+  /* 键写成语言名时，顶栏手打别名也要认 —— 不然会悄悄落回内置表，
+     而百度那类接口会直接报「译文语言方向不支持」 */
+  eq('键是语言名时，顶栏打别名「日文」也命中表里的「日语」',
+    renderTemplate('#@lang\n# 日语 = jp\ncurl {{targetCode}}', { target: '日文', targetCode: 'JA' }).text,
+    'curl jp');
+  eq('认不出来的名字不会乱命中（照旧回落内置）',
+    rl('#@lang\n# 顺手记 = 别当真\ncurl {{targetCode}}'), 'curl ZH-HANS');
+  eq('表里没这个语言就落回内置默认（所以不用抄全）',
+    rl('#@lang\n# 英语 = en\ncurl {{targetCode}}'), 'curl ZH-HANS');
+  eq('空行就结束这张表，后面的 # 行不算表里的',
+    rl('#@lang\n# 简体中文 = zh\n\n# 顺手记 = 别当真\ncurl {{targetCode}}'),
+    '\n# 顺手记 = 别当真\ncurl zh');
+  eq('没写 #@lang 的配置一个字都不变（老配置零改动）',
+    rl('curl {{targetCode}}'), 'curl ZH-HANS');
+  check('整块连同 #@lang 那行一起被吃掉，不进渲染结果',
+    !/#@lang/.test(rl('#@lang\n# 简体中文 = zh\ncurl {{targetCode}}')));
+
+  /* 原始 HTTP 报文风格把「空行之后的全部」当请求体（request-parser.js），
+     所以尾巴上的声明块必须**在渲染时就吃掉**，不能留给解析器 */
+  const rawTpl =
+    'POST https://x.test/t\nContent-Type: application/json\n\n{"a":"{{targetCode}}"}\n\n#@lang\n# 简体中文 = zh';
+  const rawRendered = rl(rawTpl);
+  check('原始 HTTP 报文风格下，末尾那段 #@lang 被整块吃掉（不然会被吞进请求体）',
+    !/#@lang/.test(rawRendered) && rawRendered.trimEnd().endsWith('{"a":"zh"}'),
+    JSON.stringify(rawRendered));
+
+  /* 内置表兼作兜底：DeepL 那段示范只列了几行，没列到的语言照样能翻 */
+  const ko = previewRequest(deeplCfg.request, buildVars(
+    { settings: { targetLang: '韩语' }, vars: [{ name: 'apiKey', value: 'k:fx' }] }, 'Hello'
+  ));
+  eq('示范表没列到的语言（韩语）落回内置兜底，还是 KO',
+    JSON.parse(ko.request.body).target_lang, 'KO');
+  check('DeepL 预设自己带了一张 #@lang 表示范（用户照着改就行）',
+    /#@lang/.test(deeplCfg.request) && /#[ \t]*简体中文[ \t]*=[ \t]*ZH-HANS/.test(deeplCfg.request));
 }
 
 /* ------------------------------------------------------------------ */
@@ -1885,8 +2451,516 @@ section('21. 结果区最大高度：默认值 = 原来写死的那个数，而�
     src.includes("classList.toggle('no-max-h'"));
 }
 
+section('22. 按钮：贴鼠标 + 自动消失');
+{
+  /* 鼠标划词时按钮改成**无条件贴鼠标**，不再从选区里挑「离鼠标近的那一头」。
+     老逻辑在「拖一大段 / 那一行特别长 / 双击选段」时挑出来的角离鼠标很远。 */
+  const src = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
+
+  check('挑「离鼠标近的那一头」那段老逻辑已经删掉', !src.includes('dist2(head.left'));
+  check('鼠标这一路走 atMouse', /atMouse:\s*true/.test(src) && src.includes('found.atMouse'));
+  check('按钮离指针留了偏移（压在指针下会立刻 hover，就永远不消失了）',
+    /const MOUSE_GAP = \d+/.test(src));
+  check('翻边也留同样的偏移', src.includes('x = seg.left - size - off'));
+
+  /* 键盘扩展选区：浏览器不给全局鼠标坐标，坐标只能从事件里自己记 —— 键盘改完选区后
+     手里那个 lastMouse 是旧的，得清掉，改用光标那一端定位。 */
+  check('有 mousemove 监听（鼠标位置只能自己记）',
+    /addEventListener\('mousemove'/.test(src));
+  check('键盘改选区时把旧鼠标坐标清掉', src.includes('if (e.key !== \'Escape\') lastMouse = null;'));
+  check('键盘这一路用光标那一端（focusNode / focusOffset）', src.includes('sel.focusNode'));
+  check('Shadow DOM 里连光标都量不到时不硬贴左上角',
+    /if \(!b \|\| \(b\.width === 0 && b\.height === 0\)\) return null;/.test(src));
+
+  /* 两个设置项：默认值 + content.js 那份同形 + 设置页真的接上了 */
+  eq('默认 5 秒鼠标不动就消失', DEFAULT_SETTINGS.triggerIdleSec, 5);
+  eq('默认鼠标移开 0.5 秒就消失', DEFAULT_SETTINGS.triggerLeaveSec, 0.5);
+  check('content.js 那份 prefs 初值里也有它俩（且同值）',
+    /\btriggerIdleSec:\s*5\b/.test(src) && /\btriggerLeaveSec:\s*0\.5\b/.test(src));
+  check('两个时间都真的读的是设置', src.includes('prefs.triggerIdleSec') && src.includes('prefs.triggerLeaveSec'));
+  check('鼠标停在按钮上会停掉计时', src.includes('if (Date.now() - trigShownAt < 250) return;') &&
+    src.includes('trigHovered = true;'));
+  check('移开按钮走那个「很短的时间」（且没用 mouseleave —— 它后面紧跟的 mousemove 会把计时清掉）',
+    src.includes('if (trigHovered) { trigHovered = false; armTriggerLeave(); return; }') &&
+    !src.includes("addEventListener('mouseleave'"));
+  /* 指针离开按钮是一串 mousemove：第二个不能再走主计时，否则「移开就消失」会被换成主计时 */
+  check('已经在移开倒计时里时，后面的 mousemove 不许把主计时盖上去',
+    src.includes('if (trigLeaveTimer) return;'));
+
+  const html = readFileSync(new URL('../options.html', import.meta.url), 'utf8');
+  check('设置页有这两个输入框', html.includes('id="s-trigidle"') && html.includes('id="s-trigleave"'));
+  const optSrc = readFileSync(new URL('../options.js', import.meta.url), 'utf8');
+  // SETTING_MAP 是唯一真相源（数组，一行一条），绑定与回填都从它跑 —— 这两个输入框
+  // 必须在表里各占一行，且 key 对得上 settings 字段
+  check('设置页把这两个输入框接到了 settings（在 SETTING_MAP 表里）',
+    optSrc.includes("sel: '#s-trigidle', key: 'triggerIdleSec'") &&
+    optSrc.includes("sel: '#s-trigleave', key: 'triggerLeaveSec'"));
+
+  /* ---- SETTING_MAP 是「唯一真相源」，别再退回三处手抄 ----
+     绑定（bindSettings）和回填（renderSettings）都从这张表跑。把两条不变量钉住：
+       ① 表里每个 sel 指向的控件，options.html 里必须真的存在（不然绑定会静默失效）；
+       ② 每个 sel 在 options.js 里只出现一次（防止又抄出第二份「id → 字段」映射）。 */
+  const mapSels = [...optSrc.matchAll(/sel:\s*'(#[^']+)'/g)].map((m) => m[1]);
+  check('SETTING_MAP 至少覆盖了主要设置项（表没被删空）', mapSels.length >= 14,
+    `${mapSels.length} 行`);
+  const missingInHtml = mapSels.filter((s) => {
+    // sel 是 '#s-xxx' 形式，对应 HTML 里的 id="s-xxx"
+    const id = s.slice(1);
+    return !html.includes(`id="${id}"`);
+  });
+  check('SETTING_MAP 里每个 sel 都在 options.html 里有对应控件', missingInHtml.length === 0,
+    missingInHtml.join(','));
+  const dupSel = mapSels.filter((s, i) => mapSels.indexOf(s) !== i);
+  check('SETTING_MAP 里没有重复的 sel（一个控件一行）', dupSel.length === 0, dupSel.join(','));
+  // 绑定与回填都得真的从这个表跑，而不是各自手写一遍 id 清单
+  check('renderSettings / bindSettings 都遍历 SETTING_MAP',
+    /function renderSettings\(\)[\s\S]{0,200}for \(const row of SETTING_MAP\)/.test(optSrc) &&
+    /function bindSettings\(\)[\s\S]{0,600}for \(const row of SETTING_MAP\)/.test(optSrc));
+}
+
+section('23. 框选截图：覆盖层不铺位图，滚动条只在裁的那一刻切掉');
+{
+  /* A 方案（kniph 2026-10-11 定）：覆盖层**不铺底图**，只铺一层压暗的挖洞，页面原样可见
+     —— 用户看到的是「直接对着页面框」。位图只在**松手那一刻**用来裁框里那块，
+     所以「那台机器有没有滚动条」这件事只在 cropShot 里处理一次，预览那头根本不存在。 */
+  const src = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
+
+  check('老那套「覆盖层先铺一张底图再裁」已经删掉',
+    !src.includes('paintShot') && !src.includes('shotSrcW') && !src.includes('painted') &&
+    !src.includes('hostEl.classList.add(\'loading\')'));
+  check('覆盖层只剩挖洞那层 .sel（+ 提示条），没有 .img',
+    src.includes('const SHOT_TIP =') && src.includes('<div class="sel"></div>') &&
+    !src.includes('class="img"'));
+  check('挖洞 = 超大 box-shadow（这是「页面压暗、框里透亮」的唯一手法）',
+    src.includes('box-shadow: 0 0 0 100000px rgba(0, 0, 0, .45)'));
+  /* 「压暗」和「接指针」必须是两层：box-shadow 不参与命中测试，且挖洞那层为了不挡
+     页面写的 pointer-events:none —— 只有它的话，真人按住鼠标框选不了
+     （kniph 报过；脚本直接派发事件能过）。 */
+  check('有独立一层 .veil 铺满整屏接指针（不能只靠 box-shadow 那层）',
+    src.includes('<div class="veil"></div>') && src.includes('.veil {') &&
+    src.includes('position: fixed; inset: 0;') && src.includes('cursor: crosshair;'));
+  check('事件挂在 hostEl 上，不挂 shadow root（root 不是事件目标）',
+    src.includes("hostEl.addEventListener('pointerdown'") &&
+    !src.includes("root.addEventListener('pointerdown'"));
+  check('按下时 setPointerCapture（拖到遮罩外也能收到 up）',
+    src.includes('hostEl.setPointerCapture(e.pointerId)'));
+  check('拖框期间还能滚页面：提示语里写了，且覆盖层不吃 wheel',
+    src.includes('可滚动页面') && !src.includes("addEventListener('wheel'"));
+  check('松手后先拆覆盖层，再去裁图（裁图期间用户能继续翻页）',
+    /finish\(\);\s*\n\s*cropShot\(dataUrl, rect\)\.then/.test(src));
+
+  // 裁剪那头的两个不变量
+  check('切掉的判据 = 视口宽/高 − 内容宽/高（乘 dpr）',
+    src.includes('window.innerWidth - document.documentElement.clientWidth') &&
+    src.includes('window.innerHeight - document.documentElement.clientHeight'));
+  check('比例按「位图 − 那一条」算，再映射屏幕坐标',
+    src.includes('const kx = srcW / viewW') && src.includes('const ky = srcH / viewH'));
+  check('cropShot 是异步的（返回 Promise，不阻塞覆盖层拆除）',
+    src.includes('function cropShot(dataUrl, rect)') && src.includes('return new Promise((resolve) =>'));
+  check('裁不出来时返回 null（上层转成 ocr-error，不炸）',
+    src.includes('img.onerror = () => resolve(null);'));
+
+  /* 照抄一遍算式，把「没有滚动条时切 0」这条不变量钉死。
+     数字来自实机探针（Win11 + Edge + 真 captureVisibleTab）：
+     innerW 1178 / clientW 1163 / dpr 1.5 → 位图 1767×1214。 */
+  const cutOf = (inner, client, dpr) => Math.max(0, Math.round((inner - client) * dpr));
+  eq('没有滚动条：切掉 0（等于没动）', cutOf(1170, 1170, 1), 0);
+  eq('有 15px 滚动条、dpr 1：切掉 15', cutOf(1185, 1170, 1), 15);
+  eq('实机那台：1178 视口 / 1163 内容 / dpr 1.5 → 切掉 23', cutOf(1178, 1163, 1.5), 23);
+}
+
+section('24. content.js 的两种「铺界面」骨架收口（别再散回各处）');
+{
+  /* 「进忙碌态」和「报失败」原先在 5 处各写一套（翻译开场 / OCR 开场 / 截图开场失败 /
+     结果失败 / OCR 失败）。收成 enterBusy / showFailure 两个函数后，把性质钉住：
+       —— 两个函数必须存在；
+       —— 那 5 个位置不许再手写那串样板（busy= / retryBtn.disabled / dataset.placeholder…）；
+       —— 入口函数必须真的调它们。 */
+  const src = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
+
+  check('有 enterBusy 与 showFailure 两个公共骨架',
+    src.includes('function enterBusy(placeholder, statusText, opts = {})') &&
+    src.includes('function showFailure(why, opts = {})'));
+
+  /* 数一数「清空结果区」那三连在全文出现几次 —— enterBusy / showFailure 各一处，
+     再就是 showNoCachedResult 那一处（它语义不同，故意留着手写）。超过就说明又抄出去了。 */
+  const clearBoxCount = (src.match(/outBox\.textContent = '';/g) || []).length;
+  check('清空结果区那段不再是五处手抄（≤ 4 处）', clearBoxCount <= 4, `${clearBoxCount} 处`);
+
+  check('进忙碌态都走 enterBusy（翻译开场 / OCR 开场各一处调用）',
+    (src.match(/enterBusy\(/g) || []).length >= 2);
+
+  check('报失败都走 showFailure（结果失败 / OCR 失败 / 截图开场失败）',
+    (src.match(/showFailure\(/g) || []).length >= 3);
+
+  /* saveSetting / saveImageConfigId 共用同一条「读-改-写」链 */
+  check('有一处 mutateState 统一「读 state → 改 → 写回」',
+    src.includes('function mutateState(mutate)'));
+  check('saveSetting / saveImageConfigId 都改走 mutateState',
+    src.includes('return mutateState((st) => {') &&
+    !/function saveSetting\(key, value\) \{\s*saveChain = saveChain\.then/.test(src) &&
+    !/function saveImageConfigId\(id\) \{\s*saveChain = saveChain\.then/.test(src));
+}
+
+section('25. 管模型的变量填多行 = 换 model 重试（每个一行）');
+{
+  /* 值按**行**拆成候选：一行一个。只有一行 = 普通单值，**没有任何新行为**
+     （老存档的值都是单行，进来等于没开这个功能）。 */
+  eq('一行就是一个候选', JSON.stringify(splitVarValues('a')), JSON.stringify(['a']));
+  eq('多行拆成多个候选', JSON.stringify(splitVarValues('a\nb\nc')), JSON.stringify(['a', 'b', 'c']));
+  eq('空行丢掉（末尾多敲回车不该多试一次）',
+    JSON.stringify(splitVarValues('a\n\nb\n')), JSON.stringify(['a', 'b']));
+  eq('首尾空白 trim，中间空格保留（model id 里可能有 / 和空格）',
+    JSON.stringify(splitVarValues('  deepseek-ai/DeepSeek-V3  ')),
+    JSON.stringify(['deepseek-ai/DeepSeek-V3']));
+  eq('CRLF 也认（Windows 下手打换行）',
+    JSON.stringify(splitVarValues('a\r\nb')), JSON.stringify(['a', 'b']));
+  eq('全空 → 没有候选', JSON.stringify(splitVarValues('  \n  \n')), JSON.stringify([]));
+  eq('空值 → 没有候选', JSON.stringify(splitVarValues('')), JSON.stringify([]));
+
+  /* 「哪个变量管模型」= **模板里用到的占位符**里名字含 model 的那个（不看大小写）。
+     判据跟 KEY 那条同一个路子（名字含 key = 密钥），只是多加一层「在哪找」：
+     变量表是全局的，同时存着 GEMINI_MODEL 和 DEEPSEEK_MODEL 时扫表挑不出该轮换哪个。 */
+  const T = (ph) => `curl https://x/y -d '{"model":"{{${ph}}}","text":"{{text}}"}'`;
+
+  eq('模板里 {{model}} → 认它', modelVarFor(T('model'), { model: 'a\nb' }), 'model');
+  eq('{{GEMINI_MODEL}} → 认它（kniph 报的就是这个：只认死名字等于功能对他不存在）',
+    modelVarFor(T('GEMINI_MODEL'), { GEMINI_MODEL: 'a\nb' }), 'GEMINI_MODEL');
+  eq('{{MODEL}} / {{Model}} 也认（不看大小写）',
+    modelVarFor(T('MODEL'), { MODEL: 'a' }) + '/' + modelVarFor(T('Model'), { Model: 'a' }),
+    'MODEL/Model');
+  eq('{{model_name}} 这种含 model 的也认', modelVarFor(T('model_name'), { model_name: 'a' }), 'model_name');
+  eq('模板里没用到它就不算（写了别的占位符就别乱轮换）',
+    modelVarFor(T('M'), { GEMINI_MODEL: 'a\nb' }), '');
+  eq('模板里引用了、但变量表里没有 → 不算（占位符写错了，不该凭空开一轮重试）',
+    modelVarFor(T('GEMINI_MODEL'), { text: 'hi' }), '');
+  eq('两个 MODEL 变量都在时，认**模板里那个**（不是变量表里排前面的那个）',
+    modelVarFor(T('DEEPSEEK_MODEL'), { GEMINI_MODEL: 'a\nb', DEEPSEEK_MODEL: 'c\nd' }), 'DEEPSEEK_MODEL');
+  eq('模板里两个都用到时取第一个',
+    modelVarFor(
+      `curl https://x/y -d '{"a":"{{GEMINI_MODEL}}","b":"{{OTHER_MODEL}}"}'`,
+      { GEMINI_MODEL: 'a', OTHER_MODEL: 'b' }
+    ), 'GEMINI_MODEL');
+
+  /* modelCandidates：找不到那个变量 / 值是空的都返回 []，调用方据此完全不启用回退 */
+  eq('没有那个变量 → 没有候选', JSON.stringify(modelCandidates(T('model'), { text: 'hi' })), JSON.stringify([]));
+  eq('值是空串 → 没有候选', JSON.stringify(modelCandidates(T('model'), { model: '' })), JSON.stringify([]));
+  eq('单值 → 一个候选（退化成普通请求）',
+    JSON.stringify(modelCandidates(T('model'), { model: 'Gemma-4-31B-IT' })),
+    JSON.stringify(['Gemma-4-31B-IT']));
+  eq('多值 → 多个候选',
+    JSON.stringify(modelCandidates(T('model'), { model: 'Gemma-4-31B-IT\nQwen3-32B' })),
+    JSON.stringify(['Gemma-4-31B-IT', 'Qwen3-32B']));
+  eq('GEMINI_MODEL 多值 → 一样给出多个候选',
+    JSON.stringify(modelCandidates(T('GEMINI_MODEL'), { GEMINI_MODEL: 'a\nb' })),
+    JSON.stringify(['a', 'b']));
+
+  /* firstModelVars：渲染边界上的收敛 —— 一次请求只用一个 model */
+  eq('单值：原样（老行为一个字节没变）',
+    JSON.stringify(firstModelVars(T('model'), { model: 'gpt-4o', text: 'hi' })),
+    JSON.stringify({ model: 'gpt-4o', text: 'hi' }));
+  eq('多值：收敛成第一个候选', firstModelVars(T('model'), { model: 'a\nb\nc' }).model, 'a');
+  eq('GEMINI_MODEL 多值：也是收敛，并且**键名保持用户原来那个**',
+    JSON.stringify(firstModelVars(T('GEMINI_MODEL'), { GEMINI_MODEL: 'a\nb' })),
+    JSON.stringify({ GEMINI_MODEL: 'a' }));
+  check('模板里没有 model 占位符时返回原对象（不复制、不新增字段）',
+    (() => { const v = { text: 'hi' }; return firstModelVars(T('M'), v) === v; })());
+  check('值是空行也不动',
+    (() => { const v = { model: '  \n ' }; return firstModelVars(T('model'), v) === v; })());
+
+  /* ---- 渲染边界真的挂了这一步（不是只在设置页做） ---- */
+  /* kniph 的真实形态：curl 模板 + 多行 GEMINI_MODEL 写在**地址路径**里 */
+  const multiTpl =
+    "curl 'https://x/v1beta/models/{{GEMINI_MODEL}}:streamGenerateContent?alt=sse&key={{GEMINI_API_KEY}}' " +
+    "-H 'Content-Type: application/json' -d '{\"text\":\"{{text}}\"}'";
+  const multiVars = {
+    GEMINI_MODEL: 'gemini-3.8-flash\ngemini-3.7-flash\ngemini-3.6-flash',
+    GEMINI_API_KEY: 'AQ.Ab8RN6abcdefghijklmnop',
+    text: 'hi'
+  };
+  const multiReq = previewRequest(multiTpl, multiVars, '').request;
+  check('多行 model 不会串进地址（渲染边界就收敛了）',
+    !multiReq.url.includes('\n') && multiReq.url.includes('/models/gemini-3.8-flash:'),
+    JSON.stringify(multiReq.url));
+  check('多行 model 的值只用了第一个（地址里没有 3.7 / 3.6）',
+    !multiReq.url.includes('gemini-3.7-flash') && !multiReq.url.includes('gemini-3.6-flash'),
+    JSON.stringify(multiReq.url));
+  check('同一次还顺手把 GEMINI_API_KEY 打码了（key 走变量跟随）',
+    multiReq.url.includes('key=AQ.Ab8…（已隐藏）'), JSON.stringify(multiReq.url));
+
+  /* engine 自己也得挂这一步：OCR 那条路（buildOcrRequest）走的是另一处组装 */
+  check('OCR 的组装也过 firstModelVars（否则 OCR 预览里一样会串四个 model）',
+    readFileSync(new URL('../lib/ocr.js', import.meta.url), 'utf8')
+      .includes('firstModelVars(template, vars)'));
+
+  /* 约定名和内置变量不冲突：buildVars 现在不产 model，用户变量可以自由用这个名字 */
+  const builtins = buildVars(
+    { vars: [], settings: { targetLang: '简体中文' } },
+    '你好', {}
+  );
+  check('buildVars 不带 model（留给用户自定义变量，别撞名）', !('model' in builtins));
+
+  /* ---- 后台那个回退循环，把性质钉住（背景层循环，绝不进 runRequest） ---- */
+  const bg = readFileSync(new URL('../background.js', import.meta.url), 'utf8');
+  const engine = readFileSync(new URL('../lib/engine.js', import.meta.url), 'utf8');
+
+  check('回退循环在 background.js 里（不在 engine.runRequest）',
+    bg.includes('modelVarFor(requestText, vars)') && bg.includes('for (let i = 0; i < attempts.length'));
+  check('候选在链循环里算（每条后备的模板可能不一样，管模型的变量可能不是同一个）',
+    /for \(let r = 0; r < runnable\.length[\s\S]{0,700}modelCandidates\(requestText, vars\)/.test(bg));
+  check('runRequest 保持「一次调用 = 一次请求」，没被改成内部循环',
+    /export async function runRequest/.test(engine) &&
+    !/for \(let i = 0; i < attempts\.length/.test(engine));
+  check('成功判据只有「拿到译文」一处',
+    bg.includes('if (result && result.text) break;'));
+  check('本次请求已作废（abort）时立刻退出循环，不继续试（否则白费请求）',
+    bg.includes("if (result && result.error === '已取消') return;"));
+  check('覆盖的是**命中的那个键名**，不是写死的 model',
+    bg.includes('{ ...vars, [mkey]: model }') && !bg.includes('{ ...vars, model }'));
+  check('每次开始试一个都把 model 名带给面板（statusText）',
+    bg.includes('statusText') && bg.includes('type: \'start\''));
+  check('面板接住 statusText 并拼进状态行',
+    readFileSync(new URL('../content.js', import.meta.url), 'utf8')
+      .includes('请求中…${msg.statusText}'));
+
+  /* ---- 设置页那个「测试」也得逐个试 model（kniph 2026-10-14 报的）----
+     原来只发第一个：第一个恰好挂了就报一片红，用户得出「这条配置坏了」——
+     而面板上（会轮换）明明是好的。 */
+  const optSrc = readFileSync(new URL('../options.js', import.meta.url), 'utf8');
+  check('设置页「测试」先排好整条链的计划，每条请求自己算「谁管模型」',
+    /const plan = chain\.map\(\(item\) => \{[\s\S]{0,300}modelVarFor\(requestText, vars\)/.test(optSrc));
+  check('测试里覆盖的也是**命中的键名**（和后台同一处规矩）',
+    optSrc.includes('{ ...vars, [mkey]: model }'));
+  check('不轮换时徽章文案一字没改（「第 i 条拿到译文，后面 N 条没跑」）',
+    optSrc.includes('`，后面 ${left} 条没跑`') && optSrc.includes('第 ${i + 1} 条拿到译文'));
+  check('轮换时明说「最多发几次」+「第几个 model 成的」',
+    optSrc.includes('model 逐个试，最多发 ${total} 次') &&
+      optSrc.includes('第 ${j + 1} 个 model 拿到译文'));
+  check('轮换时每块自带 model 徽章（好几块长得一样，得分得清哪块是哪个）',
+    optSrc.includes('function testItemHtml(item, r, opts = {})') &&
+      optSrc.includes('if (opts.model) badges.unshift'));
+  check('配置预览的备注交代「只摊第一个、真跑会逐个试」',
+    /model 轮换：\$\{mkey\} 填了 \$\{models\.length\} 个候选/.test(optSrc));
+
+  /* ---- 图片直传只试填了图片模板的条目（kniph 2026-10-14 提出）----
+     `requestTemplateFor` 对没填图片模板的条目会**回退到普通那段**（老配置靠这个保行为）。
+     截图这条路回退出来的模板里根本没有 {{image}} —— 发出去必然失败，白跑一次还报错。
+     运行时（background）和设置页的「测试」按钮（imageItem）必须同一个口径。 */
+  check('图片直传时只试填了「图片请求模板」的条目（不拿普通模板凑数）',
+    /const runnable = hasImage[\s\S]{0,120}chain\.filter\(\(it\) => String\(it\.imageRequest \|\| ''\)\.trim\(\)\)/.test(bg) &&
+      /没有任何一条填了「图片请求模板」/.test(bg) &&
+      /for \(let r = 0; r < runnable\.length; r \+= 1\)/.test(bg));
+  check('设置页「测试」按钮和运行时同一个口径（imageItem 也只看 imageRequest 非空）',
+    /function imageItem\(c\) \{[\s\S]{0,140}requestChain\(c\)\.find\(\(r\) => String\(r\.imageRequest \|\| ''\)\.trim\(\)\)/.test(optSrc));
+
+  /* ---- 报错的块默认折起来（kniph 2026-10-14：测试完直接冒出来好几屏）----
+     一次测试可能挂好几个 model，每个都是「错误 + 完整请求体 + 原始响应」。
+     **外壳只有一处**：`resultBlockHtml`，配置栏和 OCR 栏共用（kniph 后来要求「覆盖到 OCR 栏」）。 */
+  check('测试结果的外壳只有一处（resultBlockHtml：定义 1 处 + 配置栏 / OCR 栏各一个调用点）',
+    /function resultBlockHtml\(\{ head = ''[\s\S]{0,60}fold, why = '' \}\)/.test(optSrc) &&
+      (optSrc.match(/resultBlockHtml\(\{/g) || []).length === 3);
+  check('没拿到结果的那块包成 <details>（默认收起），拿到的不加',
+    optSrc.includes('<details class="test-fold">') &&
+      /<\/summary>` \+/.test(optSrc) &&
+      /fold: !r\.text/.test(optSrc) &&           // 配置栏：这条请求没译文
+      /fold: !\(r && r\.text\)/.test(optSrc));   // OCR 栏：没认出文字
+  check('折起来的块头挂一行「为什么挂」：从错误正文里捞 message（整体 parse 会挂 —— 后面还跟着我们自己加的提示）',
+    optSrc.includes('function shortError(err)') &&
+      optSrc.includes('const m = /"message"') &&
+      optSrc.includes('String(JSON.parse(') &&
+      /fold && why \? `<span class="why">/.test(optSrc));
+  const optCss = readFileSync(new URL('../options.css', import.meta.url), 'utf8');
+  check('折块的样式在（▸ 标记 + 打开时转 90°，别拿 CSS 把标记清了）',
+    /\.test-fold > summary::-webkit-details-marker \{ display: none; \}/.test(optCss) &&
+      /\.test-fold\[open\] > summary::before \{ transform: rotate\(90deg\); \}/.test(optCss));
+}
+
+section('26. 打码跟着变量走：名字里含 key 的才是密钥');
+{
+  /* kniph 报的：地址里的 key（`?key=AQ.Ab8RN6…`）明晃晃摆着没藏 —— 老实现只认
+     `Authorization` 头，URL 和 body 里的同一把 key 从来没打过码。
+     新规矩：**打码跟着变量走**（名字里含 key 不区分大小写），url / headers / body 一次全覆盖。 */
+
+  /* 变量名判定 */
+  check('名字含 key（不区分大小写）才算密钥',
+    isSecretVar('apiKey') && isSecretVar('API_KEY') && isSecretVar('myKey2') && isSecretVar('Key'));
+  check('不含 key 的不算（model / token / 语言这类）',
+    !isSecretVar('model') && !isSecretVar('PROMPT') && !isSecretVar(''));
+  check('名字里有个 key 片段也算（保守：宁可多藏）', isSecretVar('keyboard'));
+
+  const KEY = 'AQ.Ab8RN6abcdefghijklmnop';
+  const tpl =
+    "curl 'https://x/v1/models/m:generateContent?alt=sse&key={{apiKey}}' " +
+    "-H 'Authorization: Bearer {{apiKey}}' -H 'X-Trace: 1' " +
+    "-d '{\"text\":\"{{text}}\",\"auth\":\"{{apiKey}}\"}'";
+  const V = { apiKey: KEY, model: 'm', text: 'hi' };
+  const req = previewRequest(tpl, V, '').request;
+
+  check('地址里的 key 打码了（kniph 报的那处）',
+    req.url.includes('key=AQ.Ab8…（已隐藏）') && !req.url.includes(KEY),
+    req.url);
+  check('Authorization 头打码了（老行为保留）',
+    req.headers.Authorization === 'Bearer AQ.Ab8…（已隐藏）',
+    req.headers.Authorization);
+  check('不是 Authorization 的头里出现同一把 key 也打码',
+    previewRequest("curl https://x/y -H 'X-Auth: {{apiKey}}'", V, '').request.headers['X-Auth']
+      === 'AQ.Ab8…（已隐藏）');
+  check('请求体里的 key 也打码',
+    !req.body.includes(KEY) && req.body.includes('AQ.Ab8…（已隐藏）'),
+    req.body);
+  check('打码只影响展示：渲染出来的正文里还是真的（发出去的那份没被动）',
+    previewRequest(tpl, V, '').rendered.includes(KEY));
+
+  /* 幂等：变量那一步打过的，Authorization 那一步不许再打一遍（会叠成两层后缀） */
+  check('不会叠成两层「…（已隐藏）」',
+    (req.headers.Authorization.match(/（已隐藏）/g) || []).length === 1,
+    req.headers.Authorization);
+
+  /* 不越界打码 */
+  const other = previewRequest("curl https://x/y -H 'K: {{model}}' -d '{\"t\":\"{{text}}\"}'",
+    { model: 'gpt-4o-mini', text: 'hi' }, '').request;
+  check('不含 key 的变量（model）不打码', other.headers.K === 'gpt-4o-mini' && other.body.includes('hi'));
+
+  /* 没走变量、写死在 Authorization 头里的 key 仍然要兜住 */
+  check('写死的 Authorization 也打码（兜底那条还在）',
+    previewRequest("curl https://x/y -H 'Authorization: Bearer sk-hardcoded-key'", {}, '').request
+      .headers.Authorization === 'Bearer sk-har…（已隐藏）');
+  check('空 key 时打的是「Bearer （还没填）」—— 中间那个空格别丢',
+    previewRequest("curl https://x/y -H 'Authorization: Bearer {{apiKey}}'", {}, '').request
+      .headers.Authorization === 'Bearer （还没填）');
+
+  /* 太短的「密钥」不做值替换：否则预览里所有同名片段都被涂掉 */
+  const tiny = previewRequest("curl https://x/y?k={{apiKey}}&v=1", { apiKey: 'ab' }, '').request;
+  check('四字符以下的值不替换（免得把预览涂花）', tiny.url.includes('k=ab&v=1'), tiny.url);
+
+  /* 没填的 key 不该把地址改花：值是空的就什么都不换 */
+  check('key 变量为空时地址原样', previewRequest("curl https://x/y?k={{apiKey}}", {}, '').request.url === 'https://x/y?k=');
+
+  /* maskRequest 是给展示用的那一层：进来的对象不被改（别把真请求对象改掉） */
+  const src = { url: 'https://x/y?key=' + KEY, headers: { A: KEY }, body: 'x' };
+  const masked = maskRequest(src, V);
+  check('maskRequest 不改原对象（真发出去的那份必须是原样）',
+    src.url.includes(KEY) && masked.url !== src.url);
+  check('maskRequest 返回的是新对象', masked !== src && masked.headers !== src.headers);
+}
+
+section('27. 值输入框按内容撑高：藏着的标签量不到高度，别硬写');
+{
+  /* 变量栏的值是 textarea、按 scrollHeight 撑高。踩过的坑：初始化时「变量」标签
+     还是 display:none，scrollHeight 是 0，把它写进 style.height 就把框压成 0px 一条缝；
+     切过来之后一直缩着，得手点一下才恢复（kniph 报的「不动这个框就扁成一条缝」）。
+     这里把三条防回归的点钉住（真机几何由 e2e 第 3 节那段量）。 */
+  const opt = readFileSync(new URL('../options.js', import.meta.url), 'utf8');
+
+  check('有一个按内容撑高的公共函数 growTextarea',
+    opt.includes('function growTextarea(el)'));
+  check('量之前先判可见（offsetParent 为空就跳过，不写高度）',
+    /function growTextarea[\s\S]{0,220}if \(!el\.offsetParent\) return;/.test(opt));
+  check('切到「变量」标签会补量一次（存档里的多行值要撑开）',
+    opt.includes("btn.dataset.tab === 'vars'") && opt.includes('growVarValues()'));
+
+  const css = readFileSync(new URL('../options.css', import.meta.url), 'utf8');
+  check('值输入框有 min-height 兜底（任何时候都不该扁成缝）',
+    /\.var-edit-val textarea\[data-kind='value'\] \{[\s\S]{0,400}min-height:\s*30px/.test(css));
+
+  /* 一条变量 = 紧凑一行 + 点击编辑（kniph 2026-10-14：「不显示所有的内容，而是你点击
+     的时候再让你修改，这样查找起来方便的多」—— 学华词翻译的设置列表）。
+     两轮教训：一张表（名字列被压瘦）→ 上下两行（13 条摊 26 行，找一条滚很久）。 */
+  check('变量是紧凑行 + 点击编辑（.var-row 摘要态 / .editing 编辑态，不摊全文）',
+    /function renderVars[\s\S]{0,4000}idx !== editingVarIdx/.test(opt) &&
+      /editingVarIdx = idx;[\s\S]{0,60}renderVars\(\);/.test(opt) &&
+      opt.includes('function varValueSummary') &&
+      !/<tbody id="vars-body">/.test(readFileSync(new URL('../options.html', import.meta.url), 'utf8')));
+  check('摘要不泄密：含 key 的名字只显示圆点，不显示长度',
+    /isSecretVar\(v\.name\)\) return '••••••';/.test(opt));
+  check('摘要支持多行值：首行 + 「 +N」标记（model 列表一眼认出有几行）',
+    /`\$\{first\} \+\$\{lines\.length - 1\}`/.test(opt));
+  check('编辑态值框独占一行（flex:1），名字框跟着卡片宽度走但不放更宽',
+    /\.var-edit-val textarea\[data-kind='value'\] \{[\s\S]{0,120}flex: 1; min-width: 0;/.test(css) &&
+      // 编辑态的卡片横跨整行（grid-column: 1 / -1），名字框 260px 那个死宽白留着不合适了：
+      // 改成 flex: 1 + max-width，太长的名字最多占 420px，剩下留给值那一栏
+      /\.var-edit-name input \{[\s\S]{0,160}flex: 1; max-width: 420px/.test(css) &&
+      /\.var-row\.editing \{[\s\S]{0,60}grid-column: 1 \/ -1/.test(css));
+  check('变量栏是网格不是列表（一行一条的话查找全靠滚动，kniph 要的「一目了然」）',
+    /\.vars-list \{[\s\S]{0,220}display: grid[\s\S]{0,120}repeat\(auto-fill, minmax\(230px, 1fr\)\)/.test(css) &&
+      // grid 子项默认 min-width:auto，值里的长 token 会把列撑得比卡片还宽 —— 必须显式 0
+      /\.var-main \{[\s\S]{0,120}min-width: 0/.test(css) &&
+      /\.var-sub \{[\s\S]{0,200}-webkit-line-clamp: 2/.test(css) &&
+      // -webkit-box 的高度由内容行数决定，值只有一行时会缩一行、网格把它拉起来底部空一块
+      /\.var-sub \{[\s\S]{0,240}min-height: 31px/.test(css));
+  check('变量卡片也能拖动排序（复用同一个 bindSortDrag，不是另写一套）',
+    // 四处左栏/卡片共用一个函数，`grid: true` 是「落点按最近的卡 + 左半还是右半算」
+    /function bindSortDrag\(listEl, applyMove, opts = \{\}\)/.test(opt) &&
+      /const gridSpot = \(x, y\) =>/.test(opt) &&
+      /const spotAt = \(x, y\) => \(isGrid \? gridSpot\(x, y\) : dropSpot\(listEl, y, ITEM\)\)/.test(opt) &&
+      /bindSortDrag\(\s*els\.varsBody,[\s\S]{0,900}\{ itemSel: '\.var-row', gripSel: '\.var-grip', grid: true \}/.test(opt) &&
+      // 手柄两条硬约束抄自 .cfg-grip：漏了 touch-action 触屏就拖不动
+      /\.var-grip \{[\s\S]{0,400}touch-action: none/.test(css) &&
+      /\.var-grip svg \{[\s\S]{0,80}pointer-events: none/.test(css) &&
+      // 网格里的指示线是竖的：横线在一行好几张的网格里分不清落在哪一列
+      /\.var-row\.drop-before::before \{ left: -3px; \}/.test(css) &&
+      /\.var-row\.drop-after::after \{ right: -3px; \}/.test(css));
+  check('growVarValues 只撑编辑态那块（摘要行里没有 textarea）',
+    /closest\('\.var-row\.editing'\)/.test(opt));
+  check('删除时编辑态下标跟着修（删了上一条，正在编辑的那条不该错位）',
+    /if \(editingVarIdx === idx\) editingVarIdx = -1;[\s\S]{0,80}else if \(editingVarIdx > idx\) editingVarIdx -= 1;/.test(opt));
+}
+
+section('28. 截图那一步失败点 ↻：重发**刚才那张图**，两条路都不许再去翻剪切板');
+{
+  /* 用户的心智：↻ = 拿刚才那张再发一次。旧实现是 `startOcr()` → 发一条不带图的
+     `{type:'ocr'}`，后台只能去读剪切板 —— 用户在那之后复制了别的东西，重试就发了
+     一张完全不相关的图（kniph 报的 bug）。
+     图在哪儿：直传那张 content 自己存着（lastOcr.image）；OCR 那两条路（剪切板 /
+     框选）图在后台手里，发 reuse 让它接着用上一次那张。 */
+  const src = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
+  const bg = readFileSync(new URL('../background.js', import.meta.url), 'utf8');
+
+  check('有一个专门的重试入口 retryShot', src.includes('function retryShot()'));
+  check('↻ 处理器改走它，不再自己去 startOcr（那条会读剪切板）',
+    /if \(!currentText\) \{\s*retryShot\(\);\s*return;\s*\}/.test(src) &&
+    !/if \(!currentText\) \{[\s\S]{0,200}startOcr\(lastOcrAnchor\)/.test(src));
+  check('直传那条路本地重发（图 content 自己就有，不用惊动后台）',
+    src.includes('lastOcr.direct && lastOcr.image') &&
+    src.includes("translate('', '', { direct: true, image: lastOcr.image, bytes: lastOcr.bytes })"));
+  check('OCR 那两条路发 reuse，让后台接着用上一次那张',
+    src.includes("{ type: 'ocr', reuse: true }"));
+
+  check('后台记着上一次真正用过的截图', /let lastShot = null;/.test(bg));
+  check('后台认 reuse（优先用记着的那张，其次才去读剪切板）',
+    bg.includes('msg.reuse && lastShot'));
+  const reuseIdx = bg.indexOf('msg.reuse && lastShot');
+  check('reuse 命中时不去读剪切板（读剪切板那一步排在它后面）',
+    reuseIdx > 0 && bg.indexOf('await readClipboardImage()', reuseIdx) > reuseIdx);
+  check('只有真拿到图才记下来（失败那几次不算）',
+    /if \(!shot \|\| !shot\.ok\) \{[\s\S]{0,500}?lastShot = shot;/.test(bg));
+  check('端口协议那行注释写了 reuse（这机制光看代码看不出来）',
+    /type:'ocr', dataUrl\?, reuse\?/.test(bg));
+
+  /* ---- 直传那一屏：原文区贴的就是那张图 ---- */
+  check('直传时把截图贴进原文区（OCR 中转不贴 —— 那边原文是认出来的文字）',
+    src.includes('if (hasImage) renderSrcImage(ocr.image);'));
+  check('renderSrcImage 只有这一个调用点', (src.match(/renderSrcImage\(/g) || []).length === 2,
+    String((src.match(/renderSrcImage\(/g) || []).length));
+  check('页面 CSP 挡掉 data: 图时有兜底（挂 img 的 error）',
+    /function renderSrcImage[\s\S]{0,600}addEventListener\('error'/.test(src));
+  check('兜底之后那句「没有先做外置 OCR」还在（不然用户不知道发生了什么）',
+    src.includes("const DIRECT_SRC_NOTE = '（这张截图直接发给了模型，没有先做外置 OCR）'") &&
+    /addEventListener\('error'[\s\S]{0,300}DIRECT_SRC_NOTE/.test(src));
+  check('换回文字原文时会摘掉 has-img（不然那块高度上限一直撑着）',
+    /classList\.remove\('has-img'\)/.test(src));
+
+  const css = src;   // 面板 CSS 就在 content.js 里（content script 不能 import）
+  check('贴出来的图有尺寸上限（长截图不该把面板撑破）',
+    /\.rt-src \.rt-srcimg \{[\s\S]{0,400}max-height:\s*11em/.test(css));
+  check('原文区有图时高度上限抬高（不然 6em 里塞不下图 + 那句话）',
+    src.includes('.rt-src.has-img { max-height: 14em; }'));
+}
+
+
 /* ------------------------------------------------------------------ */
 
 console.log('\n' + '='.repeat(46));
-console.log(`通过 ${passed} 项，失败 ${failed} 项`);console.log('='.repeat(46));
+console.log(`通过 ${passed} 项，失败 ${failed} 项`);
+console.log('='.repeat(46));
 process.exit(failed === 0 ? 0 : 1);
