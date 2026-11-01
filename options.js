@@ -3,6 +3,7 @@
  */
 
 import { PANEL_CSS } from './lib/panel-styles.js';
+import { PANEL_CSS_DEMO } from './lib/panel-demo.js';
 import {
   loadState,
   saveState,
@@ -91,6 +92,7 @@ const els = {
   chkEncrypt: $('#chk-encrypt'),
   panelCss: $('#s-panelcss'),
   btnPanelCssWarm: $('#btn-panelcss-warm'),
+  btnPanelCssDemo: $('#btn-panelcss-demo'),
   btnPanelCssClear: $('#btn-panelcss-clear'),
   passDialog: $('#pass-dialog'),
   langSelect: $('#s-lang'),
@@ -3024,6 +3026,7 @@ function bindSettings() {
     els.panelCss.dispatchEvent(new Event('input', { bubbles: true }));
   };
   els.btnPanelCssWarm.addEventListener('click', () => setPanelCss(PANEL_CSS_WARM));
+  els.btnPanelCssDemo.addEventListener('click', () => setPanelCss(PANEL_CSS_DEMO));
   els.btnPanelCssClear.addEventListener('click', () => setPanelCss(''));
 
   els.trigStyles.addEventListener('click', (e) => {

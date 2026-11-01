@@ -1056,6 +1056,41 @@ try {
     /* 回到的是「预设在这个主题下的值」—— 别写死 #0f0f11：预览可能正处在浅色主题 */
     check('点「清空」→ 自定义样式移除、回到预设配色',
       !cleared.hasUserCss && cleared.bgVar === b4.bgVar, JSON.stringify(cleared) + ' 期望回到 ' + b4.bgVar);
+
+  /* 「能力上限演示」这个示例按钮（kniph 2026-11-01 要的）：点一下要真的把整张面板换掉，
+     清空要能完全复原。样例本身住在 lib/panel-demo.js（不进 options.js，免得那个文件更难读）。 */
+  {
+    const readDemo = () =>
+      opt.evaluate(() => {
+        document.querySelector('.tab[data-tab="settings"]')?.click();
+        const sh = document.getElementById('panel-preview')?.shadowRoot;
+        const p = sh && sh.querySelector('.rt-panel');
+        const u = sh && sh.querySelector('#rt-user-css');
+        return {
+          bgImg: p ? getComputedStyle(p).backgroundImage.slice(0, 40) : '',
+          radius: p ? getComputedStyle(p).borderRadius : '',
+          backdrop: p ? (getComputedStyle(p).backdropFilter || '') : '',
+          hasUserCss: !!u,
+          cssLen: u && u.textContent ? u.textContent.length : 0,
+        };
+      });
+
+    const before = await readDemo();
+    await opt.evaluate(() => document.getElementById('btn-panelcss-demo')?.click());
+    await opt.waitForTimeout(500);
+    const demoted = await readDemo();
+    check('点「能力上限演示」→ 面板真的换了一张脸（渐变 + 毛玻璃 + 大圆角）',
+      demoted.hasUserCss && demoted.cssLen > 5000 &&
+        /radial-gradient/.test(demoted.bgImg) && demoted.radius === '20px' && /blur/.test(demoted.backdrop),
+      JSON.stringify(demoted));
+
+    await opt.evaluate(() => document.getElementById('btn-panelcss-clear')?.click());
+    await opt.waitForTimeout(500);
+    const back = await readDemo();
+    check('点「清空」→ 完全复原（注入的样式被移除）',
+      !back.hasUserCss && back.bgImg === before.bgImg && back.radius === before.radius,
+      JSON.stringify(back));
+  }
   }
   /* ---- 设置页分组折叠（kniph 2026-10-17：7 个区块 25 行平铺，一屏装不下）----
      用原生 <details>，默认展开常用的三块。这里钉住「分组存在、默认状态合理」。 */
