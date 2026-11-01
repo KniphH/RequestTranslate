@@ -117,15 +117,14 @@ for (const { js, html } of PAIRS) {
   }
 }
 
-// content.js 的面板是拼在字符串里的，单独看一遍类名有没有用在 querySelector 上
+// content.js 的类选择器要在「面板 DOM 的产出处」里能找到
 {
   const src = read('content.js');
-  const defined = new Set();
-  for (const m of src.matchAll(/class="([^"]*)"/g)) {
-    for (const c of m[1].split(/\s+/)) if (c) defined.add(c);
-  }
-  for (const m of src.matchAll(/className\s*=\s*'rt-[^']*'/g)) {
-    for (const c of m[0].match(/rt-[\w-]+/g) || []) defined.add(c);
+  /* 面板骨架与槽位 HTML 由 lib/panel-core.js 生成（网页和设置页预览共用同一份，
+     2026-11-01 抽出去的）—— 类名定义在那里，所以两份一起算作「有定义」。 */
+  const defined = collectJsClasses(src);
+  if (fs.existsSync(path.join(ROOT, 'lib/panel-core.js'))) {
+    for (const c of collectJsClasses(read('lib/panel-core.js'))) defined.add(c);
   }
 
   const issues = [];

@@ -2295,13 +2295,16 @@ section('18. 目标语言：下拉挑语言，接口要的代码自动转');
      这两件事缺哪一件，那个下拉都是空的或者错的。 */
   const bgJs = readFileSync(new URL('../background.js', import.meta.url), 'utf8');
   const panelJs = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
+  /* 面板骨架 2026-11-01 搬去 lib/panel-core.js（网页与设置页预览共用同一份），
+     所以「下拉存在」要在那份里找、「谁在用它」仍看 content.js。 */
+  const coreJs = readFileSync(new URL('../lib/panel-core.js', import.meta.url), 'utf8');
   check('后台把语言候选随 ready 一起发给页面',
     /import\s*\{[^}]*\bTARGET_PRESETS\b[^}]*\}\s*from\s*'\.\/lib\/template\.js'/.test(bgJs) &&
       /targetLangs:\s*TARGET_PRESETS/.test(bgJs));
   check('面板顶栏有一个目标语言下拉',
-    /class="rt-lang"/.test(panelJs) && panelJs.includes("querySelector('.rt-lang')"));
-  check('面板的候选来自后台，没在 content.js 里手抄一份',
-    !panelJs.includes('TARGET_PRESETS'));
+    /class='rt-lang'/.test(coreJs) && panelJs.includes("querySelector('.rt-lang')"));
+  check('面板的候选来自后台，没在 content.js / panel-core.js 里手抄一份',
+    !panelJs.includes('TARGET_PRESETS') && !coreJs.includes('TARGET_PRESETS'));
   check('面板换语言后会把各配置的旧译文作废（那是上一门语言的）',
     /langSelect\.addEventListener\('change'/.test(panelJs) &&
       /resultCache\.clear\(\)/.test(panelJs));

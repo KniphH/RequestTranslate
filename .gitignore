@@ -14,3 +14,4 @@ tools/cmp_*.png
 docs/*.png
 tools/e2e*.log
 tools/*.log
+tools/CM*.txt

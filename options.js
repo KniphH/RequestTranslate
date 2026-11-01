@@ -2666,45 +2666,6 @@ function syncGroupCounts() {
  *   面板高度 → max-height（不是定高），0 = 自适应
  *   结果区 → --rt-max-h（vh），0 = 不限
  */
-/** 预览面板里那三个按钮的图标 —— 和 content.js 的 ACT_*_SVG 逐字一致
- *  （content script 不能 import，这份是镜像；test-lib 有同形断言钉着）。 */
-const PV_ACT_COPY_SVG =
-  '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="9" height="9" rx="1.6"/><path d="M13 4.5H5.6A1.6 1.6 0 0 0 4 6.1V13"/></svg>';
-const PV_ACT_RETRY_SVG =
-  '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 10a6.5 6.5 0 1 1-1.9-4.6"/><path d="M16.5 3.5V7H13"/></svg>';
-const PV_ACT_SPEAK_SVG =
-  '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7.5h2.8L10 4.2v11.6l-3.7-3.3H3.5z"/><path d="M13 7.6a3.4 3.4 0 0 1 0 4.8"/><path d="M15.2 5.4a6.6 6.6 0 0 1 0 9.2"/></svg>';
-
-/**
- * 把示例内容渲染成**真面板的槽位结构**（.rt-slot / .rt-slot-h / .rt-slot-b / .rt-acts）。
- *
- * 为什么不能用 outEl.textContent：那样结果区只是一坨纯文本，**没有槽位块**，
- * 于是所有作用在 .rt-slot* 上的自定义样式（悬停展开之类）在预览里根本触发不了 ——
- * kniph 2026-11-01 报的「外面能收起、里面不行」就是这个原因。
- *
- * 两个槽位：一个是「完成」，一个是「失败」。故意都给，这样 err 态的样式也能看到。
- */
-function pvSlotHtml(idx, name, state, body) {
-  const err = state === "fail";
-  const st = state === "fail" ? "失败" : "完成";
-  const cls = err ? " err" : "";
-  const cid = "pv-" + idx;
-  return (
-    '<div class="rt-slot" data-cid="' + cid + '">' +
-    '<div class="rt-slot-h"><span class="rt-slot-name" data-p="name">' + name + '</span>' +
-    '<button class="rt-slot-x" data-del="' + cid + '" title="不再显示这一条（只影响这次，不改设置里的默认组合）">×</button>' +
-    '<span class="rt-slot-st' + cls + '" data-p="st">' + st + '</span></div>' +
-    '<div class="rt-slot-b' + cls + '" data-p="body">' + body + '</div>' +
-    '<div class="rt-acts">' +
-    '<button class="rt-act" data-act="copy" data-cid="' + cid + '" title="复制这条译文">' +
-    PV_ACT_COPY_SVG + '<span>复制</span></button>' +
-    '<button class="rt-act" data-act="speak" data-cid="' + cid + '" data-icon="rt-act-speak" title="朗读这条译文">' +
-    PV_ACT_SPEAK_SVG + '<span>朗读</span></button>' +
-    '<button class="rt-act" data-act="retry-one" data-cid="' + cid + '" title="只重试这一条">' +
-    PV_ACT_RETRY_SVG + '<span>重试</span></button>' +
-    '</div></div>'
-  );
-}
 
 
 const PV_SAMPLE_SRC =
@@ -2736,14 +2697,7 @@ function renderPanelPreview() {
     const panel = document.createElement("div");
     panel.className = "rt-panel";
     panel.id = "rt-panel";
-    panel.innerHTML =
-      '<div class="rt-head" data-drag>' +
-      '<span class="rt-dot ok"></span>' +
-      /* 下拉内容在下面按**真实配置 / 语言**填 —— 硬编码「配置名」会让人以为预览里只有一条假配置 */
-      '<select class="rt-cfg"></select>' +
-      '<select class="rt-lang"></select>' +
-      '<button class="rt-btn" data-act="src" title="显示 / 隐藏原文">◉</button>' +
-      '<button class="rt-btn" data-act="close" title="关闭 (Esc)">&#10005;</button>' +
+    panel.innerHTML = RTPanelCore.shellHtml();   // 骨架在 lib/panel-core.js，与网页共用同一份</button>' +
       "</div></div>" +
       '<div class="rt-body"><div class="rt-src"></div><div class="rt-out"></div></div>' +
       '<div class="rt-foot"><span class="rt-msg">HTTP 200 · 0.8s</span></div>' +
@@ -2827,6 +2781,40 @@ function renderPanelPreview() {
   panel.classList.toggle("light", pvLight);
   panel.dataset.rtTheme = pvLight ? "light" : "dark";
 
+  /* 补齐「正在显示」这件事本身：真面板显示时是 .rt-panel.show、状态灯带 ok。
+     少了这两样，预览的布局和真面板就有差别（show 参与 CSS 的显示规则）。 */
+  panel.classList.add("show");
+  /* 眼睛按钮的 on 类 = 「原文区正显示着」。真面板靠它切换图标状态，
+     预览里原文是可见的，所以也要带上，否则和真面板差一个状态。 */
+  {
+    const eye = host.shadowRoot.querySelector('[data-act="src"]');
+    if (eye) eye.classList.toggle("on", s.showOriginal !== false);
+  }
+
+  /* 诊断区填几行示例 —— 用的是与真面板同一份画行代码（RTPanelCore.renderDiag）。
+     「⋯」按钮也要放开，不然看不到它。 */
+  {
+    const diag = host.shadowRoot.querySelector(".rt-diag");
+    const more = host.shadowRoot.querySelector(".rt-more");
+    if (diag) {
+      RTPanelCore.renderDiag(diag, [
+        { k: "首字", v: "1.02 s", hint: "第一个译文分片出现的时间" },
+        { k: "总耗时", v: "1.15 s" },
+        { k: "响应格式", v: "SSE" },
+        { k: "分片", v: "4" },
+        { k: "响应大小", v: "1.8 KB" },
+        { k: "命中路径", v: "choices[0].delta.content" },
+        { k: "模型", v: "deepseek-v4-flash-0731" }
+      ]);
+      diag.hidden = false;
+    }
+    if (more) more.hidden = false;
+  }
+  {
+    const dot = host.shadowRoot.querySelector(".rt-dot");
+    if (dot) dot.classList.add("ok");
+  }
+
   /* 顶栏两个下拉填**真东西**：配置取 state.configs、语言取 targetLang。
      只显示不联动 —— 拨它不该改存档（和眼睛按钮同一个原则）。 */
   {
@@ -2848,11 +2836,16 @@ function renderPanelPreview() {
       cfgSel.title = "翻译接口：" + cur.name;
     }
     if (langSel) {
+      /* 候选和真面板同一份（lib/template.js 的 TARGET_PRESETS）——
+         只填当前语言的话，预览的下拉是空的，点开看不到东西。 */
       const lang = s.targetLang || "简体中文";
-      if (!langSel.options.length) {
+      const cands = TARGET_PRESETS.slice();
+      if (!cands.includes(lang)) cands.push(lang);
+      langSel.textContent = "";
+      for (const v of cands) {
         const o = document.createElement("option");
-        o.value = lang;
-        o.textContent = lang;
+        o.value = v;
+        o.textContent = v;
         langSel.appendChild(o);
       }
       langSel.value = lang;
@@ -2865,9 +2858,12 @@ function renderPanelPreview() {
      自定义样式（比如悬停展开）在预览里根本触发不了（kniph 2026-11-01 报的）。
      两个槽位：一条「完成」、一条「失败」，这样 err 态的样式也能看到。 */
   outEl.classList.remove("empty");
-  outEl.innerHTML =
-    pvSlotHtml(1, "配置甲", "done", PV_SAMPLE_OUT) +
-    pvSlotHtml(2, "配置乙", "fail", "译文：这一条故意标成失败，用来预览 err 态的颜色。");
+  /* 结果区：**和网页上同一份 HTML**（lib/panel-core.js）。两个槽位 ——
+     一条「完成」一条「失败」，这样 err 态的样子也能看到。 */
+  outEl.innerHTML = RTPanelCore.slotsHtml([
+    { configId: "pv-1", name: "配置甲", state: "done", text: PV_SAMPLE_OUT, error: "", statusText: "" },
+    { configId: "pv-2", name: "配置乙", state: "fail", text: "", error: "译文：这一条故意标成失败，用来看 err 态的颜色。", statusText: "" }
+  ], {});
   srcEl.classList.toggle("hidden", !(s.showOriginal !== false));
 }
 

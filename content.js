@@ -562,28 +562,7 @@ ${TRIGGER_CSS}
      · data-rt-theme 让用户能按主题分别写，不用 :not(.light) 反推
      shadow DOM 里的 id 是作用域内的，不跟页面撞。 */
   panel.id = 'rt-panel';
-  panel.innerHTML = `
-    <div class="rt-head" data-drag>
-      <span class="rt-dot"></span>
-      <select class="rt-cfg" title="翻译接口"></select>
-      <select class="rt-lang" title="目标语言"></select>
-      <div class="rt-actions">
-        <button class="rt-btn" data-act="src" title="显示 / 隐藏原文">
-          <svg viewBox="0 0 20 20" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1.6 10S4.9 4.6 10 4.6 18.4 10 18.4 10 15.1 15.4 10 15.4 1.6 10 1.6 10Z"/><circle cx="10" cy="10" r="2.3"/></svg>
-        </button>
-        <button class="rt-btn" data-act="close" title="关闭 (Esc)">&#10005;</button>
-      </div>
-    </div>
-    <div class="rt-body">
-      <div class="rt-src"></div>
-      <div class="rt-out empty" data-placeholder="等待结果…"></div>
-    </div>
-    <div class="rt-foot">
-      <span class="rt-msg"></span>
-      <button class="rt-more" data-act="more" title="查看详细信息" hidden>&#8943;</button>
-    </div>
-    <div class="rt-diag" hidden></div>
-  `;
+  panel.innerHTML = RTPanelCore.shellHtml();   // 骨架在 lib/panel-core.js，网页与设置页预览共用
 
   shadow.appendChild(trigger);
   shadow.appendChild(panel);
@@ -1133,21 +1112,9 @@ ${TRIGGER_CSS}
   }
 
   function showDiag(rows) {
-    diagBox.textContent = '';
-    for (const r of rows) {
-      const line = document.createElement('div');
-      line.className = 'd-row';
-      const k = document.createElement('span');
-      k.className = 'd-k';
-      k.textContent = r.k;
-      const v = document.createElement('span');
-      v.className = 'd-v' + (r.err ? ' err' : r.warn ? ' warn' : '');
-      v.textContent = r.v;
-      line.appendChild(k);
-      line.appendChild(v);
-      if (r.hint) line.title = r.hint;
-      diagBox.appendChild(line);
-    }
+    /* 行怎么画由 lib/panel-core.js 负责 —— 设置页预览用的是同一份，
+       免得那边手抄一遍又落后（2026-11-01）。这里只管状态。 */
+    RTPanelCore.renderDiag(diagBox, rows);
     const any = rows.length > 0;
     moreBtn.hidden = !any;
     moreBtn.classList.toggle('warn', rows.some((x) => x.warn || x.err));
@@ -1235,25 +1202,8 @@ ${TRIGGER_CSS}
   const RENDER_INTERVAL = 50;
 
   /* ---- 译文尾部的操作条（复制 / 朗读 / 重试）----
-     kniph 2026-10-17：重试从顶栏搬下来。顶栏那个 ↻ 只能重试「当前主配置」，
-     多条对比时想重试第 2 条就没辙；每条结果自己带一排才顺手。
-     朗读也放这儿（speechSynthesis，零依赖）。图标自绘，和别处一个惯例。 */
-  const ACT_COPY_SVG =
-    '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" ' +
-    'stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="9" height="9" rx="1.6"/>' +
-    '<path d="M13 4.5H5.6A1.6 1.6 0 0 0 4 6.1V13"/></svg>';
-  const ACT_RETRY_SVG =
-    '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" ' +
-    'stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 10a6.5 6.5 0 1 1-1.9-4.6"/>' +
-    '<path d="M16.5 3.5V7H13"/></svg>';
-  const ACT_SPEAK_SVG =
-    '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" ' +
-    'stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7.5h2.8L10 4.2v11.6l-3.7-3.3H3.5z"/>' +
-    '<path d="M13 7.6a3.4 3.4 0 0 1 0 4.8"/><path d="M15.2 5.4a6.6 6.6 0 0 1 0 9.2"/></svg>';
-  const ACT_STOP_SVG =
-    '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" ' +
-    'stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7.5h2.8L10 4.2v11.6l-3.7-3.3H3.5z"/>' +
-    '<path d="M13 8l4 4M17 8l-4 4"/></svg>';
+     那一排按钮的图标与 HTML 都搬去 lib/panel-core.js 了 —— 网页与设置页预览共用同一份，
+     免得预览里的图标又落后一步。这里只剩「正在朗读哪一条」这个状态。 */
 
   /** 正在朗读哪一条（configId；空串 = 没在朗读）。用来切「朗读/停止」图标 */
   let speakingKey = '';
@@ -1728,92 +1678,19 @@ ${TRIGGER_CSS}
     }
 
     if (!reusable) {
-      outBox.innerHTML = slots.map(slotHtml).join('');
+      /* 整块重建：HTML 由 lib/panel-core.js 生成 —— 和设置页预览同一份。 */
+      outBox.innerHTML = RTPanelCore.slotsHtml(slots, { speaking: speakingKey });
     } else {
-      for (let i = 0; i < slots.length; i += 1) patchSlot(kids[i], slots[i]);
+      for (let i = 0; i < slots.length; i += 1) {
+        RTPanelCore.patchSlot(kids[i], slots[i], speakingKey === slots[i].configId);
+      }
     }
 
     if (keepTop) outBox.scrollTop = keepTop;
     keepPanelInView();
   }
 
-  /**
-   * 把一个槽位的新状态**就地**写进已经存在的那份 DOM。
-   *
-   * 只碰「值」，不碰「结构」：文本、状态字、err 类、以及按钮的 disabled 与朗读图标。
-   *
-   * 子元素用 data-p 定位，不用类名选择器 —— 那几个类名是拼在模板字符串里的
-   * （`class="rt-slot-st${cls}"`），tools/check-dom.mjs 的正则识别不到，会误报
-   * 「类没有定义」。data-* 是数据契约，语义也更清楚。
-   * 结构（块头、×、操作条）保持不变 —— 它们只跟配置 id / 条数有关，那两项变了整块会重建。
-   */
-  function patchSlot(el, s) {
-    const esc = (t) =>
-      String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-    let st = '';
-    let body = '';
-    let err = false;
-    if (s.state === 'busy') {
-      st = '翻译中…' + (s.statusText || '');
-      body = s.text || '';
-    } else if (s.state === 'done') {
-      st = '完成';
-      body = s.text || '';
-    } else if (s.state === 'fail') {
-      st = '失败';
-      err = true;
-      body = s.error || '出错了';
-    } else {
-      st = '等待…';
-    }
-
-    const nameEl = el.querySelector('[data-p="name"]');
-    if (nameEl && nameEl.textContent !== s.name) nameEl.textContent = s.name;
-
-    const stEl = el.querySelector('[data-p="st"]');
-    if (stEl) {
-      if (stEl.textContent !== st) stEl.textContent = st;
-      stEl.classList.toggle('err', err);
-    }
-
-    const bodyEl = el.querySelector('[data-p="body"]');
-    if (bodyEl) {
-      /* body 是纯文本槽（`esc()` 出来的），这里用 textContent 直接写 ——
-         等价于当天的 esc(body) 再塞回去，但不用重新解析一遍 HTML。 */
-      if (bodyEl.textContent !== body) bodyEl.textContent = body;
-      bodyEl.classList.toggle('err', err);
-    }
-
-    /* 操作条：只有「有没有文本」和「在不在朗读」两件事会变。
-       文案不用重写（复制/朗读/重试这几个字是固定的），只切 disabled 和朗读那张图标。 */
-    const acts = el.querySelector('.rt-acts');
-    if (acts) {
-      const hasText = !!(body && String(body).trim());
-      const speaking = speakingKey === s.configId;
-      const copyBtn = acts.querySelector('[data-act="copy"]');
-      const speakBtn = acts.querySelector('[data-act="speak"]');
-      const retryBtn = acts.querySelector('[data-act="retry-one"]');
-      if (copyBtn) copyBtn.disabled = !hasText;
-      if (retryBtn) retryBtn.disabled = !hasText;
-      if (speakBtn) {
-        speakBtn.disabled = !hasText;
-        speakBtn.title = speaking ? '停止朗读' : '朗读这条译文';
-        const label = speakBtn.querySelector('span');
-        const want = speaking ? '停止' : '朗读';
-        if (label && label.textContent !== want) label.textContent = want;
-        /* 图标只有两套，切换时整体换一次那个 svg —— 只在真正变了才动 */
-        const wantSvg = speaking ? 'rt-act-stop' : 'rt-act-speak';
-        const curSvg = speakBtn.getAttribute('data-icon');
-        if (curSvg !== wantSvg) {
-          const old = speakBtn.querySelector('svg');
-          if (old) old.remove();
-          speakBtn.insertAdjacentHTML('afterbegin', speaking ? ACT_STOP_SVG : ACT_SPEAK_SVG);
-          speakBtn.setAttribute('data-icon', wantSvg);
-        }
-      }
-    }
-  }
+  
 
   /**
    * 把某个槽位的结果写进去并重画。
@@ -1835,67 +1712,9 @@ ${TRIGGER_CSS}
 
 
 
-  /**
-   * 译文尾部那排按钮的 HTML（复制 / 朗读 / 重试）—— 单条和多条共用。
-   *
-   * `cid` 是这条结果属于哪个配置：点重试就重试**这一条**（多条对比时才有意义），
-   * 朗读也只读这条自己的译文。点击用事件委托接（见 outBox 上的监听）。
-   */
-  function actsHtml(cid, text) {
-    const hasText = !!(text && String(text).trim());
-    const speaking = speakingKey === cid;
-    return (
-      '<div class="rt-acts">' +
-      `<button class="rt-act" data-act="copy" data-cid="${cid}"${hasText ? '' : ' disabled'} title="复制这条译文">` +
-      ACT_COPY_SVG + '<span>复制</span></button>' +
-      /* data-icon 是给 patchSlot 用的：增量渲染时要靠它判断图标该不该换，
-         否则首次 patch 会误以为要换、把 svg 重复插一遍（2026-11-01）。 */
-      `<button class="rt-act" data-act="speak" data-cid="${cid}"${hasText ? '' : ' disabled'} ` +
-      `data-icon="${speaking ? 'rt-act-stop' : 'rt-act-speak'}" ` +
-      `title="${speaking ? '停止朗读' : '朗读这条译文'}">` +
-      (speaking ? ACT_STOP_SVG : ACT_SPEAK_SVG) +
-      `<span>${speaking ? '停止' : '朗读'}</span></button>` +
-      `<button class="rt-act" data-act="retry-one" data-cid="${cid}" title="只重试这一条">` +
-      ACT_RETRY_SVG + '<span>重试</span></button>' +
-      '</div>'
-    );
-  }
+  
 
-  function slotHtml(s) {
-    const esc = (t) =>
-      String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    let st = '';
-    let body = '';
-    let cls = '';
-    if (s.state === 'busy') {
-      st = '翻译中…' + (s.statusText || '');
-      body = s.text || '';
-    } else if (s.state === 'done') {
-      st = '完成';
-      body = s.text || '';
-    } else if (s.state === 'fail') {
-      st = '失败';
-      cls = ' err';
-      body = s.error || '出错了';
-    } else {
-      st = '等待…';
-    }
-    /* 配置名旁边那个 ×：**只删掉这一条**（kniph 2026-10-17）。
-       多条时才有意义 —— 至少留一条，所以单条不显示它。 */
-    const del =
-      slots.length > 1
-        ? `<button class="rt-slot-x" data-del="${esc(s.configId)}" title="不再显示这一条（只影响这次，不改设置里的默认组合）">×</button>`
-        : '';
-    return (
-      `<div class="rt-slot" data-cid="${esc(s.configId)}">` +
-      `<div class="rt-slot-h"><span class="rt-slot-name" data-p="name">${esc(s.name)}</span>` +
-      del +
-      `<span class="rt-slot-st${cls}" data-p="st">${esc(st)}</span></div>` +
-      `<div class="rt-slot-b${cls}" data-p="body">${esc(body)}</div>` +
-      actsHtml(esc(s.configId), body) +
-      '</div>'
-    );
-  }
+  
 
   /* 顶栏那个「配置」下拉（原生 <select>）。
      **对比组合由设置页决定**（点亮哪几条 = 新网页默认显示几条）——
