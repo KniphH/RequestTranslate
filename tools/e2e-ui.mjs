@@ -3536,6 +3536,90 @@ try {
   check('图片配置的头尾 ↑ ↓ 也各禁掉一边',
     imgShape.firstUp === true && imgShape.lastDown === true);
 
+  /* 点图片配置那行 = 加入对比（kniph 2026-11-01 报「禁用 OCR 时不能多选」）。
+     根因：这个列表的 sortableRow **没传 inCompare / onAddToCompare** —— 点行只在
+     「选中来编辑」，永远不进对比集合。文字配置栏传了，图片这栏漏了。
+     这里钉两件事：点第二条之后**两条都亮**，而且写进了独立的 imageSlotConfigs
+     （不和文字的 slotConfigs 共用 —— 两屏池子不同，共用会互相顶掉）。 */
+  {
+    // 先把「面板显示条数」调成 2，否则上限是 1、第二条会被顶掉
+    // **不改完就 reload** —— 页面重载会把刚写的 panelSlots 覆盖回它内存里的旧值。
+    // 先在页内改存档，再靠 input 事件 / 直接调设置函数让页面自己吃进去。
+    const slotsNow = await opt.evaluate(async () => {
+      const { state } = await chrome.storage.local.get('state');
+      state.settings.panelSlots = 2;
+      state.settings.imageSlotConfigs = [];
+      await chrome.storage.local.set({ state });
+      return state.settings.panelSlots;
+    });
+    check('（脚手架）面板显示条数已改成 2，否则第二条会被上限顶掉', slotsNow === 2, String(slotsNow));
+    // 让页面里的 state 也更新（改 #s-slots 再派发 input，和用户手动改一样）
+    await opt.evaluate(() => {
+      const el = document.querySelector('#s-slots');
+      if (el) { el.value = '2'; el.dispatchEvent(new Event('input', { bubbles: true })); }
+    });
+    await opt.waitForTimeout(400);
+    await opt.evaluate(async () => {
+      document.querySelector('.tab[data-tab="ocr"]')?.click();
+      await new Promise((r) => setTimeout(r, 200));
+      const c = document.getElementById('o-disabled');
+      if (c && !c.checked) { c.checked = true; c.dispatchEvent(new Event('input', { bubbles: true })); }
+    });
+    await opt.waitForTimeout(600);
+
+    const lit = () => opt.evaluate(() =>
+      [...document.querySelectorAll('#imgcfg-list .cfg-item.in-compare')]
+        .map((x) => x.closest('.cfg-row').dataset.id));
+
+    check('（脚手架）图片配置至少 2 条，才测得了多选',
+      (await opt.evaluate(() => document.querySelectorAll('#imgcfg-list .cfg-row').length)) >= 2);
+
+    const l0 = await lit();
+    check('进图片配置栏时一条都没点亮（对比集合是空的）', l0.length === 0, JSON.stringify(l0));
+
+    await opt.evaluate(() => {
+      [...document.querySelectorAll('#imgcfg-list .cfg-row')][0].querySelector('.cfg-item').click();
+    });
+    await opt.waitForTimeout(350);
+    const l1 = await lit();
+    check('点第一条 → 它进对比集合了', l1.length === 1, JSON.stringify(l1));
+
+    await opt.evaluate(() => {
+      [...document.querySelectorAll('#imgcfg-list .cfg-row')][1].querySelector('.cfg-item').click();
+    });
+    await opt.waitForTimeout(350);
+    const l2 = await lit();
+    check('再点第二条 → **两条同时亮**（不是单选）', l2.length === 2, JSON.stringify(l2));
+
+    const saved2 = await opt.evaluate(async () => (await chrome.storage.local.get('state')).state.settings.imageSlotConfigs);
+    check('图片的对比名单写进了独立的 imageSlotConfigs',
+      saved2.length === 2 && JSON.stringify(saved2) === JSON.stringify(l2), JSON.stringify(saved2));
+    check('没有写到文字的 slotConfigs 上（两屏各存各的）',
+      (await opt.evaluate(async () => (await chrome.storage.local.get('state')).state.settings.slotConfigs || [])).length !== 2);
+
+    // 右键取消一条（kniph 2026-10-17 定的「右键取消应用」）
+    await opt.evaluate(() => {
+      const row = document.querySelectorAll('#imgcfg-list .cfg-row')[1];
+      row.querySelector('.cfg-item').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    });
+    await opt.waitForTimeout(350);
+    const l3 = await lit();
+    check('右键点已亮的那条 → 把它从对比集合里取消', l3.length === 1, JSON.stringify(l3));
+
+    /* 收尾：**连 panelSlots 一起还原成 1**。
+       只清 imageSlotConfigs 不够 —— 我把它改成 2 了，后面几节假定是单条，
+       留着 2 会让它们多开一个槽（第一次写这条用例时就污染了 3 条断言）。 */
+    await opt.evaluate(async () => {
+      const { state } = await chrome.storage.local.get('state');
+      state.settings.imageSlotConfigs = [];
+      state.settings.panelSlots = 1;
+      await chrome.storage.local.set({ state });
+      const el = document.querySelector('#s-slots');
+      if (el) { el.value = '1'; el.dispatchEvent(new Event('input', { bubbles: true })); }
+    });
+    await opt.waitForTimeout(300);
+  }
+
   const imgBefore = await imgOrder();
   check('（脚手架）存档里能翻图的正好就是屏幕上那几条',
     JSON.stringify(imgBefore.visible) === JSON.stringify(imgBefore.dom),
