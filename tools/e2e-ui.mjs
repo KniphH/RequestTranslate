@@ -322,8 +322,15 @@ const server = http.createServer(async (req, res) => {
       // 默认回「本地假译文」；带 ?tag=xxx 时缀一个标记 ——
       // 「换配置不重发」那一节靠它认「切回来看到的是这个配置自己的译文」，
       // 而不是上一个配置留在界面上的东西。
-      const tag = new URL(req.url, 'http://x').searchParams.get('tag');
+      const q = new URL(req.url, 'http://x').searchParams;
+      const tag = q.get('tag');
       res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+      // ?long=1：回一段**够长**的译文（撑出滚动条用；「重试不弹回顶部」那节要）
+      if (q.get('long')) {
+        const body = Array.from({ length: 80 }, (_, i) => '第' + (i + 1) + '段：这是一句用来把结果区撑长的假译文。').join('\n');
+        res.end(body + (tag ? '【' + tag + '】' : ''));
+        return;
+      }
       res.end('本地假译文' + (tag ? '【' + tag + '】' : ''));
     });
     return;
@@ -691,6 +698,100 @@ try {
   await page.waitForTimeout(200);
 
   /* ------------------------------------------------------------------ */
+  /* 1.6 iframe 里划词（薄桥接 frame-bridge.js）                          */
+  /* ------------------------------------------------------------------ */
+
+  console.log('\n1.6 iframe 里划词（薄桥接）');
+
+  // srcdoc 的 frame 考的是 match_origin_as_fallback 这条注入（about:blank 同族）
+  await page.evaluate(() => {
+    const f = document.createElement('iframe');
+    f.id = 'e2e-frame';
+    f.style.cssText = 'position:fixed;left:130px;top:430px;width:420px;height:170px;border:1px solid #888;z-index:5;';
+    f.srcdoc =
+      '<body style="margin:0"><p id="fp" style="font:16px/26px sans-serif;padding:10px">' +
+      '内嵌小页面里的文字，专门验 iframe 划词桥。</p></body>';
+    document.body.appendChild(f);
+  });
+  await page.waitForFunction(
+    () => {
+      const f = document.getElementById('e2e-frame');
+      try {
+        return !!(f.contentDocument && f.contentDocument.getElementById('fp'));
+      } catch {
+        return false;
+      }
+    },
+    null,
+    { timeout: 6000 }
+  );
+  await page.waitForTimeout(500); // 等桥注入
+
+  // 在 frame 里做选区 —— 程序化 addRange 会自动触发 selectionchange，桥靠它起作用。
+  // 先清掉顶层选区：真实使用里用户点进 iframe 时顶层选区自然塌掉（顶层优先级更高，
+  // 不清的话按钮会贴在顶层选区上 —— 这是代码的正确行为，不是 bug）。
+  const frGeo = await page.evaluate(() => {
+    window.getSelection().removeAllRanges();
+    const host = document.getElementById('e2e-frame');
+    const doc = host.contentDocument;
+    const p = doc.getElementById('fp');
+    const range = doc.createRange();
+    range.selectNodeContents(p);
+    const s = doc.defaultView.getSelection();
+    s.removeAllRanges();
+    s.addRange(range);
+    const r = range.getBoundingClientRect();
+    const fr = host.getBoundingClientRect();
+    return {
+      innerRight: r.right,
+      innerBottom: r.bottom,
+      frameLeft: fr.left,
+      frameTop: fr.top,
+      // 按钮贴选区右下 + 6px 缝（updateTrigger 非 atMouse 的定位），坐标 = frame 偏移 + frame 内
+      expectX: fr.left + r.right + 6,
+      expectY: fr.top + r.bottom + 6
+    };
+  });
+  await page.waitForTimeout(700); // 桥防抖 120ms + 顶层防抖 10ms + 余量
+
+  const mFr = await measure();
+  check(
+    'iframe 里划词 → 小圆点也出现了',
+    !!(mFr.trigger && mFr.trigger.display !== 'none'),
+    `display=${mFr.trigger && mFr.trigger.display}`
+  );
+  if (mFr.trigger && mFr.trigger.display !== 'none') {
+    // 按钮（45px 方块）左上角 = 选区末行右下 + 6px 缝：正好是 frame 内坐标 + frame 偏移
+    near('横坐标 = frame 偏移 + frame 内文字位置', mFr.trigger.x - frGeo.expectX, 0, 30, 'px');
+    near('纵坐标 = frame 偏移 + frame 内文字位置', mFr.trigger.y - frGeo.expectY, 0, 30, 'px');
+  }
+  const pending = await page.evaluate(() => {
+    const host = document.getElementById('request-translate-host');
+    const t = host.shadowRoot.querySelector('.rt-trigger');
+    return t ? t.dataset.pendingText || '' : '';
+  });
+  check('按钮带着 frame 里的文本（pendingText）', pending.includes('内嵌小页面'), `「${pending.slice(0, 24)}」`);
+
+  // frame 里的选区清掉 → 桥报一条空文本 → 按钮收起
+  await page.evaluate(() => {
+    document.getElementById('e2e-frame').contentDocument.defaultView.getSelection().removeAllRanges();
+  });
+  await page.waitForTimeout(500);
+  const mFrClear = await measure();
+  check(
+    'frame 选区清掉 → 按钮收起（顶层没选区可兜）',
+    !mFrClear.trigger || mFrClear.trigger.display === 'none',
+    `display=${mFrClear.trigger && mFrClear.trigger.display}`
+  );
+
+  // 收拾：iframe 拆掉 + 恢复顶层选区（后面的小节要点 .rt-trigger，按钮不能没）
+  await page.evaluate(() => {
+    document.getElementById('e2e-frame').remove();
+  });
+  await selectText();
+  await page.waitForTimeout(200);
+
+  /* ------------------------------------------------------------------ */
   /* 2. 点开面板，量顶栏底栏                                             */
   /* ------------------------------------------------------------------ */
 
@@ -900,8 +1001,197 @@ try {
   check('id 不重复（它进存档，重了会连坐）',
     new Set(hintButtons.ids).size === hintButtons.ids.length, hintButtons.ids.join(','));
 
+  /* 「新选配置放哪边」只在显示条数 > 1 时有意义（kniph 2026-10-17）——
+     跟着「面板显示条数」联动显隐。 */
+  /* **不 reload**：reload 会把后面几节的页面状态全打乱（上一版就这么挂的）。
+     直接改「面板显示条数」下拉并派发 input，联动逻辑自己会跑。 */
+  const slotRowVisibility = async (n) => {
+    await opt.evaluate((v) => {
+      const el = document.getElementById('s-slots');
+      el.value = String(v);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }, n);
+    await opt.waitForTimeout(250);
+    return opt.evaluate(() => {
+      const row = document.getElementById('row-slotinsert');
+      return { exists: !!row, hidden: row ? row.hidden : null };
+    });
+  };
+
+  /* 自定义面板样式（2026-10-18）：点「填入示例：护眼暖色」→ 预览面板底色应该真的变。
+     这条同时钉住三件事：① textarea 接到了 state.panelCss；② 预览注入了用户 CSS；
+     ③ 注入位置在预设之后（否则会被预设盖住、颜色不变）。 */
+  {
+    const readCss = () =>
+      opt.evaluate(() => {
+        document.querySelector('.tab[data-tab="settings"]')?.click();
+        const host = document.getElementById('panel-preview');
+        const sh = host && host.shadowRoot;
+        const p = sh && sh.querySelector('.rt-panel');
+        const u = sh && sh.querySelector('#rt-user-css');
+        return {
+          bgVar: p ? getComputedStyle(p).getPropertyValue('--rt-bg').trim() : '',
+          hasUserCss: !!u,
+          cssLen: u && u.textContent ? u.textContent.length : 0,
+          panelId: p ? p.id : '',
+          themeAttr: p ? (p.dataset.rtTheme || '') : '',
+        };
+      });
+
+    const b4 = await readCss();
+    await opt.evaluate(() => document.getElementById('btn-panelcss-warm')?.click());
+    await opt.waitForTimeout(450);
+    const warm = await readCss();
+    check('点「填入示例」→ 面板的 --rt-bg 真的变成暖色 #181713',
+      warm.bgVar === '#181713', b4.bgVar + ' → ' + warm.bgVar);
+    check('自定义 CSS 以 #rt-user-css 注入进 shadow root',
+      warm.hasUserCss && warm.cssLen > 100, JSON.stringify(warm));
+    check('面板带自定义钩子（id=rt-panel + data-rt-theme）',
+      warm.panelId === 'rt-panel' && (warm.themeAttr === 'dark' || warm.themeAttr === 'light'),
+      JSON.stringify(warm));
+
+    await opt.evaluate(() => document.getElementById('btn-panelcss-clear')?.click());
+    await opt.waitForTimeout(450);
+    const cleared = await readCss();
+    /* 回到的是「预设在这个主题下的值」—— 别写死 #0f0f11：预览可能正处在浅色主题 */
+    check('点「清空」→ 自定义样式移除、回到预设配色',
+      !cleared.hasUserCss && cleared.bgVar === b4.bgVar, JSON.stringify(cleared) + ' 期望回到 ' + b4.bgVar);
+  }
+  /* ---- 设置页分组折叠（kniph 2026-10-17：7 个区块 25 行平铺，一屏装不下）----
+     用原生 <details>，默认展开常用的三块。这里钉住「分组存在、默认状态合理」。 */
+  const groups = await opt.evaluate(() => {
+    const list = [...document.querySelectorAll('.set-group')];
+    return {
+      count: list.length,
+      openTitles: list.filter((d) => d.open).map((d) => d.querySelector('.set-group-t').textContent),
+      allTitles: list.map((d) => d.querySelector('.set-group-t').textContent),
+      counts: list.map((d) => d.querySelector('summary').dataset.count || '')
+    };
+  });
+  check('设置页分成可折叠的分组（>=5 个）', groups.count >= 5, groups.allTitles.join(','));
+  check('默认展开最常用的几块（划词行为 / 翻译 / 面板）',
+    groups.openTitles.includes('划词行为') && groups.openTitles.includes('翻译') && groups.openTitles.includes('面板'),
+    groups.openTitles.join(','));
+  check('每个分组的标题上标了「里面有几项」',
+    groups.counts.every((c) => /^\d+ 项$/.test(c)), groups.counts.join('|'));
+
+  /* 面板效果预览 = **真的结果面板**（kniph 2026-10-17：不要模拟，要真的）。
+     样式表和 content.js 共用 lib/panel-styles.js，跑在 shadow root 里。 */
+  const readPv = () =>
+    opt.evaluate(() => {
+      // 真面板在设置页签里：页签没激活时整块 display:none，读不到
+      document.querySelector('.tab[data-tab="settings"]')?.click();
+      const grp = document.getElementById('panel-preview')?.closest('.set-group');
+      if (grp) grp.open = true;
+      const host = document.getElementById('panel-preview');
+      const sh = host && host.shadowRoot;
+      const panel = sh && sh.querySelector('.rt-panel');
+      if (!panel) return null;
+      const cs = getComputedStyle(panel);
+      return {
+        hasShadow: !!sh,
+        width: Math.round(panel.getBoundingClientRect().width),
+        fsVar: cs.getPropertyValue('--rt-fs').trim(),
+        outCapVar: cs.getPropertyValue('--rt-max-h').trim(),
+        maxH: cs.maxHeight,
+        light: panel.classList.contains('light'),
+        hasSrc: !!sh.querySelector('.rt-src'),
+        hasOut: !!sh.querySelector('.rt-out')
+      };
+    });
+  const pv = await readPv();
+  check('面板分组里的预览是**真的结果面板**（shadow DOM + rt-panel）',
+    !!pv && pv.hasShadow && pv.hasSrc && pv.hasOut, JSON.stringify(pv));
+  check('真面板的样式表生效了（宽度 = 设置值 460 或等比缩后仍可量）',
+    !!pv && pv.width > 100, pv && pv.width + 'px');
+  check('字号写进了 --rt-fs（真面板也是这个变量）',
+    !!pv && /px$/.test(pv.fsVar), pv && pv.fsVar);
+
+  /* 三个量必须真的驱动真面板（不是示意图）：宽度 / 字号 / 高度各有判据。 */
+  const setNum = (sel, v) =>
+    opt.evaluate(({ s2, val }) => {
+      const el = document.querySelector(s2);
+      el.value = String(val);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }, { s2: sel, val: v });
+  const readPvPanel = () =>
+    opt.evaluate(() => {
+      document.querySelector('.tab[data-tab="settings"]')?.click();
+      const host = document.getElementById('panel-preview');
+      const panel = host && host.shadowRoot && host.shadowRoot.querySelector('.rt-panel');
+      if (!panel) return null;
+      const cs = getComputedStyle(panel);
+      return {
+        w: Math.round(panel.getBoundingClientRect().width),
+        h: Math.round(panel.getBoundingClientRect().height),
+        fs: parseFloat(cs.getPropertyValue('--rt-fs')),
+        maxH: cs.maxHeight,
+        outCap: cs.getPropertyValue('--rt-max-h').trim(),
+        raw: panel.style.width
+      };
+    });
+
+  // 宽度：改设置 → 真面板的 style.width 跟着变（再按可用宽度等比缩）
+  await setNum('#s-width', 700);
+  await opt.waitForTimeout(200);
+  const w700 = await readPvPanel();
+  await setNum('#s-width', 320);
+  await opt.waitForTimeout(200);
+  const w320 = await readPvPanel();
+  check('改「面板宽度」→ 真面板的宽度跟着变',
+    w700 && w320 && w700.raw === '700px' && w320.raw === '320px',
+    (w700 && w700.raw) + ' → ' + (w320 && w320.raw));
+
+  // 字号：--rt-fs 直接跟着变（真面板用的就是这个变量）
+  await setNum('#s-font', 30);
+  await opt.waitForTimeout(200);
+  const f30 = await readPvPanel();
+  await setNum('#s-font', 14);
+  await opt.waitForTimeout(200);
+  const f14 = await readPvPanel();
+  check('改「字号」→ 真面板的 --rt-fs 跟着变',
+    f30 && f14 && f30.fs === 30 && f14.fs === 14, (f30 && f30.fs) + 'px → ' + (f14 && f14.fs) + 'px');
+
+  // 面板高度：max-height（真面板就是这条），内容够长时高度真的变
+  await setNum('#s-height', 0);
+  await opt.waitForTimeout(200);
+  const hAuto = await readPvPanel();
+  await setNum('#s-height', 620);
+  await opt.waitForTimeout(200);
+  const hFixed = await readPvPanel();
+  check('改「结果面板高度」→ 真面板的 max-height 跟着变',
+    hFixed && hFixed.maxH === '620px', hAuto && hAuto.maxH + ' → ' + (hFixed && hFixed.maxH));
+
+  // 结果区上限：--rt-max-h（vh）
+  await setNum('#s-height', 0);
+  await setNum('#s-maxh', 10);
+  await opt.waitForTimeout(200);
+  const c10 = await readPvPanel();
+  await setNum('#s-maxh', 46);
+  await opt.waitForTimeout(200);
+  const c46 = await readPvPanel();
+  check('改「结果区最大高度」→ 真面板的 --rt-max-h 跟着变',
+    c10 && c46 && c10.outCap === '10vh' && c46.outCap === '46vh',
+    (c10 && c10.outCap) + ' → ' + (c46 && c46.outCap));
+
+  // 还原默认，别影响后面用例
+  await setNum('#s-width', 460);
+  await setNum('#s-font', 20);
+  await setNum('#s-height', 0);
+  await setNum('#s-maxh', 46);
+  await opt.waitForTimeout(150);
+  const v1 = await slotRowVisibility(1);
+  check('显示 1 条时「新选配置放哪边」藏起来（两种放法都是切换，没意义）',
+    v1.exists && v1.hidden === true, JSON.stringify(v1));
+  const v2 = await slotRowVisibility(2);
+  check('显示 2 条时它出现', v2.exists && v2.hidden === false, JSON.stringify(v2));
+
+  /* **必须还原成 1 条** —— 后面第 11 节假定面板是单条。
+     （重试按钮现在单条/多条都在每块结果自己的尾部，所以这里其实只是保持场景一致。） */
+  await slotRowVisibility(1);
+
   const HIDE_ID = 'set-maxh';
-  await opt.evaluate(() => document.querySelector('.tab[data-tab="settings"]')?.click());
+  await opt.evaluate(() => (document.querySelector('.tab[data-tab="settings"]')?.click(), document.querySelectorAll('.set-group').forEach((d) => { d.open = true; })));
   await opt.waitForTimeout(200);
   const hintBefore = await opt.evaluate((id) => {
     const el = document.querySelector(`[data-hint="${id}"]`);
@@ -931,7 +1221,7 @@ try {
 
   await opt.reload();
   await opt.waitForTimeout(900);
-  await opt.evaluate(() => document.querySelector('.tab[data-tab="settings"]')?.click());
+  await opt.evaluate(() => (document.querySelector('.tab[data-tab="settings"]')?.click(), document.querySelectorAll('.set-group').forEach((d) => { d.open = true; })));
   await opt.waitForTimeout(200);
   check('重新打开设置页它仍然是收着的（永久生效，不是本次会话）',
     await opt.evaluate((id) => getComputedStyle(document.querySelector(`[data-hint="${id}"]`)).display === 'none', HIDE_ID));
@@ -1393,7 +1683,7 @@ try {
 
   // 「设置」是第二个 tab，不点开的话里面的元素量不到尺寸
   await opt.evaluate(() => {
-    document.querySelector('.tab[data-tab="settings"]')?.click();
+    (document.querySelector('.tab[data-tab="settings"]')?.click(), document.querySelectorAll('.set-group').forEach((d) => { d.open = true; }));
   });
   await opt.waitForTimeout(150);
 
@@ -1457,7 +1747,7 @@ try {
 
   console.log('\n6. 翻译按钮：换预设、改大小、填一段自己的 SVG');
 
-  await opt.evaluate(() => document.querySelector('.tab[data-tab="settings"]')?.click());
+  await opt.evaluate(() => (document.querySelector('.tab[data-tab="settings"]')?.click(), document.querySelectorAll('.set-group').forEach((d) => { d.open = true; })));
   await opt.waitForTimeout(200);
 
   // 卡片上画的是「你实际会用的图标」，所以得从「没填图标」的状态开始量
@@ -2357,6 +2647,9 @@ try {
     if (i >= 0) state.configs[i] = cfg;
     else state.configs.push(cfg);
     state.activeConfigId = id;
+    /* 顺手把对比名单清空：这一节要的是「顶栏那条 = 本地假接口」，
+       名单非空时 initSlots 会按名单取（那是设置页的意图），就不是这条了。 */
+    state.settings = { ...state.settings, slotConfigs: [] };
     // 把「显示原文」打开：原文区是开面板之后才填进去的，会让面板临时长高，
     // 正好是夹取最容易漏掉的那种情况（这也是唯一能让面板切底的路径）
     state.settings = { ...state.settings, showOriginal: true };
@@ -4073,7 +4366,9 @@ try {
           .waitForFunction(
             () => {
               const root = document.getElementById('request-translate-host')?.shadowRoot;
-              const btn = root?.querySelector('.rt-btn[data-act="retry"]');
+              // 重试在译文尾部那排（2026-10-17）。单条和多条现在**都走块渲染**，所以都在 .rt-slot 里
+              const btn = root?.querySelector('.rt-slot .rt-acts .rt-act[data-act="retry-one"]') ||
+                root?.querySelector('.rt-acts .rt-act[data-act="retry-one"]');
               return !!btn && !btn.disabled;
             },
             null,
@@ -4104,7 +4399,7 @@ try {
       setClipboard('image', shotPng2);
       await cpage.waitForTimeout(400);
       const hitsBeforeRetry = textHits;
-      await cpage.click('.rt-btn[data-act="retry"]', { force: true });
+      await cpage.click('.rt-slot .rt-acts .rt-act[data-act="retry-one"]', { force: true });
       const didRetry = await waitUntil(() => textHits >= hitsBeforeRetry + 1);
       check('点 ↻ 真的重发了一条（没卡在失败态里）', didRetry,
         `textHits ${hitsBeforeRetry} → ${textHits}`);
@@ -4165,7 +4460,7 @@ try {
       setClipboard('image', shotPng2);
       await cpage.waitForTimeout(400);
       const ocrHitsBeforeRetry = ocrHits;
-      await cpage.click('.rt-btn[data-act="retry"]', { force: true });
+      await cpage.click('.rt-slot .rt-acts .rt-act[data-act="retry-one"]', { force: true });
       const ocrRetried = await waitUntil(() => ocrHits >= ocrHitsBeforeRetry + 1);
       check('OCR 那条路的 ↻ 也重发了一条', ocrRetried,
         `ocrHits ${ocrHitsBeforeRetry} → ${ocrHits}`);
@@ -4257,7 +4552,12 @@ try {
         cpage.evaluate(() => {
           const root = document.getElementById('request-translate-host').shadowRoot;
           const sel = root.querySelector('.rt-cfg');
-          return { opts: [...sel.options].map((o) => o.value), value: sel.value, title: sel.title };
+          // 原生 <select>：选项就是列表，value 就是当前选中（2026-10-17 换回来的）
+          return {
+            opts: [...sel.options].map((o) => o.value),
+            value: sel.value,
+            title: sel.title
+          };
         });
 
       const imgSel = await readCfgSelect();
@@ -4627,9 +4927,20 @@ try {
       // （面板从上一节就开着，.rt-out 一直都在，等元素等于不等）
       await cpage.waitForFunction(() => !document.querySelector('[data-rt-shot]'), null, { timeout: 8000 })
         .catch(() => {});
+      /* **先等「这一发真的打出去了」**（kniph 2026-10-18 通读：这条断言偶发变红）。
+         下面那句等「.rt-out 里出现译文」有个陷阱：上一节的译文**本来就在那儿**，
+         于是它立刻返回、等于没等，读到的还是新流程进行中的状态（msg 停在「请求中…」）。
+         用假接口的计数当锚点，才能确定「新的这一发已经开始」。 */
+      {
+        const dl = Date.now() + 8000;
+        while (ocrHits === shotHitBefore && Date.now() < dl) await cpage.waitForTimeout(50);
+      }
       await cpage.waitForFunction((needle) => {
         const root = document.getElementById('request-translate-host')?.shadowRoot;
-        return !!root && root.querySelector('.rt-out')?.textContent.includes(needle);
+        const out = root?.querySelector('.rt-out')?.textContent || '';
+        const msg = root?.querySelector('.rt-msg')?.textContent || '';
+        // 译文到位 **且** 状态栏已经脱离忙碌态 —— 后面那条断言读的就是状态栏
+        return out.includes(needle) && !/请求中|正在识别/.test(msg);
       }, '本地假译文', { timeout: 30000 }).catch(() => {});
       const shotOut = await cpage.evaluate(() => {
         const root = document.getElementById('request-translate-host')?.shadowRoot;
@@ -4826,20 +5137,23 @@ try {
   const readPanel = () =>
     page.evaluate(() => {
       const root = document.getElementById('request-translate-host').shadowRoot;
+      // 原生 <select>：value 就是当前主配置（2026-10-17 换回来的）
+      const sel = root.querySelector('.rt-cfg');
       return {
-        cfg: root.querySelector('.rt-cfg').value,
+        cfg: sel.value,
         out: root.querySelector('.rt-out').textContent,
         msg: root.querySelector('.rt-msg').textContent,
         dot: root.querySelector('.rt-dot').className
       };
     });
 
-  /** 像用户那样拨一下顶栏的下拉（监听的就是 change 这个口子） */
+  /** 像用户那样拨顶栏的下拉（原生 select 的 change 口子） */
   const pickConfig = (id) =>
     page.evaluate((v) => {
-      const sel = document
-        .getElementById('request-translate-host')
-        .shadowRoot.querySelector('.rt-cfg');
+      const root = document.getElementById('request-translate-host').shadowRoot;
+      const sel = root.querySelector('.rt-cfg');
+      if (![...sel.options].some((o) => o.value === v)) throw new Error('下拉里没有这条配置：' + v);
+      if (sel.value === v) return; // 拨回同一个值不会触发 change
       sel.value = v;
       sel.dispatchEvent(new Event('change', { bubbles: true }));
     }, id);
@@ -4907,7 +5221,7 @@ try {
   check('B 的译文也还留着', p3.out.includes('本地假译文【beta】'), `${p3.msg}｜${p3.out}`);
 
   /* ↻ 的语义：用当前配置**重发同一条请求**（这是唯一该重发的地方） */
-  await page.click('.rt-btn[data-act="retry"]', { force: true });
+  await page.click('.rt-slot .rt-acts .rt-act[data-act="retry-one"]', { force: true });
   await settlePanel();
   const p4 = await readPanel();
   check('点 ↻：用当前配置（B）重发了一条', textHits === reqB + 1, `textHits ${reqB} → ${textHits}`);
@@ -5146,7 +5460,7 @@ try {
   await opt2.waitForSelector('#cfg-list .cfg-item', { timeout: 8000 });
   await opt2.waitForTimeout(300);
 
-  await opt2.evaluate(() => document.querySelector('.tab[data-tab="settings"]')?.click());
+  await opt2.evaluate(() => (document.querySelector('.tab[data-tab="settings"]')?.click(), document.querySelectorAll('.set-group').forEach((d) => { d.open = true; })));
   await opt2.waitForTimeout(200);
 
   // 先改一处一眼能认出来的东西（面板字号），证明导出的确实是**当前**状态
@@ -5286,6 +5600,96 @@ try {
     dialogs.some((d) => d.type === 'alert' && /kind/.test(d.message)),
     JSON.stringify(dialogs)
   );
+
+  /* ---- 加密导出 → 导入：整条链在真浏览器里走一遍（Web Crypto 是真调的） ---- */
+  // 前面的「列表重画」检查切到了 configs 页签 —— 导出按钮在 settings 面板里，先切回去
+  await opt2.evaluate(() => (document.querySelector('.tab[data-tab="settings"]')?.click(), document.querySelectorAll('.set-group').forEach((d) => { d.open = true; })));
+  await opt2.waitForTimeout(200);
+  // 勾上「加密导出」→ 点导出 → 口令模态（两遍）→ 下载的是加密外壳
+  await opt2.evaluate(() => { document.getElementById('chk-encrypt').checked = true; });
+  dialogs.length = 0;
+  const [dlEnc] = await Promise.all([
+    opt2.waitForEvent('download', { timeout: 15000 }),
+    opt2.click('#btn-export'),
+    // 口令模态是页面内 DOM（不是 window.prompt）—— 等它出现后填两遍、点确定
+    (async () => {
+      await opt2.waitForSelector('#pass-dialog:not([hidden])', { timeout: 5000 });
+      await opt2.fill('#pass-input', '测试口令abc');
+      await opt2.fill('#pass-again', '测试口令abc');
+      await opt2.click('#pass-ok');
+    })()
+  ]);
+  const encPath = await dlEnc.path();
+  const encJson = JSON.parse(fs.readFileSync(encPath, 'utf8'));
+  check('加密导出的文件是加密外壳（明文配置一个字不在）',
+    encJson.kind === 'request-translate-encrypted' && encJson.crypto && encJson.crypto.scheme === 'pbkdf2-aesgcm-v1' &&
+      typeof encJson.data === 'string' && !encJson.configs,
+    `kind=${encJson.kind} 有无 configs=${('configs' in encJson)}`);
+
+  // 导入它：先输错口令 → alert 说「口令不对」；再输对 → 走正常确认覆盖
+  const encStateBefore = await stateNow();
+  await opt2.setInputFiles('#file-import', encPath);
+  await opt2.waitForSelector('#pass-dialog:not([hidden])', { timeout: 5000 });
+  await opt2.fill('#pass-input', '错的口令');
+  await opt2.click('#pass-ok');
+  await opt2.waitForTimeout(600);
+  check(
+    '错口令被挡下并明说「口令不对」',
+    dialogs.some((d) => d.type === 'alert' && /口令不对/.test(d.message)),
+    JSON.stringify(dialogs)
+  );
+  check('错口令没动存档', JSON.stringify(await stateNow()) === JSON.stringify(encStateBefore));
+
+  dialogs.length = 0;
+  await opt2.setInputFiles('#file-import', encPath);
+  await opt2.waitForSelector('#pass-dialog:not([hidden])', { timeout: 5000 });
+  await opt2.fill('#pass-input', '测试口令abc');
+  await opt2.click('#pass-ok');
+  await opt2.waitForTimeout(1500);
+  const afterEnc = await stateNow();
+  check('对上口令后正常导入（导出那一刻的状态回来了）',
+    afterEnc.count === 2 && afterEnc.firstName === '从别的设备搬来的' && afterEnc.fontSize === 31,
+    JSON.stringify(afterEnc));
+
+  // 导入口令框点取消 → 什么都不发生（连确认框都不该弹）
+  dialogs.length = 0;
+  await opt2.setInputFiles('#file-import', encPath);
+  await opt2.waitForSelector('#pass-dialog:not([hidden])', { timeout: 5000 });
+  await opt2.click('#pass-cancel');
+  await opt2.waitForTimeout(600);
+  check('导入口令框点取消 → 连确认框都不弹，存档原样',
+    !dialogs.some((d) => d.type === 'confirm') && JSON.stringify(await stateNow()) === JSON.stringify(afterEnc),
+    JSON.stringify(dialogs));
+
+  /* ---- 快捷键：显示当前绑定 + 跳转设置页 ----
+     实证结论（上一条 e2e 自己抓出来的）：chrome.commands.update 在 Chromium 里根本不存在，
+     扩展改不了自己的快捷键。能做的只有显示 getAll + 跳转。同时这条证明
+     「全新安装时 manifest 的 suggested_key 自动生效」（e2e 的 profile 是全新装的，Alt+T 在）。 */
+  const boundNow = await opt2.evaluate(
+    () =>
+      new Promise((res) => {
+        chrome.commands.getAll((l) => res((l.find((c) => c.name === 'translate-selection') || {}).shortcut || ''));
+      })
+  );
+  check('全新安装的扩展，manifest 里的快捷键自动生效（Alt+T）',
+    boundNow === 'Alt+T', `getAll 读到 ${boundNow || '（空）'}`);
+  const boundAll = await opt2.evaluate(
+    () =>
+      new Promise((res) => {
+        chrome.commands.getAll((l) => res(l.map((c) => `${c.name}=${c.shortcut || '未设置'}`).join(',')));
+      })
+  );
+  check('两条截图快捷键默认未设键（用户自己去快捷键设置页挑）',
+    /shot-translate=未设置/.test(boundAll) && /ocr-clipboard=未设置/.test(boundAll), boundAll);
+  await opt2.click('#btn-hotkey-open');
+  await opt2.waitForTimeout(800);
+  const tabsNow = await opt2.context().pages();
+  const opened = tabsNow.some((p) => /extensions\/shortcuts$/.test(p.url()));
+  check('点按钮跳到了浏览器的快捷键设置页', opened, tabsNow.map((p) => p.url()).slice(-3).join(' | '));
+  await opt2.bringToFront();
+  // 收尾：把勾选框放回去（后面的小节跑在同一页上）
+  // 收尾：把勾选框放回去（后面的小节跑在同一页上）
+  await opt2.evaluate(() => { document.getElementById('chk-encrypt').checked = false; });
 
   opt2.off('dialog', onDialog);
   check('导出导入全程没报错', ioErrors.length === 0, ioErrors.join(' | '));
@@ -5427,7 +5831,7 @@ try {
   await page.waitForTimeout(700);
 
   const reqLong = textHits;
-  await page.click('.rt-btn[data-act="retry"]', { force: true });
+  await page.click('.rt-slot .rt-acts .rt-act[data-act="retry-one"]', { force: true });
   // 等它吐到「已经该出滚动条」的长度，量一次正在流的时候
   await page
     .waitForFunction(
@@ -5941,6 +6345,593 @@ try {
     `open=${foldedOpened.open}`);
 
   await opt3.close();
+
+  /* ------------------------------------------------------------------ */
+  /* 17. 对比槽位：面板一次显示多条结果                                    */
+  /* ------------------------------------------------------------------ */
+
+  console.log('\n17. 对比槽位：一次显示多条配置的结果');
+
+  // 两条假接口（?tag 区分谁的译文），并把「显示条数」设成 2
+  // storage 操作得在扩展页面里做（普通网页里没有 chrome.storage）
+  const opt4 = await ctx.newPage();
+  await opt4.goto(`chrome-extension://${extId}/options.html`, { waitUntil: 'load' });
+  await opt4.waitForTimeout(400);
+
+  const seedSlots = (u) =>
+    opt4.evaluate(
+      async (url) => {
+        const { state } = await chrome.storage.local.get('state');
+        const mk = (id, tag, name) => ({
+          id, name, note: '', adapter: '', request: `curl ${url}?tag=${tag}`, path: '', responseMode: 'text'
+        });
+        for (const [id, tag, name] of [['e2e-slot-a', 'sa', '对比甲'], ['e2e-slot-b', 'sb', '对比乙']]) {
+          const i = state.configs.findIndex((c) => c.id === id);
+          if (i >= 0) state.configs[i] = mk(id, tag, name);
+          else state.configs.push(mk(id, tag, name));
+        }
+        state.settings = { ...state.settings, panelSlots: 2, slotConfigs: ['e2e-slot-a', 'e2e-slot-b'] };
+        state.activeConfigId = 'e2e-slot-a';
+        await chrome.storage.local.set({ state });
+      },
+      u
+    );
+
+  const readSlots = () =>
+    page.evaluate(() => {
+      const root = document.getElementById('request-translate-host').shadowRoot;
+      const out = root.querySelector('.rt-out');
+      const sel = root.querySelector('.rt-cfg');
+      return {
+        names: [...out.querySelectorAll('.rt-slot-name')].map((n) => n.textContent),
+        bodies: [...out.querySelectorAll('.rt-slot-b')].map((n) => n.textContent),
+        // 原生 select：显示的是当前选中的那个 option 的文本
+        hdr: sel && sel.selectedIndex >= 0 ? sel.options[sel.selectedIndex].textContent : '',
+        out: out.textContent
+      };
+    });
+
+  const firePanel = async () => {
+    await page.evaluate(() => window.getSelection()?.removeAllRanges());
+    await selectText();
+    await page.waitForTimeout(300);
+    await page.click('.rt-trigger', { force: true });
+  };
+
+  await seedSlots(`http://127.0.0.1:${port}/text`);
+  await page.reload();
+  await page
+    .waitForFunction(() => !!document.getElementById('request-translate-host'), null, { timeout: 10000 })
+    .catch(() => {});
+  await page.waitForTimeout(600);
+  await firePanel();
+
+  await page
+    .waitForFunction(
+      () => {
+        const out = document.getElementById('request-translate-host').shadowRoot.querySelector('.rt-out');
+        const blocks = [...out.querySelectorAll('.rt-slot-b')];
+        return blocks.length === 2 && blocks.every((b) => b.textContent.includes('本地假译文'));
+      },
+      null,
+      { timeout: 15000 }
+    )
+    .catch(() => {});
+  const multi = await readSlots();
+  check(
+    '两块结果同时出现，各自带配置名和各自的译文',
+    multi.names.length === 2 && multi.names[0] === '对比甲' && multi.names[1] === '对比乙' &&
+      multi.bodies[0].includes('【sa】') && multi.bodies[1].includes('【sb】'),
+    JSON.stringify(multi)
+  );
+  check('顶栏下拉显示的是当前主配置（第一条）', multi.hdr.includes('对比甲'), multi.hdr);
+
+  /* 顺序 = 设置里配置列表的顺序（kniph 2026-10-17：「点配置这个行为不应该修改
+     顺序本身」）。名单给的是 ['e2e-slot-b','e2e-slot-a']（**反过来**），
+     面板必须按**设置里的排序**（甲在乙前）显示，而不是按名单的先后。 */
+  await opt4.evaluate(async () => {
+    const { state } = await chrome.storage.local.get('state');
+    // 故意把名单顺序倒过来给
+    state.settings = { ...state.settings, slotConfigs: ['e2e-slot-b', 'e2e-slot-a'] };
+    await chrome.storage.local.set({ state });
+  });
+  await page.reload();
+  await page
+    .waitForFunction(() => !!document.getElementById('request-translate-host'), null, { timeout: 10000 })
+    .catch(() => {});
+  await page.waitForTimeout(600);
+  await firePanel();
+  await page
+    .waitForFunction(
+      () => {
+        const out = document.getElementById('request-translate-host').shadowRoot.querySelector('.rt-out');
+        return out.querySelectorAll('.rt-slot-b').length === 2;
+      },
+      null,
+      { timeout: 15000 }
+    )
+    .catch(() => {});
+  const orderedBySettings = await readSlots();
+  check('名单顺序与设置相反时，面板仍按**设置里的配置顺序**排（甲在前）',
+    orderedBySettings.names[0] === '对比甲' && orderedBySettings.names[1] === '对比乙',
+    JSON.stringify(orderedBySettings.names));
+
+
+  // 勾一条没在槽位里的 → 顶掉队首（甲出局），新的排在队尾
+  opt4.evaluate(
+    async (url) => {
+      const { state } = await chrome.storage.local.get('state');
+      const cfg = { id: 'e2e-slot-c', name: '对比丙', note: '', adapter: '', request: `curl ${url}?tag=sc`, path: '', responseMode: 'text' };
+      const i = state.configs.findIndex((c) => c.id === 'e2e-slot-c');
+      if (i >= 0) state.configs[i] = cfg;
+      else state.configs.push(cfg);
+      await chrome.storage.local.set({ state });
+    },
+    `http://127.0.0.1:${port}/text`
+  );
+  await page.waitForTimeout(800);
+  await page.evaluate(() => {
+    const root = document.getElementById('request-translate-host').shadowRoot;
+    // 原生 select：拨到新配置 = 切换（顶掉队首）
+    const sel = root.querySelector('.rt-cfg');
+    sel.value = 'e2e-slot-c';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page
+    .waitForFunction(
+      () => {
+        const root = document.getElementById('request-translate-host').shadowRoot;
+        const names = [...root.querySelectorAll('.rt-slot-name')].map((n) => n.textContent);
+        return names.length === 2 && names.includes('对比丙') &&
+          [...root.querySelectorAll('.rt-slot-b')].some((b) => b.textContent.includes('【sc】'));
+      },
+      null,
+      { timeout: 15000 }
+    )
+    .catch(() => {});
+  const afterTop = await readSlots();
+  check(
+    '拨下拉选一条新的：顶掉队首（甲出局），新的排在队尾',
+    afterTop.names.length === 2 && afterTop.names[0] === '对比乙' && afterTop.names[1] === '对比丙' &&
+      afterTop.bodies[0].includes('【sb】') && afterTop.bodies[1].includes('【sc】'),
+    JSON.stringify(afterTop.names)
+  );
+
+  /* 选一条**已经在显示**的配置：只该把它挪到队尾，成员一个不能少 ——
+     以前这里 slice(0, max) 会顺手砍掉别的，看起来像「一选就缩成一个」。 */
+  await page.evaluate(() => {
+    const root = document.getElementById('request-translate-host').shadowRoot;
+    const sel = root.querySelector('.rt-cfg');
+    sel.value = 'e2e-slot-b'; // 乙已经在槽位里（当前排第一）
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page
+    .waitForFunction(
+      () => {
+        const root = document.getElementById('request-translate-host').shadowRoot;
+        const names = [...root.querySelectorAll('.rt-slot-name')].map((n) => n.textContent);
+        return names.length === 2 && names[1] === '对比乙';
+      },
+      null,
+      { timeout: 15000 }
+    )
+    .catch(() => {});
+  const reordered = await readSlots();
+  check(
+    '选一条已在显示的配置：只挪到队尾，成员不丢（不会缩成一个）',
+    reordered.names.length === 2 && reordered.names[0] === '对比丙' && reordered.names[1] === '对比乙',
+    JSON.stringify(reordered.names)
+  );
+
+  /* ---- 多条时每条配置名旁边有个 ×，点它**只删掉这一条**（kniph 2026-10-17）---- */
+  const xBtns = await page.evaluate(() => {
+    const root = document.getElementById('request-translate-host').shadowRoot;
+    const slots = [...root.querySelectorAll('.rt-slot')];
+    return {
+      slotCount: slots.length,
+      xCount: root.querySelectorAll('.rt-slot-x').length,
+      titles: [...root.querySelectorAll('.rt-slot-x')].map((b) => b.getAttribute('title') || ''),
+      // × 应该在配置名旁边（同一个标题行里）
+      insideHeader: [...root.querySelectorAll('.rt-slot-x')].every((b) => !!b.closest('.rt-slot-h'))
+    };
+  });
+  check('多条时每条配置名旁边都有 ×',
+    xBtns.slotCount >= 2 && xBtns.xCount === xBtns.slotCount, JSON.stringify(xBtns));
+  check('× 在配置名那一行里（不是飘在别处）', xBtns.insideHeader, JSON.stringify(xBtns));
+
+  // 点第一条的 × → 那一条消失，其他保留
+  const xBeforeDel = (await readSlots()).names.slice();
+  await page.evaluate(() => {
+    const root = document.getElementById('request-translate-host').shadowRoot;
+    root.querySelector('.rt-slot .rt-slot-x')?.click();
+  });
+  await page.waitForTimeout(500);
+    const xAfterDel = await readSlots();
+  const xDiag = await page.evaluate(() => {
+    const root = document.getElementById('request-translate-host').shadowRoot;
+    const out = root.querySelector('.rt-out');
+    return {
+      outText: (out.textContent || '').trim(),
+      slotCount: root.querySelectorAll('.rt-slot').length,
+      msg: root.querySelector('.rt-msg')?.textContent || ''
+    };
+  });
+  /* 删到只剩一条 → 块结构消失、那条的译文**直接铺在结果区**（老的单条渲染）。
+     所以判据是「另一条的译文还在 + 被删的那条不在了」，不是「还剩几个块」。 */
+  check('点 × 只删掉那一条（剩下的那条还在，仍带配置名）',
+    xDiag.slotCount === 1 &&
+      xDiag.outText.includes('【sb】') &&
+      !xDiag.outText.includes('【sa】') &&
+      /已收起/.test(xDiag.msg),
+    JSON.stringify(xDiag));
+
+  /* 删掉某条之后**还能把它选回来**（kniph 2026-10-18 报的 bug）。
+     原因叠加：① removeSlot 没让出 currentConfigId → 下拉仍停在已删的那条上，
+     再选它 <select> 的值没变、连 change 都不触发；
+     ② change 处理里的早退 if (v === currentConfigId) return 会把「重新加进来」吞掉。 */
+  {
+    const raNames = () => page.evaluate(() => {
+      const root = document.getElementById('request-translate-host').shadowRoot;
+      return [...root.querySelectorAll('.rt-slot-name')].map((n) => n.textContent);
+    });
+    const raPick = (cid) => page.evaluate((id) => {
+      const root = document.getElementById('request-translate-host').shadowRoot;
+      const sel = root.querySelector('.rt-cfg');
+      sel.value = id;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    }, cid);
+
+    // 先降到一条，再从下拉里加一条进来（再把这条删掉、再选回来）
+    await page.evaluate(() => {
+      const root = document.getElementById('request-translate-host').shadowRoot;
+      let guard = 0;
+      while (root.querySelectorAll('.rt-slot').length > 1 && guard++ < 8) {
+        root.querySelector('.rt-slot .rt-slot-x')?.click();
+      }
+    });
+    await page.waitForTimeout(300);
+
+    const raTarget = await page.evaluate(() => {
+      const root = document.getElementById('request-translate-host').shadowRoot;
+      const shown = new Set([...root.querySelectorAll('.rt-slot')].map((b) => b.getAttribute('data-cid')));
+      const sel = root.querySelector('.rt-cfg');
+      const opt = [...sel.options].find((o) => o.value && !shown.has(o.value));
+      return opt ? { id: opt.value, name: opt.textContent } : null;
+    });
+    check('（脚手架）还有一条没显示的配置，可以用来验「删了再加」', !!raTarget, JSON.stringify(raTarget));
+
+    if (raTarget) {
+      await raPick(raTarget.id);
+      await page.waitForTimeout(400);
+      const raAdded = await raNames();
+      check('选一条没显示的配置 → 真的加进面板了',
+        raAdded.includes(raTarget.name), JSON.stringify(raAdded));
+
+      await page.evaluate((id) => {
+        const root = document.getElementById('request-translate-host').shadowRoot;
+        root.querySelector('.rt-slot[data-cid="' + id + '"] .rt-slot-x')?.click();
+      }, raTarget.id);
+      await page.waitForTimeout(400);
+      const raRemoved = await raNames();
+      check('点 × 把它删掉 → 面板上没有它了',
+        !raRemoved.includes(raTarget.name), JSON.stringify(raRemoved));
+
+      // —— 这一步就是 kniph 报的现象 ——
+      await raPick(raTarget.id);
+      await page.waitForTimeout(400);
+      const raReadded = await raNames();
+      check('删掉之后**再选同一条**还能加回来（本次修的就是这个）',
+        raReadded.includes(raTarget.name), JSON.stringify(raReadded));
+
+      /* 收尾：**只关掉本次加进来的那条**，把面板还原成测试前的样子。
+         不能盲点「第一个 ×」—— 那会删掉别的配置，后面几节的起点就跟着漂
+         （第一次写这条用例时就是这么把 [对比乙] 换成别的、连带 5 条断言变红的）。 */
+      await page.evaluate((id) => {
+        const root = document.getElementById('request-translate-host').shadowRoot;
+        root.querySelector('.rt-slot[data-cid="' + id + '"] .rt-slot-x')?.click();
+      }, raTarget.id);
+      await page.waitForTimeout(400);
+      const raRestored = await raNames();
+      check('（脚手架）收尾后只剩原来那一条，不污染后续用例', raRestored.length === 1, JSON.stringify(raRestored));
+    }
+  }
+
+  /* ---- 「新选的配置往哪边放」由设置决定（kniph 2026-10-17）----
+     tail（默认）：新的排到最后、顶掉最上面那条；
+     head        ：新的排到最前、顶掉最下面那条。
+     两种都要能选 —— 与其我们替他定，不如交给用户。 */
+  const tryInsertMode = async (mode, pickId, expectNames) => {
+    /* 不 reload：reload 后槽位会从设置页那份名单播种（固定那几条），
+       测不出「拨一条新的插到哪一头」。直接在当前已知状态下改设置再拨。 */
+    await opt4.evaluate(async (m) => {
+      const { state } = await chrome.storage.local.get('state');
+      state.settings = { ...state.settings, panelSlots: 2, slotInsert: m };
+      await chrome.storage.local.set({ state });
+    }, mode);
+    // 让面板吃到新设置（设置变化会推 ready 过来）
+    await page.waitForTimeout(700);
+    // 拨一条**不在槽位里**的配置，看它插到哪一头
+    await page.evaluate((id) => {
+      const root = document.getElementById('request-translate-host').shadowRoot;
+      const sel = root.querySelector('.rt-cfg');
+      sel.value = id;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    }, pickId);
+    await page.waitForTimeout(1500);
+    const got = await readSlots();
+    check('slotInsert=' + mode + '：新选的配置按设置插到' + (mode === 'head' ? '最上面' : '最下面'),
+      JSON.stringify(got.names) === JSON.stringify(expectNames), JSON.stringify(got.names));
+  };
+
+  /* 起点：显示 2 条、槽位是 [丙, 乙]（上面那条断言刚把它变成这样）。
+     tail：拨「甲」（不在槽位里）→ 追加到最后 → [丙,乙,甲] 取**最后** 2 条 = [乙, 甲]
+           （顶掉最上面那条，正是「出尾部顶掉顶部」）。 */
+  await tryInsertMode('tail', 'e2e-slot-a', ['对比乙', '对比甲']);
+  /* head：此刻槽位是 [乙, 甲]，拨「丙」（不在里面）→ 插到最前 → [丙, 乙]。 */
+  await tryInsertMode('head', 'e2e-slot-c', ['对比丙', '对比乙']);
+
+  /* ---- 多条模式下：某个配置在翻、另一个已翻好的，那个已翻好的必须还能重试 ----
+     kniph 2026-10-17 报「其他配置在翻译时，已经翻译好的配置不能重试」：
+     根因是 busy 是**整批**的标志 —— 多条时只要有条没结束它就一直为真，
+     把已完成那条的重试挡掉了。这里钉住「按这一条自己判」。
+     构造：把「丙」指到慢接口（先跑着），「乙」是已完成的，
+     然后点「乙」那排的重试 —— 必须真的发出去。 */
+  await opt4.evaluate(
+    async (u) => {
+      const { state } = await chrome.storage.local.get('state');
+      const c = state.configs.find((x) => x.id === 'e2e-slot-c');
+      if (c) c.request = 'curl ' + u; // 慢接口，让它一直挂在「翻译中…」
+      await chrome.storage.local.set({ state });
+    },
+    `http://127.0.0.1:${port}/slow`
+  );
+  await page.waitForTimeout(400);
+
+  // 让两条都重跑一遍：丙会卡在慢接口上，乙很快回来
+  await page.evaluate(() => {
+    const root = document.getElementById('request-translate-host').shadowRoot;
+    root.querySelectorAll('.rt-slot .rt-acts .rt-act[data-act="retry-one"]')
+      .forEach((b) => b.click());
+  });
+  // 等到「乙」那条已经是完成态、而「丙」还在翻译中
+  const mixed = await page
+    .waitForFunction(
+      () => {
+        const root = document.getElementById('request-translate-host').shadowRoot;
+        const slots = [...root.querySelectorAll('.rt-slot')];
+        const busy = slots.some((s) => /翻译中/.test(s.textContent));
+        const done = slots.some((s) => /完成/.test(s.textContent));
+        return slots.length >= 2 && busy && done;
+      },
+      null,
+      { timeout: 20000 }
+    )
+    .then(() => true)
+    .catch(() => false);
+  check('（脚手架）造出了「一条在翻、一条已完成」的混合态', mixed);
+
+  const beforeRetryOne = textHits;
+  await page.evaluate(() => {
+    const root = document.getElementById('request-translate-host').shadowRoot;
+    // 找那条**已完成**的块（状态写着「完成」），点它那排的重试
+    const slot = [...root.querySelectorAll('.rt-slot')]
+      .find((s) => /完成/.test(s.querySelector('.rt-slot-st')?.textContent || ''));
+    const btn = slot && slot.querySelector('.rt-acts .rt-act[data-act="retry-one"]');
+    if (btn) btn.click();
+  });
+  await page.waitForTimeout(1500);
+  check('其他配置还在翻时，已完成的那条照样能重试（不被整批 busy 挡住）',
+    textHits > beforeRetryOne, `textHits ${beforeRetryOne} → ${textHits}`);
+  check('重试后块结构还在（没被单条渲染冲掉）',
+    (await readSlots()).names.length >= 2);
+
+  /* 滚动位置：多条对比时窗口很长，重试**不该把结果区弹回顶部** ——
+     根因是 renderSlots 用 innerHTML 整块替换（scrollTop 归零），
+     加上 enterBusy 先 textContent='' 清空。kniph 2026-10-17 报的。
+     **内容必须是真实链路吐出来的**（假接口 ?long=1）：手动往 DOM 里塞长文本
+     会被重试时的重渲染冲掉，测的是假象（第一版就这么错了一次）。 */
+  await opt4.evaluate(async (u) => {
+    const { state } = await chrome.storage.local.get('state');
+    for (const c of state.configs) {
+      if (c.id.startsWith('e2e-slot-')) c.request = 'curl ' + u + '&tag=' + c.id.slice(-1);
+    }
+    await chrome.storage.local.set({ state });
+  }, `http://127.0.0.1:${port}/text?long=1`);
+  await page.waitForTimeout(300);
+  // 重跑一遍两条，让长译文真的进槽位
+  await page.evaluate(() => {
+    const root = document.getElementById('request-translate-host').shadowRoot;
+    root.querySelectorAll('.rt-slot .rt-acts .rt-act[data-act="retry-one"]')
+      .forEach((b) => b.click());
+  });
+  await page
+    .waitForFunction(
+      () => {
+        const out = document.getElementById('request-translate-host').shadowRoot.querySelector('.rt-out');
+        return out.scrollHeight > out.clientHeight + 100;
+      },
+      null,
+      { timeout: 15000 }
+    )
+    .catch(() => {});
+  const scrollBefore = await page.evaluate(() => {
+    const out = document.getElementById('request-translate-host').shadowRoot.querySelector('.rt-out');
+    out.scrollTop = 80; // 滑下去一点
+    return { top: out.scrollTop, h: out.scrollHeight, ch: out.clientHeight };
+  });
+  await page.evaluate(() => {
+    const root = document.getElementById('request-translate-host').shadowRoot;
+    root.querySelectorAll('.rt-slot .rt-acts .rt-act[data-act="retry-one"]')
+      .forEach((b) => b.click());
+  });
+  await page.waitForTimeout(1500);
+  const scrollAfter = await page.evaluate(
+    () => document.getElementById('request-translate-host').shadowRoot.querySelector('.rt-out').scrollTop
+  );
+  check('（脚手架）内容真的撑出了滚动条（否则这条测不到）',
+    scrollBefore.h > scrollBefore.ch, '内容高 ' + scrollBefore.h + ' / 视口 ' + scrollBefore.ch);
+  check('多条对比时重试不把结果区弹回顶部（滚动位置保持）',
+    scrollBefore.top > 0 && scrollAfter > 0,
+    '重试前 ' + scrollBefore.top + ' → 重试后 ' + scrollAfter);
+  // 收尾：把 ?long=1 摘掉并还原接口地址（不还原的话后面那节拿到的是长译文）
+  await opt4.evaluate(async (u) => {
+    const { state } = await chrome.storage.local.get('state');
+    for (const c of state.configs) {
+      if (c.id.startsWith('e2e-slot-')) c.request = 'curl ' + u + '?tag=' + c.id.slice(-1);
+    }
+    await chrome.storage.local.set({ state });
+  }, `http://127.0.0.1:${port}/text`);
+  await page.waitForTimeout(300);
+
+  /* 收尾：把「丙」的接口**还原回正常那个** —— 上面为造混合态把它指到了 /slow，
+     不还原的话后面「显示 1 条」那节拿到的是「慢速响应」，断言会假红。 */
+  await opt4.evaluate(
+    async (u) => {
+      const { state } = await chrome.storage.local.get('state');
+      const c = state.configs.find((x) => x.id === 'e2e-slot-c');
+      if (c) c.request = 'curl ' + u;
+      await chrome.storage.local.set({ state });
+    },
+    `http://127.0.0.1:${port}/text?tag=sc`
+  );
+  await page.waitForTimeout(400);
+
+  // 「显示 1 条」= 老样子：不渲染块，点一条新配置 = 切换（顶掉队首）
+  await opt4.evaluate(async () => {
+    const { state } = await chrome.storage.local.get('state');
+    state.settings = { ...state.settings, panelSlots: 1 };
+    await chrome.storage.local.set({ state });
+  });
+  await page.reload();
+  await page
+    .waitForFunction(() => !!document.getElementById('request-translate-host'), null, { timeout: 10000 })
+    .catch(() => {});
+  await page.waitForTimeout(600);
+  await firePanel();
+  await page
+    .waitForFunction(
+      () => {
+        const out = document.getElementById('request-translate-host').shadowRoot.querySelector('.rt-out');
+        return out.textContent.includes('本地假译文');
+      },
+      null,
+      { timeout: 15000 }
+    )
+    .catch(() => {});
+  const single = await readSlots();
+  /* kniph 2026-10-17：单条**也渲染成块** —— 块头就是配置名，
+     这样单配置时也看得见用的是哪条（以前纯文本铺满，看不见名字）。 */
+  check(
+    '显示 1 条时也渲染成块（块头带配置名）',
+    single.names.length === 1 && single.out.includes('本地假译文'),
+    JSON.stringify({ names: single.names, out: single.out.slice(0, 40) })
+  );
+
+  await page.evaluate(() => {
+    const root = document.getElementById('request-translate-host').shadowRoot;
+    // 原生 select：拨到新配置 = 切换（顶掉队首）
+    const sel = root.querySelector('.rt-cfg');
+    sel.value = 'e2e-slot-c';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page
+    .waitForFunction(
+      () => {
+        const out = document.getElementById('request-translate-host').shadowRoot.querySelector('.rt-out');
+        return out.textContent.includes('【sc】');
+      },
+      null,
+      { timeout: 15000 }
+    )
+    .catch(() => {});
+  const slotSwitched = await readSlots();
+  /* 单条现在也渲染成块，所以判据看「块里是丙的译文」，不是纯文本完全相等。 */
+  check(
+    '显示 1 条时点一条新配置 = 切换（顶掉队首，结果换成新的那条）',
+    slotSwitched.names.length === 1 &&
+      slotSwitched.names[0] === '对比丙' &&
+      slotSwitched.out.includes('【sc】'),
+    JSON.stringify(slotSwitched.out.slice(0, 40))
+  );
+
+  await opt4.close();
+
+  /* ---- 17b. 设置页的配置列表：左键点亮（可多条）/ 右键取消 -----------------
+     kniph 2026-10-17：以前这里只能亮一个（is-active 单选），现在要能亮 X 个。
+     点亮 = 参与对比；右键 = 取消。这条钉住「多条能同时亮」这个行为。 */
+  console.log('\n17b. 设置页点亮多条配置（左键加入 / 右键取消）');
+
+  const opt5 = await ctx.newPage();
+  await opt5.goto(`chrome-extension://${extId}/options.html`, { waitUntil: 'load' });
+  await opt5.waitForSelector('#cfg-list .cfg-item', { timeout: 8000 });
+
+  // 先把「显示条数」放到 3，好让多条都能亮
+  await opt5.evaluate(async () => {
+    const { state } = await chrome.storage.local.get('state');
+    state.settings = { ...state.settings, panelSlots: 3, slotConfigs: [] };
+    await chrome.storage.local.set({ state });
+  });
+  await opt5.reload();
+  await opt5.waitForSelector('#cfg-list .cfg-item', { timeout: 8000 });
+  await opt5.waitForTimeout(300);
+
+  /** 列表里点第 n 条（0 基），或右键 */
+  const clickCfg = (idx, button = 'left') =>
+    opt5.evaluate(
+      ({ i, btn }) => {
+        const items = [...document.querySelectorAll('#cfg-list .cfg-row .cfg-item')];
+        const el = items[i];
+        if (!el) throw new Error('没有第 ' + i + ' 条配置');
+        el.dispatchEvent(
+          new MouseEvent(btn === 'right' ? 'contextmenu' : 'click', {
+            bubbles: true,
+            cancelable: true,
+            button: btn === 'right' ? 2 : 0
+          })
+        );
+      },
+      { i: idx, btn: button }
+    );
+
+  const litCount = () =>
+    opt5.evaluate(() => document.querySelectorAll('#cfg-list .cfg-item.in-compare').length);
+  const activeCount = () =>
+    opt5.evaluate(() => document.querySelectorAll('#cfg-list .cfg-item.is-active').length);
+
+  await clickCfg(0);
+  await opt5.waitForTimeout(150);
+  check('左键点一条 → 它亮了（参与对比）', (await litCount()) === 1, `亮了 ${await litCount()} 条`);
+
+  await clickCfg(1);
+  await opt5.waitForTimeout(150);
+  const twoLit = await litCount();
+  check('再点另一条 → 两条同时亮（不是单选了）', twoLit === 2, `亮了 ${twoLit} 条`);
+  check('但「正在编辑」仍然只有一条', (await activeCount()) === 1, `is-active ${await activeCount()} 条`);
+
+  await clickCfg(1, 'right');
+  await opt5.waitForTimeout(150);
+  const afterRight = await litCount();
+  check('右键点已亮的那条 → 取消对比（另一条不受影响）', afterRight === 1, `亮了 ${afterRight} 条`);
+
+  // 点亮的组合要落进存档（新网页拿它当默认）
+  const savedSlots = await opt5.evaluate(async () => {
+    const { state } = await chrome.storage.local.get('state');
+    return state.settings.slotConfigs || [];
+  });
+  check('点亮的组合写进了存档（新网页的默认对比）', savedSlots.length === 1, JSON.stringify(savedSlots));
+
+  /* 左键点一条**已经点亮**的配置：只该切「正在编辑」，**不能**把对比取消掉 ——
+     kniph 2026-10-17：「我左键这个配置可能只是查看一下、或者修改请求」。
+     取消对比是右键的活儿（明确的意图）。 */
+  const litBeforeClick = await litCount();
+  await clickCfg(0); // 左键点那条已经亮着的
+  await opt5.waitForTimeout(200);
+  check('左键点已点亮的配置：编辑切过去了，但对比**没被取消**',
+    (await litCount()) === litBeforeClick && (await activeCount()) === 1,
+    `亮 ${await litCount()}（点前 ${litBeforeClick}），is-active ${await activeCount()}`);
+
+
+  await opt5.close();
 
   /* ------------------------------------------------------------------ */
 

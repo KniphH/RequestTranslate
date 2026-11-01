@@ -50,7 +50,14 @@ def main():
                 continue
             p = Path(tmp) / n.replace("/", "__")
             p.write_bytes(z.read(n))
-            r = subprocess.run(["node", "--check", str(p)], capture_output=True, text=True)
+            r = subprocess.run(
+                ["node", "--check", str(p)],
+                capture_output=True,
+                text=True,
+                # 同上：Windows 默认 GBK，node 的报错里可能带非 GBK 字符
+                encoding="utf-8",
+                errors="replace",
+            )
             if r.returncode != 0:
                 first = (r.stderr or "").strip().splitlines()
                 problems.append(f"{n} 语法错：{first[1] if len(first) > 1 else first[:1]}")

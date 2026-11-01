@@ -1,0 +1,33 @@
+# 静态检查 + 单元测试（每次推送 / PR 自动跑）。
+#
+# 只跑不依赖桌面环境的部分：e2e（test:ui）要真 Edge + 有头窗口（剪切板、框选截图
+# 那些节在无显示的 runner 上必挂），留在本地跑 —— 全量在打包前由 `npm run pack` 自动执行。
+#
+# 零依赖的红利：package.json 没有 dependencies，连 npm install 都不用，checkout 即跑。
+
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: 静态检查（未定义函数 / DOM 引用）
+        run: node tools/check-globals.mjs && node tools/check-dom.mjs
+      - name: 核心库
+        run: node tools/test-lib.mjs
+      - name: 引擎
+        run: node tools/test-engine.mjs
+      - name: 注释剥离器
+        run: node tools/test-strip.mjs
+      - name: manifest / 包结构抽查
+        run: |
+          node -e "const m=require('./manifest.json'); if(!m.commands || !m.commands['translate-selection']) process.exit(1); console.log('manifest ok, version', m.version)"

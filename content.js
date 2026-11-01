@@ -79,6 +79,10 @@
   let lastMouse = null;
   /** 最近一次右键的位置。右键菜单的 onClicked 不给坐标，面板只能记着用户点在哪儿 */
   let lastRightClick = null;
+  /** iframe 里最近的选区（frame-bridge.js 经 postMessage 报上来的，坐标已换算成
+     顶层视口）。顶层自己的选区读不到 iframe 里面的内容，按钮点击时若顶层没有
+     选区就用它 —— 优先级在 readSelection() 之后。 */
+  let lastFrameSel = null;
   /** 这次翻译是不是从截图来的（{provider, ms, bytes}）—— 状态栏和诊断里标出来 */
   let lastOcr = null;
   /** 最近一次动作：'ocr' 时「重新翻译」按钮要重跑识别，而不是重翻一段空文本 */
@@ -234,15 +238,18 @@ ${TRIGGER_CSS}
   --rt-bg-diag: #101014;
   --rt-border: #2b2b33;
   --rt-border-soft: #24242b;
-  --rt-text: #e8e8ea;
-  --rt-text-dim: #7d7d88;
-  --rt-text-out: #f2f2f4;
-  --rt-text-foot: #6c6c78;
+  /* 对比槽位之间的分界线：--rt-border-soft 在暗色下几乎和底色一样，
+     单独给一个更亮的（2026-10-17 kniph 报「暗色下看不见」） */
+  --rt-slot-line: #3d3d47;
+  --rt-text: #d0ccc5;
+  --rt-text-dim: #a29d95;
+  --rt-text-out: #d8d4cd;
+  --rt-text-foot: #908b84;
   --rt-hover: #24242b;
   --rt-accent: #a855f7;
   --rt-accent-soft: #241b38;
   --rt-accent-text: #c084fc;
-  --rt-placeholder: #5a5a66;
+  --rt-placeholder: #88837b;
   --rt-scroll: #33333c;
   --rt-shadow: 0 18px 50px rgba(0, 0, 0, .62);
 
@@ -274,6 +281,8 @@ ${TRIGGER_CSS}
   --rt-bg-diag: #f4f4f7;
   --rt-border: #d9d9e3;
   --rt-border-soft: #e8e8f0;
+  /* 对比槽位之间的分界线（浅色下比 --rt-border-soft 深一点，和暗色对称） */
+  --rt-slot-line: #c4c4d0;
   --rt-text: #1b1b22;
   --rt-text-dim: #5f5f6c;
   --rt-text-out: #12121a;
@@ -282,7 +291,7 @@ ${TRIGGER_CSS}
   --rt-accent: #7c3aed;
   --rt-accent-soft: #f0e8ff;
   --rt-accent-text: #6d28d9;
-  --rt-placeholder: #9a9aa6;
+  --rt-placeholder: #72727e;
   --rt-scroll: #c9c9d4;
   --rt-shadow: 0 16px 44px rgba(20, 20, 43, .18);
 }
@@ -465,11 +474,75 @@ ${TRIGGER_CSS}
 .rt-out, .rt-src, .rt-diag { scrollbar-color: auto; scrollbar-width: auto; }
 
 .rt-out::-webkit-scrollbar, .rt-src::-webkit-scrollbar, .rt-diag::-webkit-scrollbar { width: 8px; }
+
+/* ---- 对比槽位：结果区里一条一块（只在 ≥2 条时出现；1 条时和以前一模一样） ---- */
+.rt-slot { padding: .32em 0; }
+/* 槽位之间的分界：暗色下 --rt-border-soft(#24242b) 贴在面板底(#0f0f11)上几乎看不见 ——
+   换成专用色 --rt-slot-line（明暗各一档），两种主题下都分得开（kniph 2026-10-17 报的）。
+   第一条不画（顶上就是原文区，本来就有一条线）。 */
+.rt-slot + .rt-slot {
+  border-top: 1px solid var(--rt-slot-line);
+  margin-top: .1em;
+  padding-top: .5em;
+}
+.rt-slot-h {
+  display: flex; align-items: center; gap: .4em;
+  font-size: .72em; color: var(--rt-fg-dim);
+  margin-bottom: .18em;
+}
+.rt-slot-name { font-weight: 550; color: var(--rt-fg); }
+
+/* 配置名旁边的 ×（只在多条时出现）：平时压得很淡，鼠标进这一块才亮 ——
+   免得一屏都是叉号显得吵（kniph 2026-10-17）。 */
+.rt-slot-x {
+  flex: none;
+  display: flex; align-items: center; justify-content: center;
+  width: 1.1em; height: 1.1em;
+  padding: 0; margin-left: .1em;
+  background: none; border: none; border-radius: .2em;
+  font: inherit; font-size: 1.05em; line-height: 1;
+  color: var(--rt-text-foot);
+  cursor: pointer;
+  opacity: .45;
+  transition: opacity .13s, background .13s, color .13s;
+}
+.rt-slot:hover .rt-slot-x { opacity: 1; }
+.rt-slot-x:hover { background: var(--rt-hover); color: #ef4444; }
+.rt-slot-st { margin-left: auto; }
+.rt-slot-st.err { color: #ef4444; }
+.rt-slot-b { white-space: pre-wrap; word-break: break-word; }
+
+/* ---- 译文尾部的操作条（复制 / 朗读 / 重试）----
+   kniph 2026-10-17：重试从顶栏搬下来（顶栏那个只管主配置，多条对比时
+   「只重试最上面那条」很别扭）；朗读一并放这儿。每条结果自己带一排。 */
+.rt-acts {
+  display: flex; align-items: center; gap: .1em;
+  margin-top: .25em;
+  opacity: .55;
+  transition: opacity .13s;
+}
+.rt-slot:hover .rt-acts,
+.rt-acts:hover { opacity: 1; }
+.rt-act {
+  display: flex; align-items: center; gap: .22em;
+  background: none; border: none;
+  padding: .1em .3em;
+  border-radius: .25em;
+  font: inherit;
+  font-size: .74em;
+  color: var(--rt-text-foot);
+  cursor: pointer;
+}
+.rt-act:hover { background: var(--rt-hover); color: var(--rt-text); }
+.rt-act svg { display: block; width: 1.05em; height: 1.05em; }
+.rt-act[disabled] { opacity: .4; cursor: default; }
+.rt-act[disabled]:hover { background: none; color: var(--rt-text-foot); }
+.rt-slot-b.err { color: #ef4444; font-size: .82em; }
+
 .rt-out::-webkit-scrollbar-thumb, .rt-src::-webkit-scrollbar-thumb, .rt-diag::-webkit-scrollbar-thumb {
   background: var(--rt-scroll); border-radius: 4px;
 }
 `;
-
   shadow.appendChild(style);
 
   /* ---- DOM ---- */
@@ -484,6 +557,11 @@ ${TRIGGER_CSS}
 
   const panel = document.createElement('div');
   panel.className = 'rt-panel';
+  /* 给自定义 CSS 用的**稳定钩子**（对齐 hcfy 的 #translate-panel）：
+     · id 让用户能写 #rt-panel 吃到更高优先级
+     · data-rt-theme 让用户能按主题分别写，不用 :not(.light) 反推
+     shadow DOM 里的 id 是作用域内的，不跟页面撞。 */
+  panel.id = 'rt-panel';
   panel.innerHTML = `
     <div class="rt-head" data-drag>
       <span class="rt-dot"></span>
@@ -493,8 +571,6 @@ ${TRIGGER_CSS}
         <button class="rt-btn" data-act="src" title="显示 / 隐藏原文">
           <svg viewBox="0 0 20 20" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1.6 10S4.9 4.6 10 4.6 18.4 10 18.4 10 15.1 15.4 10 15.4 1.6 10 1.6 10Z"/><circle cx="10" cy="10" r="2.3"/></svg>
         </button>
-        <button class="rt-btn" data-act="retry" title="重新翻译">&#8635;</button>
-        <button class="rt-btn" data-act="copy" title="复制译文">&#10697;</button>
         <button class="rt-btn" data-act="close" title="关闭 (Esc)">&#10005;</button>
       </div>
     </div>
@@ -521,8 +597,7 @@ ${TRIGGER_CSS}
   const moreBtn = panel.querySelector('.rt-more');
   const diagBox = panel.querySelector('.rt-diag');
   const srcBtn = panel.querySelector('[data-act="src"]');
-  const retryBtn = panel.querySelector('[data-act="retry"]');
-  const copyBtn = panel.querySelector('[data-act="copy"]');
+  /** 单条模式下的尾部操作条（多条时每条自己带一排，见 slotHtml） */
 
   function mount() {
     if (!document.documentElement.contains(host)) document.documentElement.appendChild(host);
@@ -544,6 +619,7 @@ ${TRIGGER_CSS}
   function applyTheme() {
     const light = !resolveDark();
     panel.classList.toggle('light', light);
+    panel.dataset.rtTheme = light ? 'light' : 'dark';
     // 按钮不在面板里（是 shadow 的另一个子节点），主题得单独同步一次
     trigger.classList.toggle('light', light);
   }
@@ -614,11 +690,38 @@ ${TRIGGER_CSS}
     applyZoom();
   }
 
+  /** 自定义面板样式：把用户的 CSS 追加注入到 shadow root 末尾。
+   *
+   *  **为什么要我们自己注入**：面板在 shadow DOM 里，页面级 CSS（Stylus / user.css /
+   *  浏览器自带的用户样式表）**根本进不来**。hcfy 那种能直接写 `#translate-panel` 的玩法，
+   *  是因为它的面板在页面 DOM 里 —— 我们不是，所以只能在设置页里收 CSS 再由我们塞进去。
+   *
+   *  **为什么追加在最后**：和预设主题的选择器同优先级时，靠「后出现」胜出，
+   *  天然形成「默认值 < 预设主题 < 用户自定义」三层，不需要 !important。 */
+  let userCssEl = null;
+  function applyUserCss(css) {
+    const text = String(css == null ? '' : css);
+    if (!text.trim()) {
+      if (userCssEl) {
+        userCssEl.remove();
+        userCssEl = null;
+      }
+      return;
+    }
+    if (!userCssEl) {
+      userCssEl = document.createElement('style');
+      userCssEl.id = 'rt-user-css';
+      shadow.appendChild(userCssEl);
+    }
+    userCssEl.textContent = text;
+  }
+
   function applyAppearance() {
     applyTheme();
     applyFontSize();
     applyPanelSize();
     applyTriggerStyle();
+    applyUserCss(prefs.panelCss);
   }
 
   function applyZoom() {
@@ -841,10 +944,15 @@ ${TRIGGER_CSS}
   function enterBusy(placeholder, statusText, opts = {}) {
     if (opts.cancelDelta) cancelPendingDelta();
     busy = true;
-    retryBtn.disabled = true;
+    // 尾巴上那排（复制/朗读/重试）随结果一起清掉 —— 忙碌时不给点（避免连点重试）
     outBox.classList.remove('empty');
-    outBox.textContent = '';
-    outBox.dataset.placeholder = placeholder;
+    /* **多条对比时别清空结果区**（kniph 2026-10-17）：抹掉等于把别的条已经翻好的
+       译文一起清了、滚动位置也归零 —— 长长一屏每次重试都得重新翻着找。
+       交给 renderSlots 按槽渲染：要重试的那条显示「翻译中…」，其余原样留着。 */
+    if (slots.length <= 1) {
+      outBox.textContent = '';
+      outBox.dataset.placeholder = placeholder;
+    }
     if (opts.clearSrc) {
       srcBox.textContent = '';
       srcBox.classList.remove('has-img');
@@ -854,15 +962,13 @@ ${TRIGGER_CSS}
     setDot('on');
   }
 
-  /* 退出忙碌态的完整仪式：取消挂起的流式渲染、放开重试按钮。
+  /* 退出忙碌态的完整仪式：取消挂起的流式渲染。
      曾经这组三连在 5 个函数里各手抄一遍（showFailure / renderResult / showNoCachedResult /
-     done 和 fatal 的兜底分支）＋ portGone 一个两行变体 —— 收口不彻底，改一处漏一处
-     （827 行那条注释当初担心的就是这事）。没有挂起渲染时 cancelPendingDelta 是空操作，
-     portGone 里多调它也无害。 */
+     done 和 fatal 的兜底分支）＋ portGone 一个两行变体 —— 收口不彻底，改一处漏一处。
+     没有挂起渲染时 cancelPendingDelta 是空操作，portGone 里多调它也无害。 */
   function leaveBusy() {
     cancelPendingDelta();
     busy = false;
-    retryBtn.disabled = false;
   }
 
   /**
@@ -879,8 +985,19 @@ ${TRIGGER_CSS}
   function showFailure(why, opts = {}) {
     leaveBusy();
     outBox.classList.remove('empty');
-    outBox.textContent = '';
     outBox.dataset.placeholder = opts.placeholder || '出错了';
+    /* **失败也走块渲染**（kniph 2026-10-17：单条和多条统一）。
+       以前是 textContent='' 铺一句占位文字 —— 块没了、里面那排
+       「复制 / 朗读 / 重试」也跟着没了，而失败态恰恰最需要「重试」。
+       slotHtml 的 fail 分支本来就会把 error 文本画出来。 */
+    const only = slots[0];
+    if (only) {
+      only.state = 'fail';
+      only.error = why;
+      renderSlots();
+    } else {
+      outBox.textContent = '';
+    }
     setStatus(why, 'err');
     setDot('err');
     showDiag(opts.diag || [{ k: opts.diagKey || '错误', v: why, err: true }]);
@@ -936,11 +1053,20 @@ ${TRIGGER_CSS}
 
   let diagOpen = false;
 
+  /**
+   * 字节数 → 人能读的大小。
+   *
+   * ⚠️ **这个函数有两份**：这份是设置页的，`content.js` 里那份是面板的
+   * （content script 不能 import，只能手抄 —— 和 TRIGGER_CSS / PANEL_CSS 同一个处境）。
+   * 两份**必须逐字一致**：它们显示的是同一个量（截图 / 响应的大小），
+   * 各写各的就会出现「设置页说 49 KB、面板说 48.8 KB」（kniph 2026-10-18 通读发现，
+   * 原来两份的小数位规则就不一样）。test-lib 有一条断言逐值比对两边的输出。
+   */
   function formatBytes(n) {
-    if (!n) return '0 B';
-    if (n < 1024) return n + ' B';
-    if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
-    return (n / 1048576).toFixed(2) + ' MB';
+    const b = Math.max(0, Number(n) || 0);
+    if (b < 1024) return b + ' B';
+    if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+    return (b / 1024 / 1024).toFixed(1) + ' MB';
   }
 
   function buildDiag(r) {
@@ -1038,7 +1164,18 @@ ${TRIGGER_CSS}
          空闲时 SW 回收不该把已有结果抹成报错。 */
       if (busy) portGone();
     });
-    port.postMessage({ type: 'hello' });
+    /* 这句也要接住（kniph 2026-10-18 复查）：
+       onDisconnect 是异步的 —— 端口刚建立就已被对端丢掉时（SW 正在被回收、
+       或扩展刚好在这一瞬间重载），这一句会当场抛
+       「Attempting to use a disconnected port object」，而它在 try 外面，
+       异常会直接炸给 ensurePort() 的每个调用点（translate / startOcr / retryShot…），
+       那些地方都没有兜底。接住之后退化成「端口拿不到」，走既有的 portGone 收场。 */
+    try {
+      port.postMessage({ type: 'hello' });
+    } catch {
+      port = null;
+      return null;
+    }
     return port;
   }
 
@@ -1048,13 +1185,26 @@ ${TRIGGER_CSS}
   }
 
   /** 拿到端口才发消息 —— 拿不到（扩展刚更新、端口还没连上）就报一句并放弃这次请求。
-      四个发送点共用，省得每处都手写一遍 `if (!p) { portGone(); return; }`。 */
+      几个发送点共用，省得每处都手写一遍 `if (!p) { portGone(); return; }`。 */
   function postOrFail(p, msg) {
     if (!p) {
       portGone();
       return false;
     }
-    p.postMessage(msg);
+    /* **postMessage 本身也会抛** —— 端口「存在但已经断开」时（SW 被杀、扩展刚更新过，
+       而 onDisconnect 还没轮到执行），Chrome 会抛 "Attempting to use a disconnected
+       port object"。不接住的话异常从调用方炸出去，后半截收尾（复位忙碌态、刷状态行）
+       全都不执行，面板就卡在忙碌态了。
+
+       这不是推测：同一个文件里另两个裸 postMessage（hidePanel / beginOcrPanel 的 abort）
+       早就各包了一层 try/catch、注释都写着「端口已断开」，后台的 safePost 也是同一套 ——
+       偏偏这个「专职处理发送失败」的共用 helper 漏了（kniph 2026-10-18 通读发现）。 */
+    try {
+      p.postMessage(msg);
+    } catch {
+      portGone();
+      return false;
+    }
     return true;
   }
 
@@ -1066,6 +1216,30 @@ ${TRIGGER_CSS}
      D 极端 435→136ms（−69%）。对慢速接口无副作用：分片间隔超过 50ms 时每个分片都立即渲染；
      结束时 done 立刻写最终文本，尾巴上不会少字。 */
   const RENDER_INTERVAL = 50;
+
+  /* ---- 译文尾部的操作条（复制 / 朗读 / 重试）----
+     kniph 2026-10-17：重试从顶栏搬下来。顶栏那个 ↻ 只能重试「当前主配置」，
+     多条对比时想重试第 2 条就没辙；每条结果自己带一排才顺手。
+     朗读也放这儿（speechSynthesis，零依赖）。图标自绘，和别处一个惯例。 */
+  const ACT_COPY_SVG =
+    '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" ' +
+    'stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="9" height="9" rx="1.6"/>' +
+    '<path d="M13 4.5H5.6A1.6 1.6 0 0 0 4 6.1V13"/></svg>';
+  const ACT_RETRY_SVG =
+    '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" ' +
+    'stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 10a6.5 6.5 0 1 1-1.9-4.6"/>' +
+    '<path d="M16.5 3.5V7H13"/></svg>';
+  const ACT_SPEAK_SVG =
+    '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" ' +
+    'stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7.5h2.8L10 4.2v11.6l-3.7-3.3H3.5z"/>' +
+    '<path d="M13 7.6a3.4 3.4 0 0 1 0 4.8"/><path d="M15.2 5.4a6.6 6.6 0 0 1 0 9.2"/></svg>';
+  const ACT_STOP_SVG =
+    '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" ' +
+    'stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7.5h2.8L10 4.2v11.6l-3.7-3.3H3.5z"/>' +
+    '<path d="M13 8l4 4M17 8l-4 4"/></svg>';
+
+  /** 正在朗读哪一条（configId；空串 = 没在朗读）。用来切「朗读/停止」图标 */
+  let speakingKey = '';
 
   let pendingDelta = null;
   let deltaTimer = 0;
@@ -1082,21 +1256,30 @@ ${TRIGGER_CSS}
   function applyDelta() {
     deltaTimer = 0;
     lastFlush = performance.now();
-
-    const text = pendingDelta === null ? '' : pendingDelta;
     pendingDelta = null;
 
-    outBox.classList.remove('empty');
-    // 不自动跟随到底部（kniph 定的）：有些模型吐字很快，视口被一路拉着往下跑就
-    // 根本读不了。文本是一段段往**后**接的，视口原地不动就能从头安静读完；
-    // 想追尾巴自己拖滚动条。（顺带省掉一次强制布局 —— 以前那行要读 scrollHeight。）
-    outBox.textContent = text;
+    /* 文本的**真相源是各个槽的 s.text**（delta 消息先写槽，再叫这一声重画）。
+       单条和多条**走同一个渲染**（kniph 2026-10-17）—— 块头就是配置名，
+       单条也要看得见用的是哪条。 */
+    {
+      renderSlots();
+    }
     // 译文一段段变长，面板也跟着长高，底部可能顶出视口 —— 拉回来
     keepPanelInView();
   }
 
-  function queueDelta(text) {
-    pendingDelta = text || '';
+  /**
+   * 把「该重画了」排进 50ms 的节流窗口。**不碰文本**。
+   *
+   * 文本由调用方写进**它自己那个槽**（`onPortMessage` 用 `slotForMsg(msg)` 定位），
+   * 这里只负责重画 —— 重画读的是各槽的 `s.text`。
+   *
+   * ⚠️ 原来这里还有个 `text` 参数，收下就往 `slots[0]` 里写（kniph 2026-10-18 通读删掉）。
+   * 实际调用点**一处都没传过**（等于死代码），但签名摆在那儿像「支持传文本」——
+   * 哪天真有人传了，多配置对比时文本会被塞进**第一条**（错的块）。
+   * 定位槽位这件事有且只有 `slotForMsg` 一处，别在渲染路径上再开一条。
+   */
+  function queueDelta() {
     if (deltaTimer) return;
     const gap = performance.now() - lastFlush;
     if (gap >= RENDER_INTERVAL) applyDelta();
@@ -1120,7 +1303,18 @@ ${TRIGGER_CSS}
 
     if (r && r.text) {
       outBox.classList.remove('empty');
-      outBox.textContent = r.text;
+      /* **结果写进槽位，再统一按块渲染**（kniph 2026-10-17）——
+         以前单条是 outBox.textContent = r.text 铺成纯文本，块头（配置名）就没了。
+         现在单条和多条走同一条渲染路径，配置名永远可见。 */
+      const only = slots[0];
+      if (only) {
+        only.state = 'done';
+        only.text = r.text;
+        only.error = '';
+        renderSlots();
+      } else {
+        outBox.textContent = r.text;
+      }
       // 状态栏只留「HTTP · 耗时 · 路径」三段，其余都收进「…」
       const bits = [];
       if (lastOcr) bits.push(lastOcr.direct ? '截图直传' : '截图 OCR');
@@ -1183,26 +1377,38 @@ ${TRIGGER_CSS}
     }
 
     if (msg.type === 'start') {
-      // 这条是给「发请求时选中的那个配置」看的。用户可能已经切走了 ——
-      // 切到**有缓存**的配置时那条请求不会被中止（后台只在收到新的 translate 时才 abort），
-      // 所以它的 start / delta 还会继续来，不挡住就把人家刚铺好的结果冲掉了。
-      if (pendingConfigId !== shownConfigId()) return;
+      /* 门禁：这条流必须属于**当前显示的某个槽**。用户切走之后（切到有缓存的配置时
+         旧请求不会被中止）它的 start / delta 还会继续来 —— 不挡住就把人家刚铺好的
+         结果冲掉了。没有 configId 的老回包按第一条算（兼容）。 */
+      const sl = slotForMsg(msg);
+      if (!sl) return;
+      sl.state = 'busy';
+      sl.statusText = msg.statusText || '';
       cancelPendingDelta();
       // 同一条请求里 model 变量填了多行时，后台会逐个试 —— 每次开始试一个就带一句
       // statusText（形如「（Qwen3-32B）」）。只有一个 model（或没写 {{model}}）时它是空串，
       // 状态就还是老样子「请求中…」，看不出一丝变化。
-      setStatus(msg.statusText ? `请求中…${msg.statusText}` : '请求中…');
-      setDot('on');
-      outBox.classList.add('empty');
-      outBox.textContent = '';
-      resetDiag();
+      if (slots.length <= 1) {
+        setStatus(msg.statusText ? `请求中…${msg.statusText}` : '请求中…');
+        setDot('on');
+        outBox.classList.add('empty');
+        outBox.textContent = '';
+        resetDiag();
+      } else {
+        setStatus(`翻译中…（${slots.length} 条）`);
+        setDot('on');
+        renderSlots();
+      }
       return;
     }
 
     if (msg.type === 'delta') {
-      // 和 start 同理：这条流是**别的配置**的，用户已经切走了，别往眼前这屏上涂
-      if (pendingConfigId !== shownConfigId()) return;
-      queueDelta(msg.text);
+      // 和 start 同理：不属于任何显示的槽就丢；属于某个槽就写进那个槽再重画
+      const sl = slotForMsg(msg);
+      if (!sl) return;
+      sl.state = 'busy';
+      sl.text = msg.text || '';
+      queueDelta();
       return;
     }
 
@@ -1251,30 +1457,56 @@ ${TRIGGER_CSS}
 
     if (msg.type === 'done') {
       const r = msg.result || {};
-      // 按「发出这条请求时选中的配置」归档，不是当前选中的那个 ——
-      // 请求在飞的时候用户可能已经切到别的配置上了（见 cfgSelect 的 change）
-      rememberResult(pendingConfigId, r, lastOcr, lastAction, false);
-      if (pendingConfigId === shownConfigId()) {
-        // 必须先取消挂起的这一帧：done 往往在最后一个 delta 之后立刻到达，
-        // 如果让那个 rAF 稍后执行，它会用更旧的文本把最终结果覆盖掉。
+      const sl = slotForMsg(msg);
+      // 归档按「发出这条请求时那条配置」——请求在飞的时候用户可能已经切走了
+      rememberResult(msg.configId || pendingConfigId, r, lastOcr, lastAction, false);
+      if (!sl) {
+        // 这条流已经不属于任何显示的槽（用户切走了、它被顶掉了）→ 只归档，别去动界面
+        leaveBusy();
+        return;
+      }
+      sl.result = r;
+      sl.state = r && r.text ? 'done' : 'fail';
+      sl.text = r.text || sl.text;
+      sl.error = (r && r.error) || '';
+      // 必须先取消挂起的这一帧：done 往往在最后一个 delta 之后立刻到达，
+      // 如果让那个 rAF 稍后执行，它会用更旧的文本把最终结果覆盖掉。
+      cancelPendingDelta();
+      if (slots.length <= 1) {
         renderResult(r, lastOcr, lastAction, false);
       } else {
-        // 这次结果归另一个配置，只进缓存，别去动眼前这个配置的界面（切回去就能看到）
-        leaveBusy();
-        // 兜底：眼前这个配置连缓存都没有（正常到不了这儿 —— 切到没翻过的配置时
-        // 会当场发新请求，而那条会把这条顶掉）
-        if (!resultCache.has(shownConfigId())) showNoCachedResult(shownConfigId());
+        renderSlots();
+        if (allSettled()) {
+          leaveBusy();
+          const okCount = slots.filter((s2) => s2.state === 'done').length;
+          setDot(okCount ? 'ok' : 'err');
+          setStatus(settledSummary(), okCount ? '' : 'err');
+        }
       }
       return;
     }
 
     if (msg.type === 'fatal') {
       const r = { error: msg.message || '出错了' };
-      rememberResult(pendingConfigId, r, lastOcr, lastAction, true);
-      if (pendingConfigId === shownConfigId()) {
+      const sl = slotForMsg(msg);
+      rememberResult(msg.configId || pendingConfigId, r, lastOcr, lastAction, true);
+      if (!sl) {
+        leaveBusy();
+        return;
+      }
+      sl.result = r;
+      sl.state = 'fail';
+      sl.error = r.error;
+      cancelPendingDelta();
+      if (slots.length <= 1) {
         renderResult(r, lastOcr, lastAction, true);
       } else {
-        leaveBusy();
+        renderSlots();
+        if (allSettled()) {
+          leaveBusy();
+          setDot('err');
+          setStatus(settledSummary(), 'err');
+        }
       }
     }
   }
@@ -1304,9 +1536,247 @@ ${TRIGGER_CSS}
     return cfgMode === 'image' && imageConfigs.length > 0 ? imageConfigId : currentConfigId;
   }
 
+  /* ---- 对比槽位（2026-10-16） ----
+     面板的结果区按槽渲染：N=1 就是老样子（一条结果铺满），N≥2 时一条一块。
+     「显示 N 条」和「显示 1 条」是同一套逻辑 —— slots 是个队列：
+       · 选一条已在队列里的 → 无操作（要移除请取消勾选）
+       · 选一条不在队列里的，队列已满 → **顶掉队首**（最早的那条），新的排到队尾
+         （N=1 时这一步就等于「切换」，和以前的行为严丝合缝）
+       · 「临时」加的只在本次会话里活着，下一次翻译前清掉（持久列表不动）
+     持久列表存在 prefs.slotConfigs（跟着存档走，N 存在 prefs.panelSlots）。 */
+  let slots = [];
+
+  const slotLimit = () => Math.max(1, Math.min(4, Number(prefs.panelSlots) || 1));
+
+  /* 槽位在「文字」和「图片直传」两屏各用各的池子 / 名单：
+     图片那屏的池子是「填了图片请求模板的配置」（= imageConfigs），
+     名单存 prefs.imageSlotConfigs，和设置页那份文字名单互不覆盖 ——
+     否则来回切一次屏幕，两边的对比组合就互相顶掉了。 */
+  const slotPool = () => (cfgMode === 'image' && imageConfigs.length > 0 ? imageConfigs : configs);
+  const slotsKey = () => (cfgMode === 'image' ? 'imageSlotConfigs' : 'slotConfigs');
+
+  /* 槽位**按模式各存一份**：`slots` 是「当前这一屏」的那份。
+     换屏（文字 ↔ 图片直传）时把当前这份收起来、把另一份取出来 ——
+     否则图片那屏的槽位会被文字翻译当成自己的主配置：2026-10-18 接多槽位时
+     就是这么把文字请求发到图片配置上的（e2e「文字那次不受 imageConfigId 影响」抓住）。 */
+  const slotsByMode = { text: [], image: [] };
+  function switchSlotMode(nextMode) {
+    if (cfgMode === nextMode) return;
+    slotsByMode[cfgMode] = slots;
+    slots = slotsByMode[nextMode] || [];
+    cfgMode = nextMode;
+  }
+
+  function slotBy(configId) {
+    return slots.find((s) => s.configId === configId) || null;
+  }
+
+  /**
+   * 按消息里带的 configId 找到对应槽位。
+   *
+   * `start` / `delta` / `done` / `fatal` 四条消息都写同一句
+   * `msg.configId ? slotBy(msg.configId) : slots[0]`（4 处）—— 抽出来，
+   * 以后改「消息怎么落到槽位」只动这一处。
+   */
+  function slotForMsg(msg) {
+    return msg && msg.configId ? slotBy(msg.configId) : slots[0] || null;
+  }
+
+  function makeSlot(configId) {
+    const c = configs.find((x) => x.id === configId);
+    return {
+      configId,
+      name: c ? c.name : configId,
+      state: 'idle',      // idle | busy | done | fail
+      text: '',
+      error: '',
+      statusText: ''
+    };
+  }
+
+  /**
+   * 校准槽位：名字刷新；配置被删掉的槽位剔掉。
+   *
+   * **`prefs.slotConfigs`（设置页点亮的那些）是「默认组合」**：
+   * 已经有了槽位就不动它（面板里点出来的选择说了算），没有才拿它播种。
+   * 「打开新网页用 x 条」说的就是这个 —— 默认，不是固定死。
+   *
+   * 播种时**按 `configs` 的顺序排**（= 设置页列表的顺序）——kniph 2026-10-17：
+   * 「默认和设置里的排序一样」。设置页写入时已经排过一遍了，这里再排一次是
+   * **兜底**：老存档 / 手改的存档里名单顺序可能是乱的，那条也得让面板排对。
+   */
+  function initSlots() {
+    const pool = slotPool();
+    const ids = pool.map((c) => c.id);
+    // 已经显示的槽位保持不动，只刷新名字 / 清掉失效的
+    const kept = slots
+      .filter((s) => ids.includes(s.configId))
+      .map((s) => ({ ...s, name: (pool.find((c) => c.id === s.configId) || {}).name || s.name }));
+    if (kept.length) {
+      slots = kept;
+      return;
+    }
+    const saved = Array.isArray(prefs[slotsKey()]) ? prefs[slotsKey()] : [];
+    const want = saved.filter((id) => ids.includes(id));
+    // 兜底排序：按配置列表顺序（名单里的先后可能是乱的）
+    const ordered = pool.filter((c) => want.includes(c.id)).map((c) => c.id);
+    /* 图片那屏**只播种一条**（就是选中的那条图片配置）。
+       曾经试过「按对比显示 N 条把图片配置全铺开」，结果两个毛病（kniph 2026-10-18 报）：
+         ① 槽位一进来就装满 → 下拉里选谁都只是挪位置，看着像「不能多选」；
+         ② targets = slots.map(...) → **一次截图把所有图片配置全发出去**，白烧额度。
+       要比对就跟文字模式一样，自己在下拉里一条条加上来（上限仍是“对比显示 N 条”）。 */
+    /* 兜底那条按模式取：**文字模式必须用 activeConfigId**（原行为）——
+       用 currentConfigId 会把上一次面板里拨过的那条带过来，
+       e2e 的「文字那次不受 imageConfigId 影响」就是钉这个的。 */
+    const primary = cfgMode === 'image' ? (imageConfigId || activeConfigId) : activeConfigId;
+    let seeded;
+    if (ordered.length) {
+      seeded = ordered.slice(0, slotLimit());
+    } else {
+      seeded = ids.includes(primary) ? [primary] : (ids[0] ? [ids[0]] : []);
+    }
+    slots = seeded.map(makeSlot);
+  }
+
+  /**
+   * 面板里改了对比组合之后**只更新内存、不落盘**。
+   *
+   * `settings.slotConfigs`（存档里那份）是**设置页的默认组合** ——「打开新网页用的
+   * x 条」。写回的话会把设置页那份默认悄悄改掉，下次开新页面就变了。
+   */
+  function persistSlots() {
+    prefs[slotsKey()] = slots.filter((s) => !s.temp).map((s) => s.configId).slice(0, slotLimit());
+  }
+
+  /** 从本次显示里去掉一条（至少留一条 —— 一条都没有的话面板没东西可显示） */
+  function removeSlot(configId) {
+    if (slots.length <= 1) return;
+    slots = slots.filter((s) => s.configId !== configId);
+    /* 删掉的正好是顶栏当前那条 → 把 currentConfigId 让给还留着的一条。
+       不然下拉还停在那条**已经不在屏上**的配置上：再想把它选回来时，
+       <select> 的值根本没变、连 change 都不触发，点了像没反应
+       （kniph 2026-10-18 报的「删掉再选回来不生效」）。 */
+    if (currentConfigId === configId) {
+      currentConfigId = slots[0] ? slots[0].configId : '';
+    }
+    persistSlots();
+  }
+
+  const allSettled = () => slots.every((s) => s.state === 'done' || s.state === 'fail');
+
+  /** 多槽时状态栏那句汇总 */
+  function settledSummary() {
+    const ok = slots.filter((s) => s.state === 'done').length;
+    const bad = slots.filter((s) => s.state === 'fail').length;
+    if (!bad) return `${ok} 条都拿到了译文`;
+    if (!ok) return `${bad} 条都失败了`;
+    return `${ok} 条拿到译文，${bad} 条失败`;
+  }
+
+  /**
+   * 按槽渲染结果区（**每条一块，块头就是配置名**）。
+   *
+   * 原来单条走另一条老路（纯文本铺满），代价是**看不见用的是哪个配置**。
+   * kniph 2026-10-17：单条也走这里就行 —— 块结构本来就有名字，
+   * 「不隐藏」就好，不需要另做一套显示。
+   */
+  function renderSlots() {
+    if (!slots.length) return;
+    outBox.classList.remove('empty');
+    /* **整块替换会把 scrollTop 归零** —— 多条对比时窗口很长，一点重试 /
+       每 50ms 流式刷新一次就被弹回顶部，正读着的位置全丢（kniph 2026-10-17 报的）。
+       所以替换前存、替换后还回；内容变短时浏览器自己会把超出的部分夹掉。 */
+    const keepTop = outBox.scrollTop;
+    outBox.innerHTML = slots.map(slotHtml).join('');
+    if (keepTop) outBox.scrollTop = keepTop;
+    keepPanelInView();
+  }
+
+  /**
+   * 把某个槽位的结果写进去并重画。
+   *
+   * 单条和多条**都走 renderSlots**（kniph 2026-10-17 统一），所以这里没有分支：
+   * 以前那句「多条 renderSlots / 单条 renderResult」已经不需要了。
+   */
+  function renderSlotResult(configId, r, ocr, action, fatal) {
+    const sl = slotBy(configId);
+    if (sl) {
+      sl.result = r;
+      sl.state = fatal ? 'fail' : (r && r.text ? 'done' : 'fail');
+      sl.text = (r && r.text) || sl.text || '';
+      sl.error = (r && r.error) || '';
+    }
+    // 状态栏/灯/诊断仍走公共收口
+    renderResult(r, ocr, action, fatal);
+  }
+
+
+
+  /**
+   * 译文尾部那排按钮的 HTML（复制 / 朗读 / 重试）—— 单条和多条共用。
+   *
+   * `cid` 是这条结果属于哪个配置：点重试就重试**这一条**（多条对比时才有意义），
+   * 朗读也只读这条自己的译文。点击用事件委托接（见 outBox 上的监听）。
+   */
+  function actsHtml(cid, text) {
+    const hasText = !!(text && String(text).trim());
+    const speaking = speakingKey === cid;
+    return (
+      '<div class="rt-acts">' +
+      `<button class="rt-act" data-act="copy" data-cid="${cid}"${hasText ? '' : ' disabled'} title="复制这条译文">` +
+      ACT_COPY_SVG + '<span>复制</span></button>' +
+      `<button class="rt-act" data-act="speak" data-cid="${cid}"${hasText ? '' : ' disabled'} ` +
+      `title="${speaking ? '停止朗读' : '朗读这条译文'}">` +
+      (speaking ? ACT_STOP_SVG : ACT_SPEAK_SVG) +
+      `<span>${speaking ? '停止' : '朗读'}</span></button>` +
+      `<button class="rt-act" data-act="retry-one" data-cid="${cid}" title="只重试这一条">` +
+      ACT_RETRY_SVG + '<span>重试</span></button>' +
+      '</div>'
+    );
+  }
+
+  function slotHtml(s) {
+    const esc = (t) =>
+      String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    let st = '';
+    let body = '';
+    let cls = '';
+    if (s.state === 'busy') {
+      st = '翻译中…' + (s.statusText || '');
+      body = s.text || '';
+    } else if (s.state === 'done') {
+      st = '完成';
+      body = s.text || '';
+    } else if (s.state === 'fail') {
+      st = '失败';
+      cls = ' err';
+      body = s.error || '出错了';
+    } else {
+      st = '等待…';
+    }
+    /* 配置名旁边那个 ×：**只删掉这一条**（kniph 2026-10-17）。
+       多条时才有意义 —— 至少留一条，所以单条不显示它。 */
+    const del =
+      slots.length > 1
+        ? `<button class="rt-slot-x" data-del="${esc(s.configId)}" title="不再显示这一条（只影响这次，不改设置里的默认组合）">×</button>`
+        : '';
+    return (
+      `<div class="rt-slot" data-cid="${esc(s.configId)}">` +
+      `<div class="rt-slot-h"><span class="rt-slot-name">${esc(s.name)}</span>` +
+      del +
+      `<span class="rt-slot-st${cls}">${esc(st)}</span></div>` +
+      `<div class="rt-slot-b${cls}">${esc(body)}</div>` +
+      actsHtml(esc(s.configId), body) +
+      '</div>'
+    );
+  }
+
+  /* 顶栏那个「配置」下拉（原生 <select>）。
+     **对比组合由设置页决定**（点亮哪几条 = 新网页默认显示几条）——
+     这里点一条 = 切换（队列满了顶掉队首，N=1 时就是普通的换配置）。
+     kniph 2026-10-17：自绘多选弹层会被面板的 overflow:hidden 裁掉，
+     原生下拉是浏览器自己画的浮层、天然跑在面板外面 —— 换回原生，面板保持最简。 */
   function renderConfigOptions() {
-    /* 图片那一屏列表 = 能翻图的那些；一条都没填就退回全量 ——
-       那时后台也会回退到顶栏当前那条（老行为），下拉跟着如实显示，别装。 */
     const imgMode = cfgMode === 'image' && imageConfigs.length > 0;
     const list = imgMode ? imageConfigs : configs;
 
@@ -1334,17 +1804,22 @@ ${TRIGGER_CSS}
         : (activeConfigId && list.some((c) => c.id === activeConfigId) ? activeConfigId : list[0].id);
     }
     // 两个模式各记各的：翻图那一下不该顺手改掉「文字用哪条」。
-    // 顶栏显示的就是当前这一屏要用的那条，两者靠 shownConfigId() 分辨。
+    /* **两个模式都要校准槽位**。图片这边原来漏了 initSlots —— 于是图片那屏
+       的 slots 永远是翻译时临时拼的那一条，加不进第二条（kniph 2026-10-18 报
+       「禁用 OCR 时不能多选配置」）。 */
     if (imgMode) imageConfigId = want;
     else currentConfigId = want;
+    initSlots();
+
     cfgSelect.value = want;
 
     // 顶栏现在挤了两个下拉，长名字会被截掉 —— 鼠标停上去给全名。
-    // 图片模式但一条都没填时，把「为什么没缩成一小撮」写在 tooltip 里。
+    // 多条对比时额外说一句「还开着几条」（下拉里只显示当前这条）。
     const cur = list.find((c) => c.id === want);
     const who = cur ? cur.name : '';
+    const extra = !imgMode && slots.length > 1 ? `（对比中：共 ${slots.length} 条）` : '';
     if (cfgMode !== 'image') {
-      cfgSelect.title = cur ? '翻译接口：' + who : '翻译接口';
+      cfgSelect.title = cur ? '翻译接口：' + who + extra : '翻译接口';
     } else if (imageConfigs.length) {
       cfgSelect.title = '图片接口：' + who;
     } else {
@@ -1352,6 +1827,47 @@ ${TRIGGER_CSS}
         '还没有任何配置填过「图片请求模板」——去设置页的「配置」栏给能看图的那条填上，' +
         '它才会出现在这个列表里。现在用的是「' + who + '」';
     }
+  }
+
+  /** 改动槽位之后统一收口：立即按新的槽位重来一遍（和「换配置当场重翻」一个规矩）。
+      **切配置才用缓存**（老规矩）：已经翻过的那几条直接铺回结果、不发请求，
+      只把没翻过的发出去 —— 请求在飞的时候切走、飞完结果照旧归档，切回来立刻有。 */
+  function afterSlotChange() {
+    renderConfigOptions();
+    if (!panel.classList.contains('show')) return;
+    lastOcr = null;
+    lastAction = 'translate';
+    if (!currentText) {
+      showNoCachedResult(slots[0] ? slots[0].configId : shownConfigId());
+      return;
+    }
+    const toRun = [];
+    for (const sl of slots) {
+      const hit = resultCache.get(sl.configId);
+      if (hit) {
+        sl.state = hit.fatal ? 'fail' : 'done';
+        sl.text = (hit.r && hit.r.text) || '';
+        sl.error = (hit.r && hit.r.error) || '';
+      } else {
+        toRun.push(sl.configId);
+      }
+    }
+    if (!toRun.length) {
+      // 全部有缓存：不用惊动后台（单条 = 老 renderResult 那条路）
+      cancelPendingDelta();
+      if (slots.length <= 1) {
+        const hit = resultCache.get(slots[0].configId);
+        if (hit) renderResult(hit.r, hit.ocr, hit.action, hit.fatal);
+      } else {
+        renderSlots();
+        leaveBusy();
+        setDot('ok');
+        setStatus(settledSummary());
+      }
+      keepPanelInView();
+      return;
+    }
+    translate(currentText, '', undefined, { only: toRun });
   }
 
   /* 顶栏那个「目标语言」下拉的候选，由后台随 ready 一起发过来
@@ -1400,7 +1916,7 @@ ${TRIGGER_CSS}
     srcBox.append(img, note);
   }
 
-  function translate(text, configId, ocr) {
+  function translate(text, configId, ocr, opts) {
     // Math.max 兜负数（负的 limit 会把 slice(0, -n) 变成从尾部倒砍），与 background 同一口径
     const limit = Math.max(1, Number(prefs.maxChars) || 8000);
     let payload = String(text || '');
@@ -1417,7 +1933,7 @@ ${TRIGGER_CSS}
     // **必须在挑配置之前切** —— 不然会拿着上一次那条文字配置发出去。
     const nextMode = hasImage ? 'image' : 'text';
     if (cfgMode !== nextMode) {
-      cfgMode = nextMode;
+      switchSlotMode(nextMode);
       renderConfigOptions();
     }
 
@@ -1427,9 +1943,10 @@ ${TRIGGER_CSS}
     lastAction = ocr ? 'ocr' : 'translate';
     currentText = payload;
 
-    /* 挑哪条：调用方**别传**「从下拉里读出来的那个值」—— 模式刚切过，那个值可能是
-       上一屏的。上面已经按模式重画过下拉了，这里直接读它就是对的。 */
-    const picked = configId || cfgSelect.value || activeConfigId;
+    /* 这次要跑哪些：对比模式 = 槽位列表全跑；调用方明确传了 configId（重试 / 切语言
+       等单条路径）= 只跑那一条。槽位为空（还没 ready）时退回顶栏那条。 */
+    if (!configId && !slots.length) initSlots();
+    const picked = configId || (slots[0] && slots[0].configId) || currentConfigId || activeConfigId;
     // 两个模式各记各的：图片那一屏记的是 imageConfigId（= 设置页那个选中项），
     // 别让它把「文字用哪条」顶掉。
     if (cfgMode === 'image' && imageConfigs.length > 0) imageConfigId = picked;
@@ -1464,11 +1981,32 @@ ${TRIGGER_CSS}
     // 这里让面板长高了几十像素 —— 不重新夹一次，贴着视口底部开的面板就会切底。
     keepPanelInView();
 
+    /* 这次要跑哪些：opts.only（切配置时只跑「没缓存的那几条」，有缓存的直接铺）
+       > 对比模式（槽位里的全部）> 单条路径（picked）。
+       **缓存判断不在这里** —— 「重新翻译」和「新划词」都要无条件重发，
+       只有「切配置」那条路才该用缓存（老规矩，见 afterSlotChange）。 */
+    const targets = (opts && Array.isArray(opts.only) && opts.only.length)
+      ? opts.only
+      : ((!configId && slots.length > 1)
+        ? slots.map((s) => s.configId)
+        : [picked]);
+    for (const id of targets) {
+      const sl = slotBy(id);
+      if (sl) {
+        sl.state = 'busy';
+        /* 同上：**不清旧译文** —— 清空会让结果区瞬间变短，滚动位置被夹到 0。
+           新译文一到就替换，中间那段「翻译中…」状态自己会标出来。 */
+        sl.error = '';
+      }
+    }
+    if (slots.length > 1) renderSlots();
+
     const p = ensurePort();
     postOrFail(p, {
       type: 'translate',
       text: payload,
-      configId: picked,
+      configIds: targets,
+      configId: targets[0],
       context: {
         url: location.href,
         title: document.title,
@@ -1806,12 +2344,27 @@ ${TRIGGER_CSS}
     // 所以 Shadow DOM 内部的输入框认不出来 —— 认不出就放行，宁可多弹一次。
     if (isEditable(sel.anchorNode)) return null;
 
-    // 鼠标划词：按钮直接贴鼠标，一个字节的选区几何量都不看。
+    // 鼠标划词：**按钮**直接贴鼠标，一个字节的选区几何量都不看（按钮要的是「手边」）。
     // 以前是从选区里挑「第一行 / 最后一行」再挑离鼠标近的那一头 —— 一拖一大段、或者
     // 那一行特别长的时候（双击选段、页面元素多、在空旷处上下划），挑出来的角离鼠标
     // 还是很远，得再把鼠标挪过去点。鼠标位置既不怕整段框对到最长那行，也不怕重定目标。
+    // 但**面板**的锚是另一回事（2026-10-16 分离）：面板该贴**选中的内容**，
+    // 贴鼠标的话用户划完词面板就杵在手边、把选中的文字盖住 —— 所以这里顺手把
+    // 选区末行的几何量也量出来（panelRect，量不到就 null，面板退回鼠标位置）。
     if (lastMouse) {
-      return { text, atMouse: true, anchor: { rect: pointRect(lastMouse.x, lastMouse.y) } };
+      let panelRect = null;
+      try {
+        const segs = Array.from(sel.getRangeAt(0).getClientRects()).filter(
+          (r) => r.width > 0 || r.height > 0
+        );
+        if (segs.length) {
+          const tail = segs[segs.length - 1];
+          panelRect = { left: tail.left, top: tail.top, right: tail.right, bottom: tail.bottom };
+        }
+      } catch {
+        /* 几何量拿不到（Shadow DOM 重定目标）—— panelRect 留空 */
+      }
+      return { text, atMouse: true, anchor: { rect: pointRect(lastMouse.x, lastMouse.y) }, panelRect };
     }
 
     let rect;
@@ -1842,7 +2395,8 @@ ${TRIGGER_CSS}
       hideTrigger();
       return;
     }
-    const found = readSelection();
+    // 顶层选区优先；没有（或空）就退到 iframe 桥报上来的那份
+    const found = readSelection() || lastFrameSel;
     if (!found) {
       hideTrigger();
       return;
@@ -1854,7 +2408,8 @@ ${TRIGGER_CSS}
       const now = Date.now();
       if (lastAuto.text === found.text && now - lastAuto.at < 900) return;
       lastAuto = { text: found.text, at: now };
-      openWith(found.text, found.anchor.rect);
+      // auto 模式同样：面板贴内容，不贴鼠标
+      openWith(found.text, found.panelRect || found.anchor.rect);
       return;
     }
 
@@ -1897,7 +2452,9 @@ ${TRIGGER_CSS}
     trigShownAt = Date.now();
     armTriggerIdle();
     trigger.dataset.pendingText = found.text;
-    trigger.__anchor = found.anchor.rect;
+    // 面板的锚 = 选中的内容（panelRect），不是按钮（按钮贴的是鼠标）——
+    // 两个锚分离：按钮要「在手边」，面板要「在内容旁边」（2026-10-16）
+    trigger.__anchor = found.panelRect || found.anchor.rect;
   }
 
   function onSelectionMaybeChanged() {
@@ -1957,6 +2514,53 @@ ${TRIGGER_CSS}
 
   window.addEventListener('scroll', hideTrigger, { passive: true });
 
+  /* ---- iframe 划词：收 frame-bridge.js 报上来的选区 ----
+     坐标换算：叶子报「frame 内坐标」，trail 里是中间各层 iframe 的偏移；
+     **第一层的偏移（iframe 元素在顶层的位置）由这里自己补** —— 叶子跨域查不到
+     自己嵌在哪儿。顺手兼任来源校验：消息必须来自本页面里真实存在的 frame，
+     页面伪造的直接忽略。 */
+  window.addEventListener('message', (e) => {
+    const m = e.data;
+    if (!m || m.type !== 'rt-frame-sel' || e.source === window) return;
+    if (!prefs.frameBridge) return;
+
+    let base = null;
+    for (const f of document.querySelectorAll('iframe, frame')) {
+      if (f.contentWindow === e.source) {
+        const r = f.getBoundingClientRect();
+        base = { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+        break;
+      }
+    }
+    if (!base) return;
+
+    if (!String(m.text || '').trim() || !m.rect) {
+      // frame 里的选区没了：只有顶层自己也没选区时才收按钮（别把顶层正用的选区顶掉）
+      if (lastFrameSel) {
+        lastFrameSel = null;
+        if (!readSelection()) hideTrigger();
+      }
+      return;
+    }
+
+    let left = base.left + m.rect.left;
+    let top = base.top + m.rect.top;
+    let right = base.left + m.rect.right;
+    let bottom = base.top + m.rect.bottom;
+    for (const t of m.trail || []) {
+      left += t.left;
+      top += t.top;
+      right += t.right;
+      bottom += t.bottom;
+    }
+    lastFrameSel = {
+      text: String(m.text),
+      anchor: { rect: { left, top, right, bottom } },
+      atMouse: false
+    };
+    onSelectionMaybeChanged();
+  });
+
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && panel.classList.contains('show')) {
       hidePanel();
@@ -1994,18 +2598,8 @@ ${TRIGGER_CSS}
     keepPanelInView();   // 诊断区展开会让面板变高
   });
 
-  retryBtn.addEventListener('click', () => {
-    if (busy) return;
-    // 截图那一步就失败（含直传）时 currentText 还是空的，重试得拿刚才那张图重来一遍
-    if (!currentText) {
-      retryShot();
-      return;
-    }
-    translate(currentText, shownConfigId());
-  });
-
-  copyBtn.addEventListener('click', async () => {
-    const text = outBox.textContent || '';
+  /** 复制一段文本（译文尾部那条「复制」用的兜底写法） */
+  async function copyText(text) {
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
@@ -2020,34 +2614,322 @@ ${TRIGGER_CSS}
       try { document.execCommand('copy'); setStatus('已复制'); } catch { setStatus('复制失败', 'err'); }
       ta.remove();
     }
-  });
+  }
 
+  /* ---- 译文尾部的操作条：复制 / 朗读 / 重试（每条结果自己那排） ----
+     用事件委托挂在结果区和单条操作条上（按钮是渲染出来的，逐个绑定会漏）。 */
+  async function onActClick(e) {
+    /* 配置名旁边那个 ×：只把这一条从本次显示里去掉（不动设置页那份默认组合）。
+       removeSlot 里已经有「至少留一条」的保护。 */
+    const del = e.target.closest && e.target.closest('.rt-slot-x');
+    if (del) {
+      e.preventDefault();
+      e.stopPropagation();
+      const cidDel = del.getAttribute('data-del');
+      if (!cidDel) return;
+      // 名字要在删之前取（删完 slotBy 就查不到了）
+      const goneName = (slotBy(cidDel) || {}).name || '这条配置';
+      removeSlot(cidDel);
+      renderConfigOptions();
+      /* 重画结果区。**两条路径都要照顾**：
+         · 还剩 >=2 条 → renderSlots 按块画；
+         · 只剩 1 条   → 退回单条渲染（renderResult），否则块结构消不掉。 */
+      if (slots.length > 1) {
+        renderSlots();
+      } else {
+        /* 只剩一条：退回单条渲染。**槽位里就有译文**（s.text），不一定在
+           resultCache 里 —— 所以优先用槽位的内容，别去查缓存。 */
+        const only = slots[0];
+        const hit = resultCache.get(only.configId);
+        if (hit) {
+          renderResult(hit.r, hit.ocr, hit.action, hit.fatal);
+        } else if (only && only.text) {
+          renderResult({ text: only.text }, null, lastAction, false);
+        } else {
+          showNoCachedResult(only ? only.configId : '');
+        }
+      }
+      setStatus('已收起「' + goneName + '」（本次显示，不改设置里的默认组合）');
+      return;
+    }
+
+    const btn = e.target.closest && e.target.closest('.rt-act');
+    if (!btn || btn.disabled) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const act = btn.dataset.act;
+    const cid = btn.dataset.cid || '';
+    // 这条译文：优先从槽位拿，单条模式退回结果区文本
+    const slot = cid ? slotBy(cid) : null;
+    const text = slot ? slot.text : (outBox.textContent || '');
+
+    if (act === 'copy') {
+      await copyText(text);
+      return;
+    }
+    if (act === 'speak') {
+      toggleSpeak(cid, text);
+      return;
+    }
+    if (act === 'retry-one') {
+      retryOne(cid);
+    }
+  }
+  outBox.addEventListener('click', onActClick);
+
+  /**
+   * 只重试某一条配置。
+   *
+   * **不判全局 `busy`**：那个标志是「整批还在跑」——多条对比时只要有一条没结束
+   * 它就一直是真的，于是这条重试被自己的门挡掉（kniph 2026-10-17 报的
+   * 「单条正常、多条没反应」）。要拦的是**这一条**已经在跑：
+   * 那一条自己处于 busy 时才不该重复发。
+   */
+  function retryOne(cid) {
+    const id = cid || shownConfigId();
+    // 截图那条路没有原文（图就是原文），重试得拿刚才那张图重来
+    if (!currentText && !(lastOcr && lastOcr.image)) {
+      retryShot();
+      return;
+    }
+    const sl = slotBy(id);
+    // 这一条自己正在翻 → 忽略（防连点）；别的条在翻不影响
+    if (sl && sl.state === 'busy') return;
+    if (sl) {
+      sl.state = 'busy';
+      /* **不清 sl.text**（kniph 2026-10-17 报的「一重试就被弹回顶部」）：
+         清空会让结果区瞬间变短，浏览器顺手把滚动位置夹到 0 —— 长长一屏里
+         正读着的位置就没了。保留旧译文、只把状态改成「翻译中…」
+         （slotHtml 的 busy 分支本来就显示 s.text），新译文一到自然替换。 */
+      sl.error = '';
+      sl.statusText = '';
+      if (slots.length > 1) renderSlots();
+    }
+    // 单条模式（没有槽位）时仍要挡住「整批在跑」的连点
+    if (!sl && busy) return;
+    translate(currentText, id, lastOcr || undefined);
+  }
+
+  /**
+   * 朗读这条译文（浏览器自带 speechSynthesis，零依赖）。
+   * 再点一次停止；正在读另一条时先停掉那条。
+   */
+  function toggleSpeak(cid, text) {
+    const synth = window.speechSynthesis;
+    if (!synth) {
+      setStatus('这个浏览器不支持朗读', 'err');
+      return;
+    }
+    // 正在读同一条 → 停
+    if (speakingKey && speakingKey === cid) {
+      synth.cancel();
+      speakingKey = '';
+      refreshActs();
+      return;
+    }
+    const body = String(text || '').trim();
+    if (!body) return;
+    synth.cancel(); // 换一条读之前先停掉上一条
+    ensureVoices(synth);
+    const u = new SpeechSynthesisUtterance(body);
+    const tags = speechTagsFor(prefs.targetLang);
+    const voices = synth.getVoices() || [];
+    const hit = pickVoice(voices, tags);
+    if (hit) {
+      u.voice = hit;
+      u.lang = hit.lang;
+    } else {
+      /* 挑不到具体语音时只给标签，别给笼统的 'zh' ——
+         'zh' 会让浏览器在 zh-CN / zh-TW / **zh-HK（粤语）** 里随便挑一个，
+         实测就挑到了粤语（kniph 2026-10-17）。给具体标签它才会挑对口的。 */
+      u.lang = tags[0];
+    }
+    u.onend = () => {
+      if (speakingKey === cid) {
+        speakingKey = '';
+        refreshActs();
+      }
+    };
+    u.onerror = () => {
+      if (speakingKey === cid) {
+        speakingKey = '';
+        refreshActs();
+      }
+    };
+    speakingKey = cid;
+    refreshActs();
+    synth.speak(u);
+  }
+
+  /**
+   * 目标语言 → 候选语音标签（**具体标签，按优先级排列**）。
+   *
+   * 关键认识：**译文就是目标语言**，根本不需要检测原文（kniph 2026-10-17 定的）——
+   * 拿设置里那个目标语言直接推语音标签即可，逻辑是确定的、没有猜测。
+   *
+   * 这里跟 `lib/template.js` 的 TARGET_LANG_CODES 对齐（那张表是权威的，29 种语言）。
+   * 但 content script 不能 import，所以按同一套语言名维护一份 —— 加语言时两处都要改，
+   * test-lib 里有断言比对，漏了会红。
+   *
+   * 原来返回前缀（'zh'）再 `startsWith` 匹配，两个坑（kniph 报的「第二次变粤语」）：
+   *   ① 'zh' 前缀会命中 zh-HK（**粤语**）、zh-TW，而 find() 只取第一条；
+   *   ② 首次 getVoices() 返回空数组 → 那次不设 voice 反而读对了，
+   *      第二次列表加载好就命中粤语。现在给具体标签 + 明确排掉方言。
+   */
+  function speechTagsFor(lang) {
+    const s = String(lang || '').trim().toLowerCase();
+    /* 繁体必须**排在简体前面判**：「繁體中文」同时含「中文」和「繁體」，
+       放后面会被前面那条普通话规则吃掉（写完真跑一遍才发现，见 test-lib）。 */
+    if (/繁体|繁體|hant|zh-tw|zh-hk|traditional/.test(s)) return ['zh-TW', 'zh-HK'];
+    /* 普通话：**只要** zh-CN。不列 zh —— 笼统的 zh 会让浏览器在
+       zh-CN / zh-TW / zh-HK(粤语) 里随便挑，实测挑到粤语。 */
+    if (/简体|汉语|^中文$|^中文[^繁]|chs|hans|zh-cn|zh-hans/.test(s) ||
+        s === 'zh' || s === 'chinese' || s === '') {
+      return ['zh-CN', 'zh-Hans'];
+    }
+    /* 「中文」这种光杆词：按默认目标语言（简体中文）处理。
+       放在繁体后面、且用精确匹配，避免把「繁體中文」也捞进来。 */
+    if (s === '中文' || s === 'zh-hans' || s === 'zh_cn') return ['zh-CN', 'zh-Hans'];
+    if (/^英|english|^en$/.test(s)) return ['en-US', 'en-GB'];
+    if (/^日|japanese|^ja$/.test(s)) return ['ja-JP'];
+    if (/^韩|^朝鲜|korean|^ko$/.test(s)) return ['ko-KR'];
+    if (/^法|french|^fr$/.test(s)) return ['fr-FR'];
+    if (/^德|german|^de$/.test(s)) return ['de-DE'];
+    if (/^西班牙|spanish|^es$/.test(s)) return ['es-ES'];
+    if (/^俄|russian|^ru$/.test(s)) return ['ru-RU'];
+    if (/^葡萄牙|portuguese|^pt$/.test(s)) return ['pt-BR', 'pt-PT'];
+    if (/^意大利|italian|^it$/.test(s)) return ['it-IT'];
+    if (/^阿拉伯|arabic|^ar$/.test(s)) return ['ar-SA'];
+    if (/^泰|thai|^th$/.test(s)) return ['th-TH'];
+    if (/^越南|vietnamese|^vi$/.test(s)) return ['vi-VN'];
+    if (/^印尼|indonesian|^id$/.test(s)) return ['id-ID'];
+    if (/^土耳其|turkish|^tr$/.test(s)) return ['tr-TR'];
+    if (/^荷兰|dutch|^nl$/.test(s)) return ['nl-NL'];
+    if (/^波兰|polish|^pl$/.test(s)) return ['pl-PL'];
+    if (/^乌克兰|ukrainian|^uk$/.test(s)) return ['uk-UA'];
+    if (/^捷克|czech|^cs$/.test(s)) return ['cs-CZ'];
+    if (/^瑞典|swedish|^sv$/.test(s)) return ['sv-SE'];
+    if (/^挪威|norwegian|^nb$|^no$/.test(s)) return ['nb-NO', 'no-NO'];
+    if (/^丹麦|danish|^da$/.test(s)) return ['da-DK'];
+    if (/^芬兰|finnish|^fi$/.test(s)) return ['fi-FI'];
+    if (/^希腊|greek|^el$/.test(s)) return ['el-GR'];
+    if (/^匈牙利|hungarian|^hu$/.test(s)) return ['hu-HU'];
+    if (/^罗马尼亚|romanian|^ro$/.test(s)) return ['ro-RO'];
+    // 认不出的语言名：给原样的字符串当标签（浏览器可能认得），实在不行它自己兜
+    return [String(lang || '').trim() || 'zh-CN'];
+  }
+
+  /* 方言标签明确排除：命中这些的一律不要（普通话场景） */
+  const SPEECH_DIALECT_TAGS = ['zh-hk', 'zh-tw', 'zh-hant', 'yue', 'hk', 'tw'];
+
+  /**
+   * 从语音列表里挑一条：**先精确匹配标签，再退回前缀匹配（但要排掉方言）**。
+   * 同一个标签下优先挑本地语音（localService）——在线语音经常要等、还会静默失败。
+   */
+  function pickVoice(voices, tags) {
+    if (!voices || !voices.length) return null;
+    const norm = (v) => String(v.lang || '').toLowerCase().replace(/_/g, '-');
+    for (const tag of tags) {
+      const t = tag.toLowerCase();
+      const exact = voices.filter((v) => norm(v) === t);
+      if (exact.length) return exact.find((v) => v.localService) || exact[0];
+    }
+    // 前缀兜底：'zh-CN' 这种没命中时，允许 zh-* 但排掉 zh-hk / zh-tw / yue
+    for (const tag of tags) {
+      const t = tag.toLowerCase();
+      const prefix = voices.filter((v) => {
+        const L = norm(v);
+        if (!L.startsWith(t.split('-')[0])) return false;
+        // 只要普通话：方言标签一律排掉（这是这次 bug 的正主）
+        if (SPEECH_DIALECT_TAGS.some((d) => L.includes(d))) return false;
+        return true;
+      });
+      if (prefix.length) return prefix.find((v) => v.localService) || prefix[0];
+    }
+    return null;
+  }
+
+  /**
+   * 语音列表是**异步加载**的：首次 getVoices() 拿到空数组，加载完会触发
+   * voiceschanged。挂一次监听把列表“预热”，下次点朗读就有得挑了
+   * （这也是「第一次正常、第二次才出错」的成因之一）。
+   */
+  let voicesPrimed = false;
+  function ensureVoices(synth) {
+    if (voicesPrimed) return;
+    voicesPrimed = true;
+    if (synth.getVoices().length) return;
+    // 触发加载 + 加载完什么都不用做（下次读时自然能拿到）
+    try {
+      synth.addEventListener?.('voiceschanged', () => {}, { once: true });
+    } catch {
+      /* 老浏览器没有 addEventListener，无所谓 */
+    }
+  }
+
+  /** 朗读状态变了 → 重画那排按钮（图标在「朗读/停止」之间切） */
+  function refreshActs() {
+    // 单条和多条都走块渲染，重画一次就够了
+    renderSlots();
+  }
+
+
+  /* 顶栏那个配置下拉（原生 <select>，2026-10-17 换回来的）。
+     文字模式：选一条 = 把它推成「当前主配置」；对比组合由设置页决定，
+       所以这里**不再动槽位**——队列满了会顶掉队首，N=1 时就是普通的换配置。
+     图片模式：本屏用哪条图片配置，单选。 */
   cfgSelect.addEventListener('change', async () => {
     const v = cfgSelect.value;
-    /* 图片那一屏：这个下拉就是设置页 OCR 栏「图片配置」列表的另一个入口，
-       拨一下等于在设置页里改选中项 —— **先写回存档再发请求**，后台只认
-       state.ocr.imageConfigId（见 lib/store.js 的 pickRequestConfig）。
-       不写回的话就会出现「拨了没反应，翻出来还是设置里那条」。 */
-    if (cfgMode === 'image' && imageConfigs.length > 0) {
-      imageConfigId = v;
-      renderConfigOptions();   // 标题 / 选中项跟着换
-      await saveImageConfigId(v);
+    if (!v) return;
+    /* 图片直传那一屏原来在这儿「单选」短路（switchImageConfig），导致
+       禁用 OCR 后只能看一条结果。现在和文字模式走同一套槽位逻辑：
+       区别只有「池子是图片配置」和「主配置存在 imageConfigId」。 */
+    /* **不能写成 if (v === currentConfigId) return**（kniph 2026-10-18 报的 bug）：
+       删掉某条之后 currentConfigId 可能正是它，这时再选回来是要「重新加进去」，
+       早退就把这一步吞了。判据得是「真的什么都不用变」= 已经在槽里**且**就是当前那条。 */
+    const already = slots.some((sl) => sl.configId === v);
+    const primary = cfgMode === 'image' ? imageConfigId : currentConfigId;
+    if (already && v === primary) return;
+    if (cfgMode === 'image') imageConfigId = v;
+    else currentConfigId = v;
+    /* 点一条不在槽位里的 = 加进来；满了顶掉另一头。
+       **往哪边放由设置决定**（kniph 2026-10-17：「出顶部顶掉尾部，出尾部顶掉顶部」）：
+         slotInsert = 'tail'（默认）→ 新的排到**最后**，顶掉最上面那条
+         slotInsert = 'head'        → 新的排到**最前**，顶掉最下面那条
+       显示 1 条时两种都等于「切换」（成员只有一个）。
+       已经在槽位里的 = 挪到同一头（成员一个不动，只换位置）。
+       ——面板点选只影响当前这屏：`persistSlots` 只改内存、**不写存档**，
+       所以设置页那份名单的顺序不会被点击搞乱。 */
+    const max = Math.max(1, slotLimit());
+    const head = prefs.slotInsert === 'head';
+    if (already) {
+      // 只挪位置，成员不动
+      const rest = slots.filter((sl) => sl.configId !== v);
+      slots = head ? [slotBy(v), ...rest] : [...rest, slotBy(v)];
+    } else if (head) {
+      slots = [makeSlot(v), ...slots].slice(0, max);
     } else {
-      currentConfigId = v;
+      slots = [...slots, makeSlot(v)].slice(-max);
     }
-    // 翻过的 → 放回上次的结果，一个请求都不发；
-    // 没翻过的 → 当场用这个配置翻一次（重发同一条请求是 ↻ 的活儿，不是这儿）
-    const hit = resultCache.get(shownConfigId());
+    /* **必须 await**：后台挑图片配置读的是存档里的 state.ocr.imageConfigId，
+       并不看消息里的 configId（见 store.js pickRequestConfig）。不写完就发，
+       请求会带着上一条图片配置出去 —— 2026-10-18 接多槽位时漏了这个 await，
+       当场被 e2e 的「拨一下真的换成新那条了」抓住。 */
+    if (cfgMode === 'image') await saveImageConfigId(v);
+    renderConfigOptions();
+    // 翻过的 → 放回上次的结果，一个请求都不发；没翻过的 → 当场用这个配置翻一次
+    const hit = resultCache.get(v);
     if (hit) {
-      renderResult(hit.r, hit.ocr, hit.action, hit.fatal);
+      // **必须走统一入口**：多条时直接 renderResult 会把块结构冲掉（缩成一个）
+      renderSlotResult(v, hit.r, hit.ocr, hit.action, hit.fatal);
+      leaveBusy();
       return;
     }
-    // 截图直传那一路没有文字原文，判据得看图片；OCR 认出来的文字在 currentText 里
     if (currentText || (lastOcr && lastOcr.image)) {
-      translate(currentText, shownConfigId(), lastOcr || undefined);
+      translate(currentText, v, lastOcr || undefined);
       return;
     }
-    showNoCachedResult(shownConfigId());
+    showNoCachedResult(v);
   });
 
   /* 顶栏换目标语言。语言是藏在请求模板里的（{{target}} / {{targetCode}}），
@@ -2116,10 +2998,21 @@ ${TRIGGER_CSS}
       return;
     }
 
+    // 全局快捷键（Alt+T，manifest.commands）：选区在页面这边，自己读、自己开面板
+    if (msg.type === 'hotkey-translate') {
+      const r = readSelection();
+      if (!r) return;
+      openWith(r.text, (r.panelRect || (r.anchor && r.anchor.rect)) || null);
+      return;
+    }
+
     if (msg.type !== 'rt-translate-selection') {
       // 右键菜单里那条「翻译剪切板中的截图」
       if (msg.type === 'rt-ocr-clipboard') {
-        startOcr(lastRightClick ? pointRect(lastRightClick.x, lastRightClick.y) : null);
+        // 快捷键触发时没有右键上下文 —— lastRightClick 是**上次**右键的陈旧位置，
+        // 面板杵在那儿很莫名其妙；改贴最近鼠标位置（按快捷键时手就在那儿）。
+        const pt = msg.via === 'hotkey' ? lastMouse : lastRightClick;
+        startOcr(pt ? pointRect(pt.x, pt.y) : null);
       }
       // 右键菜单里那条「框选截图翻译」：图已经截好了，这里负责框选
       if (msg.type === 'rt-shot-translate') {

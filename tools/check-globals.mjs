@@ -52,6 +52,8 @@ const GLOBALS = new Set([
   'chrome', 'browser', 'globalThis', 'require', 'process', 'Buffer', '__dirname', '__filename',
   'CustomEvent', 'Event', 'EventTarget', 'MutationObserver', 'IntersectionObserver',
   'ResizeObserver', 'HTMLElement', 'Element', 'Node', 'Image', 'Audio', 'DOMRect',
+  // 语音朗读（译文尾部那个「朗读」按钮，浏览器自带）
+  'SpeechSynthesisUtterance', 'speechSynthesis',
   'module', 'exports'
 ]);
 

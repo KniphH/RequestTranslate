@@ -28,7 +28,10 @@ const {
 } = await import('../lib/store.js');
 // 「主请求 + 后备」那套链函数住在 lib/requests.js —— 配置和 OCR 供应商共用（见该文件头注）
 const { uid, normalizeRequestItem, mainRequest, allRequests, requestChain, requestTemplateFor } = await import('../lib/requests.js');
-const { previewRequest, maskRequest } = await import('../lib/engine.js');
+// 导出文件口令加密（node 22 自带 webcrypto，和扩展里的 Web Crypto 同源同 API）
+const { encryptExport, decryptExport, isEncryptedExport } = await import('../lib/crypto.js');
+const { previewRequest, maskRequest, readResponseBody } = await import('../lib/engine.js');
+const { adoptPanelOwned, PANEL_OWNED_SETTING_KEYS } = await import('../lib/store.js');
 const { toBingLang, hasAdapter } = await import('../lib/adapters.js');
 const {
   OCR_MENU_ID, OCR_MENU_TITLE, OCR_PROVIDERS, BUILTIN_OCR_IDS,
@@ -126,6 +129,44 @@ section('1. tokenize —— 引号 / 续行 / 注释');
   const req = parseCurl(`curl -d'{"a":1}' https://x.com`);
   eq('-d 与引号紧贴时 parseCurl 能切开', req.body, '{"a":1}');
   eq('并且 URL 不受影响', req.url, 'https://x.com');
+
+  /* 组合短选项里**跟了有值旗标**的情况（kniph 2026-10-18 用覆盖率扫出来的真 bug）：
+     守卫原来写成 `inlineValue === null && tok.length > 2` —— **恒为假**，整段是死代码。
+     后果不是「少个优化」而是解析错：`-sd 'a=1'` 里 `d` 被丢掉，`a=1` 变成了 URL。 */
+  {
+    const r = parseCurl("curl -sd 'a=1' https://x");
+    eq('组合短选项 -sd：d 仍然算有值旗标（body 拿到值）', r.body, 'a=1');
+    eq('-sd：URL 不受污染', r.url, 'https://x');
+    eq('-sd：方法推断成 POST', r.method, 'POST');
+  }
+  {
+    const r = parseCurl("curl -sH 'A: b' https://x");
+    eq('组合短选项 -sH：H 仍然算有值旗标', r.headers.A, 'b');
+    eq('-sH：URL 不受污染', r.url, 'https://x');
+  }
+  {
+    const r = parseCurl('curl -sX POST https://x -d \'a=1\'');
+    eq('组合短选项 -sX：X 仍然算有值旗标', r.method, 'POST');
+  }
+  {
+    const r = parseCurl('curl -su user:pass https://x');
+    eq('组合短选项 -su：装上 Basic 鉴权', r.headers.Authorization, 'Basic ' + Buffer.from('user:pass').toString('base64'));
+  }
+  /* 反向：不能因为修了这个就把其它写法弄坏 */
+  eq('全无值旗标的组合 -sSL 仍然只当开关', parseCurl('curl -sSL https://x').url, 'https://x');
+  eq('单旗标 -d 不受影响', parseCurl("curl -d 'a=1' https://x").body, 'a=1');
+  eq('黏着写 -d{...} 不受影响', parseCurl(`curl -d'{"a":1}' https://x`).body, '{"a":1}');
+  eq('有值旗标吃掉余下字符（curl 语义）', parseCurl('curl -sdd https://x').body, 'd');
+
+  /* 裸参数（不带 `-` 的）里**只有第一个**当 URL，其余忽略。
+     这一条钉住的是：带 `-` 的选项在更早的分支就被接走了，能落到「裸参数」
+     那一行的必然不带 `-` —— 所以那里**不需要**再判「它是不是某个 flag」。
+     （原来那儿挂着一个判 `CURL_BOOL_FLAGS` 的空分支，2026-10-18 通读删掉。） */
+  const bareExtra = parseCurl('curl https://x.com 多余的东西');
+  eq('裸参数里只有第一个当 URL', bareExtra.url, 'https://x.com');
+  eq('多余的裸参数被忽略（不覆盖 URL，也不变成 body）', bareExtra.body, null);
+  const dashed = parseCurl('curl -sS https://x.com');
+  eq('带 - 的选项不会掉进「裸参数」那条路', dashed.url, 'https://x.com');
 }
 
 /* ------------------------------------------------------------------ */
@@ -356,9 +397,13 @@ section('8. 边界情况');
     parseCurl('curl -u user:pass https://x.com').headers['Authorization'],
     'Basic ' + Buffer.from('user:pass', 'utf-8').toString('base64'));
 
+  /* 注意：下面这个 -sSL 是**全无值旗标**的组合，-H 是**独立的 token**。
+     所以它测的是「组合开关不会把下一个 token 当自己的值吞掉」——
+     不是「组合里带 -H」。真正的「组合里跟有值旗标」见文件靠后的
+     「组合短选项 -sd / -sH / -sX」那几条（2026-10-18 才发现原来那版是坏的）。 */
   const r4 = parseRequest('curl -sSL -H "A: 1" https://x.com -o /dev/null');
-  eq('组合短选项不吞错参数', r4.url, 'https://x.com');
-  eq('组合短选项里的 -H 生效', r4.headers['A'], '1');
+  eq('全开关的组合（-sSL）不吞掉后面的 token', r4.url, 'https://x.com');
+  eq('组合开关后面的独立 -H 仍然生效', r4.headers['A'], '1');
 
   const r5 = previewRequest('curl "https://x.com/a" -H "K: v"', {});
   eq('URL 加引号也能解析', r5.request.url, 'https://x.com/a');
@@ -1831,9 +1876,9 @@ section('15e. 后备请求：一个配置里挂几条请求，主请求挂了往
 
   /* 后台那两层循环：外层请求链、内层 model 候选 —— 两个 for 都在，且顺序是对的 */
   const bgSrc = readFileSync(new URL('../background.js', import.meta.url), 'utf8');
-  check('外层按 requestChain 走', bgSrc.includes('const chain = requestChain(config)'));
+  check('外层按 requestChain 走', bgSrc.includes('requestChain(config)'));
   check('外层循环写在 model 循环外面',
-    bgSrc.indexOf('for (let r = 0; r < chain.length') < bgSrc.indexOf('for (let i = 0; i < attempts.length'));
+    bgSrc.indexOf('for (let r = 0; r < runnable.length') < bgSrc.indexOf('for (let i = 0; i < attempts.length'));
   check('每换一条请求都重挑模板（图片那次才用得上图片模板）',
     /const requestText = requestTemplateFor\(item, msg\.context \|\| \{\}\)/.test(bgSrc));
   check('每条请求跑自己的适配器 / 路径 / 响应格式',
@@ -2261,9 +2306,15 @@ section('18. 目标语言：下拉挑语言，接口要的代码自动转');
     /langSelect\.addEventListener\('change'/.test(panelJs) &&
       /resultCache\.clear\(\)/.test(panelJs));
   /* 流式输出不自动跟随滚动：有些模型吐字快，视口被一路拉着往下跑就没法读了。
-     文本是往后接的，视口原地不动就能从头读（要跟尾巴自己拖滚动条）。 */
-  check('流式输出不把滚动条带着跑（没有对 scrollTop 的赋值）',
-    !/outBox\.scrollTop\s*=\s*[^=]/.test(panelJs));
+     文本是往后接的，视口原地不动就能从头读（要跟尾巴自己拖滚动条）。
+     **判据要精确**：要禁的是「跟着尾巴跑」那种赋值（= scrollHeight），
+     不是一切 scrollTop 写入 —— 重画后「保持原位」是正当用途
+     （kniph 2026-10-17：多条对比时一重试就被弹回顶部）。 */
+  check('流式输出不把滚动条带着跑（没有「跟到尾部」的赋值）',
+    !/outBox\.scrollTop\s*=\s*[^=]*scrollHeight/.test(panelJs));
+  check('重画之后会把滚动位置还回去（多条对比时不被弹回顶部）',
+    /const keepTop = outBox\.scrollTop/.test(panelJs) &&
+      /outBox\.scrollTop = keepTop/.test(panelJs));
 
   /* 挑了语言名之后：{{target}} 原样喂聊天模型，{{targetCode}} 喂只认代码的接口 */
   const picked = buildVars({ settings: { targetLang: '英语' }, vars: [] }, 'Hello');
@@ -2436,6 +2487,170 @@ section('20. 「临时直连」已彻底移除：权限 / 模块 / 调用点都�
   }
 }
 
+/* ---- 全局快捷键 + 导入导出挪到设置页签底部（kniph 2026-10-15）---- */
+{
+  const read = (rel) => readFileSync(new URL(rel, import.meta.url), 'utf8');
+  const manifest = JSON.parse(read('../manifest.json'));
+  const content = read('../content.js');
+  const background = read('../background.js');
+  const options = read('../options.js');
+  const html = read('../options.html');
+
+  /* 两条截图快捷键**故意不设默认键**（kniph 2026-10-16）：不给用户预设，去浏览器的
+     快捷键设置页自己挑 —— Edge 还会静默拒绝它不喜欢的建议键（Alt+C 实测被拒），干脆不猜。 */
+  /* iframe 薄桥接（2026-10-16）：协议两端各存一份（frame-bridge.js 发 / content.js 收），
+     type 字符串必须对得上 —— 钉住，别哪天一边改了另一边不知道。 */
+  check('manifest 两条注入：content.js 只在顶层，frame-bridge.js 全 frame + about:blank',
+    Array.isArray(manifest.content_scripts) && manifest.content_scripts.length === 2 &&
+      manifest.content_scripts[0].all_frames === false &&
+      manifest.content_scripts[1].all_frames === true &&
+      manifest.content_scripts[1].match_about_blank === true &&
+      /frame-bridge.js/.test(manifest.content_scripts[1].js.join(',')));
+
+
+
+  /* 图片直传只播种一条槽位（kniph 2026-10-18 报的两条：
+     ①「不能多选配置」= 槽位一进来就装满，选谁都只是挪位置；
+     ②「实际直传把所有配置全发出去」= targets = slots.map(...)。 */
+  {
+    const csrcSeed = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
+    check('图片模式不再「按 N 条把图片配置全铺开」',
+      !/\[primary, \.\.\.rest\]/.test(csrcSeed));
+    const hasListPath = csrcSeed.includes("seeded = ordered.slice(0, slotLimit());");
+    const hasSinglePath = csrcSeed.includes("seeded = ids.includes(primary) ? [primary] : (ids[0] ? [ids[0]] : []);");
+    check('initSlots 的兜底只有「单条」这一条路径（不再按 N 铺开）', hasListPath && hasSinglePath,
+      JSON.stringify({ hasListPath, hasSinglePath }));
+    check('槽位池子按模式取（图片那屏只列图片配置）',
+      /const slotPool = \(\) => \(cfgMode === 'image' && imageConfigs\.length > 0 \? imageConfigs : configs\)/.test(csrcSeed));
+    check('两个模式的槽位各存一份，不会互相顶掉',
+      /const slotsByMode = \{ text: \[\], image: \[\] \}/.test(csrcSeed) &&
+        /slotsByMode\[cfgMode\] = slots/.test(csrcSeed));
+  }
+  /* 自定义面板样式（2026-10-18）：面板在 shadow DOM 里，页面级 CSS 进不来，
+     所以必须由我们注入到**同一个 shadow root 的末尾** —— 排在预设主题之后，
+     同优先级靠「后出现」胜出，形成「默认 < 预设 < 自定义」三层，不用 !important。
+     同时要暴露稳定钩子（#rt-panel / [data-rt-theme]），否则用户写不出选择器。 */
+  {
+    const csrcCss = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
+    const osrcCss = readFileSync(new URL('../options.js', import.meta.url), 'utf8');
+    const ssrcCss = readFileSync(new URL('../lib/store.js', import.meta.url), 'utf8');
+    check('真面板把用户 CSS 追加到 shadow root 末尾',
+      /userCssEl\.id = 'rt-user-css'/.test(csrcCss) && /shadow\.appendChild\(userCssEl\)/.test(csrcCss));
+    check('设置页预览也注入同一份（否则「预览和实际不一致」）',
+      /rt-user-css/.test(osrcCss) && /sh\.appendChild\(ucss\)/.test(osrcCss));
+    check('面板有稳定 id #rt-panel（用户能吃到 id 优先级）',
+      /panel\.id = 'rt-panel'/.test(csrcCss));
+    check('面板有 data-rt-theme（按主题分别写的钩子）',
+      /panel\.dataset\.rtTheme = light \? 'light' : 'dark'/.test(csrcCss));
+    check('预览面板也有同样的 id + data-rt-theme',
+      /panel\.id = "rt-panel"/.test(osrcCss) && /panel\.dataset\.rtTheme/.test(osrcCss));
+    check('theme 有白名单校验（原来是任意字符串照收）',
+      /\['auto', 'light', 'dark'\]\.includes\(settings\.theme\)/.test(ssrcCss));
+    check('panelCss 有长度上限（防 20 万字符把面板卡死）',
+      /panelCss.*\.slice\(0, 20000\)/.test(ssrcCss));
+    check('设置页有「填入示例」和「清空」两个按钮',
+      /btnPanelCssWarm\.addEventListener/.test(osrcCss) && /btnPanelCssClear\.addEventListener/.test(osrcCss));
+    /* 内置的 warm 示例：只覆盖颜色变量、不碰布局，而且对比度得达标 */
+    const warmBlock = (() => {
+      const i = osrcCss.indexOf('const PANEL_CSS_WARM');
+      if (i < 0) return '';
+      return osrcCss.slice(i, osrcCss.indexOf('].join', i));
+    })();
+    check('内置 warm 示例存在且只改颜色变量',
+      !!warmBlock && /--rt-bg/.test(warmBlock) && !/width\s*:/.test(warmBlock));
+    const warmBg = /--rt-bg: (#[0-9a-f]{6})/i.exec(warmBlock);
+    const warmText = ['--rt-text', '--rt-text-out'];
+    check('warm 示例没有改文字色（复用 dark 那套，避免破坏对比度）',
+      !warmBlock.includes('--rt-text '));
+  }
+  /* 深色主题的**对比度阶梯**（kniph 2026-10-18：「对比度太高累眼」+「首字…太浅看困难」）。
+     以前正文 17.1:1（刺眼）、diag 标签 2.8:1（远低于 WCAG AA 4.5，看不清）——
+     同一个主题里最亮的太亮、最暗的太暗。现在压到 5.1~13.0，每一档都可读又不刺眼。 */
+  {
+    const css = readFileSync(new URL('../lib/panel-styles.js', import.meta.url), 'utf8');
+    const darkBlock = css.slice(css.indexOf('.rt-panel {'), css.indexOf('.rt-panel.light'));
+    const lightBlock = css.slice(css.indexOf('.rt-panel.light'), css.indexOf('/* ---- 头部'));
+    const grabVars = (b) => {
+      const o = {};
+      for (const m of b.matchAll(/--rt-([a-z-]+):\s*([^;]+);/g)) o[m[1]] = m[2].trim();
+      return o;
+    };
+    const rgbOf = (c) => { const t = String(c).replace('#', ''); return [0, 2, 4].map((i) => parseInt(t.substr(i, 2), 16)); };
+    const lumOf = (rgb) => {
+      const a = rgb.map((v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); });
+      return 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2];
+    };
+    const contrast = (fg, bg) => {
+      const a = lumOf(rgbOf(fg)), b = lumOf(rgbOf(bg));
+      const hi = Math.max(a, b), lo = Math.min(a, b);
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    const D = grabVars(darkBlock), L = grabVars(lightBlock);
+    const dk = (k) => contrast(D[k], D.bg);
+    const lt = (k) => contrast(L[k], L.bg);
+
+    check('深色：每一档文字都不低于 WCAG AA（4.5:1）',
+      ['text', 'text-dim', 'text-out', 'text-foot', 'placeholder'].every((k) => dk(k) >= 4.5),
+      ['text', 'text-dim', 'text-out', 'text-foot', 'placeholder'].map((k) => k + '=' + dk(k).toFixed(1)).join(' '));
+    check('深色：正文不再刺眼（≤14:1）', dk('text-out') <= 14, dk('text-out').toFixed(1));
+    check('深色：diag 标签（首字/总耗时…）看得清（≥4.5:1）', dk('placeholder') >= 4.5, dk('placeholder').toFixed(1));
+    check('亮色：diag 标签同样不低于 4.5:1', lt('placeholder') >= 4.5, lt('placeholder').toFixed(1));
+    check('深色的「亮→暗」阶梯是单调的（正文最亮、占位最暗）',
+      dk('text-out') >= dk('text') && dk('text') >= dk('text-dim') &&
+        dk('text-dim') >= dk('text-foot') && dk('text-foot') >= dk('placeholder'),
+      ['text-out', 'text', 'text-dim', 'text-foot', 'placeholder'].map((k) => dk(k).toFixed(1)).join(' > '));
+  }
+  /* 面板 CSS 有**两份**：content.js 内联（content script 不能 import）+ lib/panel-styles.js
+     （设置页预览用）。两份必须一致，否则设置页预览和真面板会悄悄长得不一样 ——
+     这正是「预览和实际对不上」的根源之一（kniph 2026-10-17）。这里只比**非空行**，
+     空行差异不算（两份的排版留白可以不同）。 */
+  const cssInline = (() => {
+    const m = content.match(/style\.textContent = `([\s\S]*?)\n`;/);
+    return m ? m[1] : '';
+  })();
+  const cssShared = (() => {
+    const m = read('../lib/panel-styles.js').match(/export const PANEL_CSS = `([\s\S]*?)\n`;/);
+    return m ? m[1] : '';
+  })();
+  const norm = (t) => t.split('\n').map((l) => l.trimEnd()).filter((l) => l.trim()).join('\n');
+  check('两份面板 CSS 内容一致（content.js 内联 vs lib/panel-styles.js）',
+    !!cssInline && !!cssShared && norm(cssInline) === norm(cssShared),
+    `内联 ${cssInline.split('\n').length} 行 / 共享 ${cssShared.split('\n').length} 行`);
+  const bridge = read('../frame-bridge.js');
+  check('桥在非顶层才干活（window.top 自检在最先）',
+    /window\.top === window\) return/.test(bridge.slice(0, 1500)));
+  check('协议两端对得上（rt-frame-sel）',
+    'rt-frame-sel'.length > 0 && bridge.includes('rt-frame-sel') && content.includes('rt-frame-sel'));
+  check('顶层收消息有开关（prefs.frameBridge 关了就忽略）',
+    /prefs\.frameBridge\) return/.test(content));
+  check('manifest 声明三条快捷键：翻译选区默认 Alt+T，两条截图默认不设键',
+    manifest.commands && manifest.commands['translate-selection'] &&
+      manifest.commands['translate-selection'].suggested_key.default === 'Alt+T' &&
+      manifest.commands['shot-translate'] && !manifest.commands['shot-translate'].suggested_key &&
+      manifest.commands['ocr-clipboard'] && !manifest.commands['ocr-clipboard'].suggested_key,
+    JSON.stringify(manifest.commands));
+  check('后台把指令转发给活动页签（选区在页面那边）',
+    /chrome\.commands\.onCommand\.addListener/.test(background) &&
+      /hotkey-translate/.test(background));
+  check('content 接住快捷键并走现有选区翻译入口',
+    /msg\.type === 'hotkey-translate'/.test(content) &&
+      /readSelection\(\)/.test(content.slice(
+        Math.max(0, content.indexOf('hotkey-translate') - 200),
+        content.indexOf('hotkey-translate') + 300
+      )));
+
+  check('导入导出挪进设置页签（顶部那排不再占配置区空间）',
+    !html.includes('head-actions') &&
+      html.indexOf('id="btn-export"') > html.indexOf('data-panel="settings"') &&
+      html.indexOf('id="btn-import"') > html.indexOf('data-panel="settings"') &&
+      html.indexOf('id="chk-encrypt"') > html.indexOf('data-panel="settings"'));
+  check('有「去 Key 的分享导出」入口（判据仍是 isSecretVar，不抄第二份）',
+    html.includes('btn-export-share') &&
+      /btn-export-share/.test(options) &&
+      /structuredClone\(state\)/.test(options) &&
+      /isSecretVar\(v\.name\) && v\.value/.test(options));
+}
+
 section('21. 结果区最大高度：默认值 = 原来写死的那个数，而且真的走变量');
 {
   /* 这条设置的默认值**必须**是 46 —— 那是改动前 `.rt-out` 里写死的 `46vh`。
@@ -2515,7 +2730,7 @@ section('22. 按钮：贴鼠标 + 自动消失');
   // 绑定与回填都得真的从这个表跑，而不是各自手写一遍 id 清单
   check('renderSettings / bindSettings 都遍历 SETTING_MAP',
     /function renderSettings\(\)[\s\S]{0,200}for \(const row of SETTING_MAP\)/.test(optSrc) &&
-    /function bindSettings\(\)[\s\S]{0,600}for \(const row of SETTING_MAP\)/.test(optSrc));
+    /function bindSettings\(\)[\s\S]{0,2000}for \(const row of SETTING_MAP\)/.test(optSrc));
 }
 
 section('23. 框选截图：覆盖层不铺位图，滚动条只在裁的那一刻切掉');
@@ -2747,8 +2962,8 @@ section('25. 管模型的变量填多行 = 换 model 重试（每个一行）');
      截图这条路回退出来的模板里根本没有 {{image}} —— 发出去必然失败，白跑一次还报错。
      运行时（background）和设置页的「测试」按钮（imageItem）必须同一个口径。 */
   check('图片直传时只试填了「图片请求模板」的条目（不拿普通模板凑数）',
-    /const runnable = hasImage[\s\S]{0,120}chain\.filter\(\(it\) => String\(it\.imageRequest \|\| ''\)\.trim\(\)\)/.test(bg) &&
-      /没有任何一条填了「图片请求模板」/.test(bg) &&
+    /const runnable = hasImage[\s\S]{0,140}requestChain\(config\)\.filter\(\(it\) => String\(it\.imageRequest \|\| ''\)\.trim\(\)\)/.test(bg) &&
+      /没填「图片请求模板」，没法带图翻译/.test(bg) &&
       /for \(let r = 0; r < runnable\.length; r \+= 1\)/.test(bg));
   check('设置页「测试」按钮和运行时同一个口径（imageItem 也只看 imageRequest 非空）',
     /function imageItem\(c\) \{[\s\S]{0,140}requestChain\(c\)\.find\(\(r\) => String\(r\.imageRequest \|\| ''\)\.trim\(\)\)/.test(optSrc));
@@ -2916,9 +3131,113 @@ section('28. 截图那一步失败点 ↻：重发**刚才那张图**，两条�
   const src = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
   const bg = readFileSync(new URL('../background.js', import.meta.url), 'utf8');
 
+  /* formatBytes 有**两份**（设置页 options.js + 面板 content.js，后者不能 import）。
+     它们显示的是同一个量（截图 / 响应的大小），必须逐字一致 —— 原来小数位规则不同，
+     同一张图会出现「设置页 49 KB / 面板 48.8 KB」（kniph 2026-10-18 通读发现）。
+     这里把两边函数体抽出来逐值比对，不是只看「有没有这个函数」。 */
+  /* 按**花括号配对**取函数体（不能直接找 '\n}' —— content.js 那份是缩进过的，
+     结尾是 '\n  }'，朴素查找会切错）。 */
+  const grabFn = (src, name) => {
+    const i = src.indexOf('function ' + name + '(');
+    if (i < 0) return '';
+    let depth = 0;
+    for (let k = src.indexOf('{', i); k < src.length; k += 1) {
+      if (src[k] === '{') depth += 1;
+      else if (src[k] === '}') {
+        depth -= 1;
+        if (depth === 0) return src.slice(i, k + 1);
+      }
+    }
+    return '';
+  };
+  const fbOpt = grabFn(readFileSync(new URL('../options.js', import.meta.url), 'utf8'), 'formatBytes');
+  const fbCon = grabFn(readFileSync(new URL('../content.js', import.meta.url), 'utf8'), 'formatBytes');
+  const norm = (t) => t.split('\n').map((l) => l.trim()).filter(Boolean).join('\n');
+  check('两份 formatBytes 逐字一致（设置页 vs 面板）',
+    !!fbOpt && !!fbCon && norm(fbOpt) === norm(fbCon));
+  // 真的跑一遍：两份对同一批字节数必须给同一个字符串
+  const mk = (body) => new Function('n', body.replace(/^function formatBytes\(n\)\s*\{/, '').replace(/\}\s*$/, ''));
+  const f1 = mk(fbOpt);
+  const f2 = mk(fbCon);
+  const samples = [0, 1, 512, 1023, 1024, 2048, 9999, 10240, 27700, 50000, 1048575, 1048576, 2097152];
+  const diff = samples.filter((n) => f1(n) !== f2(n));
+  check('两份 formatBytes 对同一批值输出相同（0 到 2MB）', diff.length === 0,
+    diff.length ? diff.map((n) => n + ':' + f1(n) + '≠' + f2(n)).join(' ') : f1(50000));
+  check('formatBytes 边界：<1KB 是整数 B、1MB 起走 MB',
+    f1(512) === '512 B' && f1(1024) === '1.0 KB' && f1(1048576) === '1.0 MB',
+    [f1(512), f1(1024), f1(1048576)].join(' | '));
+  check('formatBytes 不给负数 / 非数字出怪值', f1(-5) === '0 B' && f1('abc') === '0 B', f1(-5) + ' | ' + f1('abc'));
+  /* postOrFail 必须接住 postMessage 抛出的异常（kniph 2026-10-18 第 8 轮通读）。
+     端口「存在但已断开」时 Chrome 会抛 "Attempting to use a disconnected port object"。
+     **抠 content.js 的真代码跑**（不比对源码字面量）—— 造一个会抛的假端口。 */
+  const csrcForPof = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
+  const pofSrc = (() => {
+    const i = csrcForPof.indexOf('function postOrFail(');
+    if (i < 0) return '';
+    let depth = 0;
+    for (let k = csrcForPof.indexOf('{', i); k < csrcForPof.length; k += 1) {
+      if (csrcForPof[k] === '{') depth += 1;
+      else if (csrcForPof[k] === '}') { depth -= 1; if (!depth) return csrcForPof.slice(i, k + 1); }
+    }
+    return '';
+  })();
+  check('能从 content.js 里抠出 postOrFail()', !!pofSrc);
+  let goneHits = 0;
+  const postOrFail = new Function('portGone', 'return (' + pofSrc + ')')(() => { goneHits += 1; });
+  const sent = [];
+  const okPort = { postMessage: (m) => sent.push(m) };
+  check('postOrFail：端口正常时发出消息并返回 true',
+    postOrFail(okPort, { type: 'x' }) === true && sent.length === 1 && goneHits === 0);
+
+  const deadPort = { postMessage() { throw new Error('Attempting to use a disconnected port object'); } };
+  let threw = false;
+  let ret = null;
+  try { ret = postOrFail(deadPort, { type: 'y' }); } catch { threw = true; }
+  check('postOrFail：端口已断开时不把异常抛给调用方', threw === false);
+  check('postOrFail：端口已断开时返回 false 并走 portGone 收场', ret === false && goneHits === 1,
+    'ret=' + ret + ' gone=' + goneHits);
+  check('postOrFail：完全没有端口时同样走 portGone',
+    postOrFail(null, { type: 'z' }) === false && goneHits === 2, 'gone=' + goneHits);
+  /* 同一个文件里另外两处裸 postMessage 也必须是包住的（作者原来就包了，别改回去） */
+  const bareSends = [...csrcForPof.matchAll(/port\.postMessage\(\{ type: 'abort' \}\)/g)].length;
+  const guardedSends = [...csrcForPof.matchAll(/try \{\s*\n\s*port\.postMessage\(\{ type: 'abort' \}\)/g)].length;
+  check('两处 abort 的 postMessage 都还在 try/catch 里', bareSends === 2 && guardedSends === 2,
+    'abort 发送点 ' + bareSends + ' 处，包住的 ' + guardedSends + ' 处');
+  /* ---- background 的并发/生命周期（kniph 2026-10-18 第 3 轮通读）---- */
+  const bgSrc = bg; // 上面已经读过
+  /* abort 必须**同时**让批次号过期 —— abort() 只是让请求早点停，它有个窄窗口：
+     请求刚好在 abort 之前收完，runRequest / runOcr 会正常返回成功，光靠 signal
+     拦不住那一帧，回包会打到一个用户已经关掉的面板上。 */
+  /* 老形状（没有 request 字段）的 OCR 存档迁移：**字段优先、内置补缺**。
+     早先这里是 `normalizeOcrProvider(old)` —— 只吃存档不看内置，于是老用户升级后
+     内置那条的 note（「个人认证每月 1000 次免费…」）被丢成空串（kniph 2026-10-18 通读）。 */
+  const oldShape = normalizeOcrState({
+    providers: [{ id: 'builtin-siliconflow', name: '我的硅基', endpoint: 'https://x/y', model: 'm', apiKey: 'sk-real', prompt: 'p' }]
+  }).providers.find((x) => x.id === 'builtin-siliconflow');
+  check('老形状迁移：内置 note 不再被丢掉', !!oldShape.note, JSON.stringify(oldShape.note).slice(0, 30));
+  check('老形状迁移：Key 仍然内联进模板（内置 {{apiKey}} 不许漏进来）',
+    oldShape.request.includes('sk-real') && !oldShape.request.includes('{{apiKey}}'));
+  check('老形状迁移：用户自己的名字优先于内置名', oldShape.name === '我的硅基', oldShape.name);
+  /* 新形状必须仍然逐字段覆盖 —— 别为了补内置把用户改过的模板顶掉 */
+  const newShape = normalizeOcrState({
+    providers: [{ id: 'builtin-siliconflow', name: '改过的', request: 'curl https://mine' }]
+  }).providers.find((x) => x.id === 'builtin-siliconflow');
+  check('新形状存档仍然逐字段覆盖内置',
+    newShape.request === 'curl https://mine' && newShape.name === '改过的');
+  check('abort 时 runBatch 递增（不只是 abort controller）',
+    /if \(msg\.type === 'abort'\)[\s\S]{0,400}runBatch \+= 1/.test(bgSrc));
+  check('abort 时 ocrSeq 递增（OCR 那条同样要判废）',
+    /if \(msg\.type === 'abort'\)[\s\S]{0,400}ocrSeq \+= 1/.test(bgSrc));
+  /* runCtrls 是「每条配置一个 controller」的 Map：早退（没模板 / 抛错）和正常结束
+     都要把自己摘掉，否则一轮轮翻译下来这个 Map 只增不减。 */
+  check('runCtrls 在每个出口都会 delete（早退 + 正常结束）',
+    (bgSrc.match(/runCtrls\.delete\(cid\)/g) || []).length >= 3,
+    '实际 ' + (bgSrc.match(/runCtrls\.delete\(cid\)/g) || []).length + ' 处');
   check('有一个专门的重试入口 retryShot', src.includes('function retryShot()'));
-  check('↻ 处理器改走它，不再自己去 startOcr（那条会读剪切板）',
-    /if \(!currentText\) \{\s*retryShot\(\);\s*return;\s*\}/.test(src) &&
+  /* 重试入口 2026-10-17 从顶栏搬到了译文尾部（retryOne）；
+     这条断言盯的是「没有原文时走 retryShot、而不是重新去读剪切板」这个不变量。 */
+  check('重试入口改走 retryShot，不再自己去 startOcr（那条会读剪切板）',
+    /if \(!currentText && !\(lastOcr && lastOcr\.image\)\) \{\s*retryShot\(\);\s*return;\s*\}/.test(src) &&
     !/if \(!currentText\) \{[\s\S]{0,200}startOcr\(lastOcrAnchor\)/.test(src));
   check('直传那条路本地重发（图 content 自己就有，不用惊动后台）',
     src.includes('lastOcr.direct && lastOcr.image') &&
@@ -2960,6 +3279,670 @@ section('28. 截图那一步失败点 ↻：重发**刚才那张图**，两条�
 
 /* ------------------------------------------------------------------ */
 
+/* ---- 导出文件口令加密（lib/crypto.js）----
+   全异步，放在最后统一 await。测试点：往返、错口令必炸、篡改必炸、
+   sniff 不认明文、明文导出不受影响（老用户路径一根汗毛都不能动）。 */
+{
+  const plain = exportState({
+    configs: DEFAULT_CONFIGS, vars: [], settings: DEFAULT_SETTINGS,
+    activeConfigId: DEFAULT_CONFIGS[0].id, ocr: { disabled: false }
+  });
+
+  // 明文导出没有任何加密痕迹 —— 老用户升级后导出的文件应该和以前一模一样地被认
+  check('明文导出不会被误认成加密文件', isEncryptedExport(plain) === false);
+
+  const wrapped = await encryptExport(plain, '正确口令');
+  check('加密外壳的 kind 与明文导出区分开', isEncryptedExport(wrapped) === true);
+  check('外壳里找不到明文痕迹（key 一个字都不落）',
+    !wrapped.includes('api') || !wrapped.toLowerCase().includes('sk-'));
+
+  const roundtrip = await decryptExport(wrapped, '正确口令');
+  check('往返后逐字节还原', roundtrip === plain,
+    `差了 ${Math.abs(roundtrip.length - plain.length)} 字符`);
+
+  let wrongPassErr = '';
+  try { await decryptExport(wrapped, '错误口令'); } catch (err) { wrongPassErr = err.message; }
+  check('错口令直接报「口令不对」（GCM 语义：不存在解出一堆乱码）',
+    wrongPassErr.includes('口令不对'), wrongPassErr || '没抛错');
+
+  // 篡改密文一个字节 —— 完整性校验必须抓住（这就是选 AES-GCM 而不是 CBC 的原因）
+  // 定位串不能带空格：JSON.stringify 无缩进，外壳是 "data":"hex"（冒号后没有空格）
+  const dataIdx = wrapped.indexOf('"data":"') + 8;
+  const tampered = wrapped.slice(0, dataIdx) + (wrapped[dataIdx] === '0' ? '1' : '0') + wrapped.slice(dataIdx + 1);
+  check('（脚手架）改的确实是密文本身', tampered !== wrapped && tampered.slice(0, 30) === wrapped.slice(0, 30));
+  let tamperErr = '';
+  try { await decryptExport(tampered, '正确口令'); } catch (err) { tamperErr = err.message; }
+  check('密文被改一个字节也解不开（完整性）', tamperErr.includes('口令不对'), tamperErr || '没抛错');
+
+  // 明文文件喂给解密函数 —— 应该报「不是加密文件」而不是试图解
+  let notEncErr = '';
+  try { await decryptExport(plain, 'x'); } catch (err) { notEncErr = err.message; }
+  check('明文文件喂给解密会被明确拒绝', notEncErr.includes('不是加密导出'), notEncErr || '没抛错');
+
+  // 空口令在加密入口就拦（别让「空口令加密」的文件存在）
+  let emptyErr = '';
+  try { await encryptExport(plain, ''); } catch (err) { emptyErr = err.message; }
+
+  /* 外壳里的 `iterations` **必须真的被用上**（kniph 2026-10-18 第 9 轮通读发现）：
+     它写进格式就是为了让「加密时的次数」跟着文件走。原来 decryptExport 用的是模块常量，
+     于是只要将来把 ITERATIONS 调大，**所有老文件都解不开**，还报「口令不对」——
+     用户会以为自己记错了口令。这里造一个「别的次数」的文件，证明它能开。 */
+  const encU8 = new TextEncoder();
+  const hexOf = (b) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('');
+  const craftWithIterations = async (pass, iterations) => {
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const km = await crypto.subtle.importKey('raw', encU8.encode(pass), 'PBKDF2', false, ['deriveKey']);
+    const key = await crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
+      km, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']
+    );
+    const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encU8.encode('{"a":1}'));
+    return JSON.stringify({
+      kind: 'request-translate-encrypted',
+      crypto: { scheme: 'pbkdf2-aesgcm-v1', salt: hexOf(salt), iv: hexOf(iv), iterations },
+      data: hexOf(cipher)
+    });
+  };
+  let otherIterOk = false;
+  let otherIterErr = '';
+  try {
+    otherIterOk = (await decryptExport(await craftWithIterations('正确口令', 100000), '正确口令')).trim() === '{"a":1}';
+  } catch (err) { otherIterErr = err.message; }
+  check('外壳里 iterations 不同的文件也能解开（不是只认常量 60 万）',
+    otherIterOk, otherIterErr || '');
+
+  /* 值非法时要**明说是文件参数不对**，不能混进「口令不对」那句里 */
+  /* 「单次最多发送字数」的执行点**只能有一处**：content.js 的 translate()。
+     frame-bridge.js 原来写死 slice(0, 8000)，于是把上限调到 8000 以上的用户，
+     普通页面能发 5 万字、iframe 里的选区却被静默砍到 8000（kniph 2026-10-18 通读）。 */
+  const bridgeSrc = readFileSync(new URL('../frame-bridge.js', import.meta.url), 'utf8');
+  const csrcForCap = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
+  const capInTranslate = /const limit = Math\.max\(1, Number\(prefs\.maxChars\) \|\| 8000\)/.test(csrcForCap);
+  check('content.js 仍然按 maxChars 截（唯一执行点还在）', capInTranslate);
+  /* 比对前先**剥掉注释** —— 上面那段说明文字里就写着 `slice(0, 8000)`，
+     不剥的话断言会被自己的注释绊倒。 */
+  const stripComments = (t) => t
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n').map((l) => l.replace(/\/\/.*$/, '')).join('\n');
+  const bridgeCode = stripComments(bridgeSrc);
+  check('frame-bridge 的**代码**里没有写死的字数上限',
+    !/slice\(0, \d+\)/.test(bridgeCode),
+    (bridgeCode.match(/slice\(0, \d+\)/) || ['(无)'])[0]);
+  /* 两边口径要一致：设置项上限 200000，别哪天桥里又冒出一个小数字 */
+  const maxInput = readFileSync(new URL('../options.html', import.meta.url), 'utf8')
+    .match(/id="s-max"[^>]*max="(\d+)"/);
+  check('设置项 #s-max 的上限仍是 200000（和桥的「不设限」口径一致）',
+    !!maxInput && maxInput[1] === '200000', maxInput ? maxInput[1] : '(没找到)');
+
+  /* 要读本地文件的 curl 参数（-d @file / -F / -T）**必须出声**（kniph 2026-10-18 通读）。
+     README 把它们列成「限制」，可行為是：`-d @f` 把 @f 当请求体发出去、`-F` 直接丢掉 ——
+     用户从 API 文档抄一段过来只会收到看不懂的服务端报错。
+     另：parseCurl 的 warnings 字段原来**永远是空数组**，而且 engine/options 都没读它，
+     这条断言同时钉住「真的会 push」和「真的被带出去」。 */
+  const warnOf = (src) => parseRequest(src).warnings || [];
+  check('curl 的 -d @file 会给出提示（不再静默发 @文件）',
+    warnOf('curl https://x -d @body.json').some((w) => /@文件/.test(w)),
+    JSON.stringify(warnOf('curl https://x -d @body.json')));
+  check('curl 的 --data-binary @file 同样给提示',
+    warnOf('curl https://x --data-binary @b.json').some((w) => /@文件/.test(w)));
+  check('curl 的 -F / --form / -T 给「不支持上传文件」的提示',
+    warnOf('curl https://x -F a=@b.png').some((w) => /不支持/.test(w)) &&
+      warnOf('curl https://x -T ./a.json').some((w) => /不支持/.test(w)) &&
+      warnOf('curl https://x --form k=v').some((w) => /不支持/.test(w)));
+  check('同一条参数写多次只提示一次（不刷屏）',
+    warnOf('curl https://x -F a=1 -F b=@c.png').filter((w) => /不支持/.test(w)).length === 1);
+  check('正常 curl 不会平白多出提示', warnOf('curl https://x -d "a=1"').length === 0,
+    JSON.stringify(warnOf('curl https://x -d "a=1"')));
+  /* 带出去这一环：引擎的 runRequest 和 previewRequest 都要带上 */
+  const engSrc = readFileSync(new URL('../lib/engine.js', import.meta.url), 'utf8');
+  check('runRequest 把解析期提示并进 result.warnings',
+    /result\.warnings\.push\(\.\.\.\(parsed\.warnings \|\| \[\]\)\)/.test(engSrc));
+  check('previewRequest 也返回 warnings（设置页预览要看得见）',
+    /warnings: parsed\.warnings \|\| \[\]/.test(engSrc));
+  const pvWarn = previewRequest('curl https://x -d @body.json', {}, '');
+  check('预览这条路真的带出了提示', (pvWarn.warnings || []).some((w) => /@文件/.test(w)),
+    JSON.stringify(pvWarn.warnings));
+
+  /* connectPort 里那句 postMessage(hello) 也必须是包住的（kniph 2026-10-18 复查）。
+     onDisconnect 是异步的：端口刚建立就被对端丢掉时，这一句会当场抛
+     "Attempting to use a disconnected port object"，而它在 try 外面 ——
+     异常会炸给 ensurePort() 的每个调用点。抠真代码 + 假端口验一遍：
+     connectPort 要么返回可用端口，要么返回 null，**绝不抛**。 */
+  {
+    const csrcHello = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
+    const grabFn2 = (name) => {
+      const i = csrcHello.indexOf('function ' + name + '(');
+      if (i < 0) return '';
+      let d = 0;
+      for (let k = csrcHello.indexOf('{', i); k < csrcHello.length; k += 1) {
+        if (csrcHello[k] === '{') d += 1;
+        else if (csrcHello[k] === '}') { d -= 1; if (!d) return csrcHello.slice(i, k + 1); }
+      }
+      return '';
+    };
+    const cpSrc = grabFn2('connectPort');
+    check('能从 content.js 里抠出 connectPort()', !!cpSrc);
+    const mkConnect = (throwOnSend) => {
+      const fakeChrome = {
+        runtime: {
+          connect: () => ({
+            onMessage: { addListener() {} },
+            onDisconnect: { addListener() {} },
+            postMessage() {
+              if (throwOnSend) throw new Error('Attempting to use a disconnected port object');
+            }
+          })
+        }
+      };
+      // connectPort 依赖三个外部符号：onPortMessage / busy / portGone —— 都给桩
+      const prelude =
+        'let port = null; let busy = false;\n' +
+        'const portGone = () => { busy = true; };\n' +
+        'const onPortMessage = () => {};\n';
+      return new Function('chrome', prelude + cpSrc + '\nreturn connectPort;')(fakeChrome);
+    };
+    const good = mkConnect(false);
+    let okPort = null;
+    let okThrew = false;
+    try { okPort = good(); } catch { okThrew = true; }
+    check('connectPort：端口正常时返回端口、不抛', okThrew === false && !!okPort);
+    const bad = mkConnect(true);
+    let badRet;
+    let badThrew = false;
+    try { badRet = bad(); } catch { badThrew = true; }
+    check('connectPort：hello 发不出去时不抛给调用方', badThrew === false, badThrew ? '抛了' : '没抛');
+    check('connectPort：hello 发不出去时返回 null（退化成「端口拿不到」）', badRet === null, String(badRet));
+  }
+
+  /* 面板也会写几个设置键（showOriginal / targetLang / ocr.imageConfigId），
+     而设置页是「整份 state 覆盖写」—— 不做合并的话，「面板里关了原文 → 回设置页随手
+     打个字」会把面板的改动静默顶回去（kniph 2026-10-18 通读发现）。
+     合并逻辑抽在 store 的 adoptPanelOwned（纯函数），这里钉住它的契约。 */
+  {
+    const mkP = () => ({ settings: { showOriginal: true, targetLang: '简体中文', fontSize: 20 }, ocr: { imageConfigId: '' } });
+    const savedP = () => ({ settings: { showOriginal: false, targetLang: '日语', fontSize: 99 }, ocr: { imageConfigId: 'cfg-x' } });
+
+    const a = mkP();
+    adoptPanelOwned(a, savedP(), new Set());
+    eq('面板改过的 showOriginal 不会被设置页顶回去', a.settings.showOriginal, false);
+    eq('面板改过的 targetLang 不会被顶回去', a.settings.targetLang, '日语');
+    eq('面板改过的 imageConfigId 不会被顶回去', a.ocr.imageConfigId, 'cfg-x');
+    eq('存档里与面板无关的键不该被搬过来（fontSize 保持页面值）', a.settings.fontSize, 20);
+
+    const b = mkP();
+    adoptPanelOwned(b, savedP(), new Set(['showOriginal']));
+    eq('用户在设置页动过的键以页面为准', b.settings.showOriginal, true);
+    eq('没动过的键仍然跟存档', b.settings.targetLang, '日语');
+
+    const c = mkP();
+    adoptPanelOwned(c, null, new Set());
+    adoptPanelOwned(c, {}, new Set());
+    eq('存档读不到 / 缺字段时不炸、保持原值', c.settings.showOriginal, true);
+
+    const d = mkP();
+    adoptPanelOwned(d, savedP(), ['targetLang']);
+    eq('touched 传数组也认', d.settings.targetLang, '简体中文');
+  }
+
+  /* 流式分片的「该重画了」那条路上，**定位槽位的地方只能有一处**：
+     onPortMessage 用 slotForMsg(msg) 把文本写进对应槽，queueDelta 只管节流重画。
+     原来 queueDelta 还带个 text 参数、收下就往 slots[0] 里写 —— 实际没人传过（死代码），
+     但签名像「支持传文本」，真传了多配置时就会写进第一条（错的块）（kniph 2026-10-18 通读）。 */
+  {
+    const csrcQ = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
+    const qFn = (() => {
+      const i = csrcQ.indexOf('function queueDelta(');
+      if (i < 0) return '';
+      let d = 0;
+      for (let k = csrcQ.indexOf('{', i); k < csrcQ.length; k += 1) {
+        if (csrcQ[k] === '{') d += 1;
+        else if (csrcQ[k] === '}') { d -= 1; if (!d) return csrcQ.slice(i, k + 1); }
+      }
+      return '';
+    })();
+    check('queueDelta 不再收 text 参数', /function queueDelta\(\s*\)/.test(qFn), qFn.split('\n')[0]);
+    check('queueDelta 不碰任何槽位的文本（只负责排重画）',
+      !/slots\[0\]/.test(qFn) && !/\.text\s*=/.test(qFn));
+    check('delta 消息仍然用 slotForMsg 定位槽位（别改成写死 slots[0]）',
+      /msg\.type === 'delta'[\s\S]{0,220}slotForMsg\(msg\)/.test(csrcQ));
+    check('queueDelta 全文件只有一个调用点、且不传参',
+      (csrcQ.match(/queueDelta\(/g) || []).length === 2 &&
+        !/queueDelta\([^)]/.test(csrcQ.replace('function queueDelta(', '')),
+      String((csrcQ.match(/queueDelta\([^)]*/g) || []).join(' | ')));
+  }
+
+  /* 翻译记录写入必须**串行**（kniph 2026-10-18 通读发现）。
+     一次对比会并发跑 2~4 条配置（Promise.all），每条跑完都往 history 里插一条，
+     而写入是「读 → 改 → 写」的读改写、中间隔着 await —— 不排队就会互相覆盖。
+     实测（修复前，用同一份模拟）：并发 2 条只剩 1 条、并发 4 条也只剩 1 条。
+     这里**抠 background.js 的真代码**跑，不比对源码字面量。 */
+  const bgSrcForHist = readFileSync(new URL('../background.js', import.meta.url), 'utf8');
+  const histFnSrc = (() => {
+    const i = bgSrcForHist.indexOf('function appendHistory(');
+    if (i < 0) return '';
+    let d = 0;
+    for (let k = bgSrcForHist.indexOf('{', i); k < bgSrcForHist.length; k += 1) {
+      if (bgSrcForHist[k] === '{') d += 1;
+      else if (bgSrcForHist[k] === '}') { d -= 1; if (!d) return bgSrcForHist.slice(i, k + 1); }
+    }
+    return '';
+  })();
+  check('能从 background.js 里抠出 appendHistory()', !!histFnSrc);
+  const mkAppend = () => {
+    const st = { state: { version: 9, history: [] } };
+    const fakeChrome = { storage: { local: {
+      get: async () => { await null; await null; return { state: JSON.parse(JSON.stringify(st.state)) }; },
+      set: async (o) => { await null; st.state = JSON.parse(JSON.stringify(o.state)); }
+    } } };
+    const fn = new Function('chrome', 'let historyQueue = Promise.resolve();\n' + histFnSrc + '\nreturn appendHistory;')(fakeChrome);
+    return { fn, names: () => st.state.history.map((h) => h.configName), reset: () => { st.state.history = []; } };
+  };
+  const rec = (fn, n, max = 10) => fn({ configName: n, src: n, dst: n, lang: '', ts: Date.now() }, max);
+
+  {
+    const h = mkAppend();
+    await rec(h.fn, '甲');
+    await rec(h.fn, '乙');
+    eq('翻译记录：顺序写两次 → 两条都在', h.names().length, 2);
+  }
+  {
+    const h = mkAppend();
+    await Promise.all([rec(h.fn, '甲'), rec(h.fn, '乙')]);
+    eq('翻译记录：并发 2 条（对比模式）→ **一条都不丢**', h.names().length, 2);
+  }
+  {
+    const h = mkAppend();
+    await Promise.all(['甲', '乙', '丙', '丁'].map((n) => rec(h.fn, n)));
+    eq('翻译记录：并发 4 条 → 四条都在', h.names().length, 4);
+  }
+  {
+    const h = mkAppend();
+    await Promise.all(['甲', '乙', '丙', '丁'].map((n) => rec(h.fn, n, 2)));
+    eq('翻译记录：并发 4 条 + 上限 2 → 只留最新的两条（且顺序是新的在前）',
+      h.names().join(','), '丁,丙');
+  }
+  {
+    /* 有一次写失败不能把队列卡死（.then(run, run) 的意义） */
+    const st = { state: { version: 9, history: [] } };
+    let calls = 0;
+    const flakyChrome = { storage: { local: {
+      get: async () => { calls += 1; if (calls === 1) throw new Error('storage 抽风'); return { state: JSON.parse(JSON.stringify(st.state)) }; },
+      set: async (o) => { st.state = JSON.parse(JSON.stringify(o.state)); }
+    } } };
+    const fn = new Function('chrome', 'let historyQueue = Promise.resolve();\n' + histFnSrc + '\nreturn appendHistory;')(flakyChrome);
+    await rec(fn, '坏的');
+    await rec(fn, '好的');
+    eq('翻译记录：一次写失败不影响后续排队（队列不卡死）', st.state.history.map((x) => x.configName).join(','), '好的');
+  }
+
+  /* ocrErrorHint 的两条提示原来**对真实报错从来不触发**（kniph 2026-10-18 覆盖率扫出来的
+     未执行分支，排查后发现不是「测试没写」而是「写错了」）：
+       · 模型名：原来用 model.{0,24}(…) —— 真机里「model」和「does not exist」之间夹着模型全名
+         （Con 反引号、带斜杠），实测间隔 32 字符，窗口够不着
+       · 百度：原来只认 access_token（下划线），而百度文案是「Access token invalid」（空格）
+     放宽后还要防误报：正文里「回显 model + 无关的 invalid/unknown」不能算模型名错。 */
+  const hitsModelHint = (b) => /模型名/.test(ocrErrorHint(b));
+  const hitsBaiduHint = (b) => /access_token/.test(ocrErrorHint(b));
+
+  check('模型名提示：带反引号的 The model ... does not exist 能命中',
+    hitsModelHint('{"error":{"message":"The model \u0060deepseek-ai/DeepSeek-OCRR\u0060 does not exist"}}'));
+  check('模型名提示：模型名很长时也能命中（不靠距离判定）',
+    hitsModelHint('{"error":{"message":"The model \u0060vendor/some-really-long-model-name-v2-preview-0731\u0060 does not exist"}}'));
+  check('模型名提示：OpenAI 那种「does not exist or you do not have access」也能命中',
+    hitsModelHint('{"error":{"message":"The model gpt-5-vision does not exist or you do not have access to it."}}'));
+  check('百度提示：Access token（空格）这种真实文案能命中',
+    hitsBaiduHint('{"error_code":110,"error_msg":"Access token invalid or no longer valid"}'));
+  check('百度提示：error_code 111 也能命中', hitsBaiduHint('{"error_code":111,"error_msg":"Access token invalid"}'));
+  check('不误报：正文回显了 model、后面跟着无关的 invalid',
+    !hitsModelHint('{"model":"gpt-4","error":{"message":"invalid request format"}}'));
+  check('不误报：正文回显了 model、后面跟着无关的 unknown',
+    !hitsModelHint('{"model":"gpt-4","note":"unknown field is ignored"}'));
+  check('不误报：限流 / 配额 / 余额不足都别扯到模型名',
+    !hitsModelHint('{"error":{"message":"Rate limit reached"}}') &&
+      !hitsModelHint('{"error":{"message":"insufficient_quota"}}') &&
+      !hitsModelHint('{"error":{"message":"Insufficient balance"}}'));
+
+  /* SSE 的 CRLF 跨块处理（kniph 2026-10-18 用假 Response 精确控制块边界发现）。
+     同一串流，块边界不同结果必须一样 —— 尤其「\r 在块尾、\n 在块头」这种 TCP 切法。
+     早先那版把 \r 先塞回 buffer 再处理本块，塞回去的 \r 不在本块的 replace 范围里，
+     于是 buffer 里留下 \n\r\n（该是 \n\n），事件切不开、整条流被末尾兜底拼成一个
+     payload，JSON 解不开就当纯文本吐出去 —— 实测会得到一坨原始 JSON。 */
+  const mkRes = (chunks, ctype) => {
+    const enc = new TextEncoder();
+    let i = 0;
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: (k) => (k.toLowerCase() === 'content-type' ? ctype : null) },
+      body: {
+        getReader: () => ({
+          read: async () => (i < chunks.length ? { done: false, value: enc.encode(chunks[i++]) } : { done: true })
+        })
+      },
+      text: async () => chunks.join('')
+    };
+  };
+  const sseEv = (t) => 'data: {"choices":[{"delta":{"content":"' + t + '"}}]}';
+  const sseStream = sseEv('甲') + '\r\n\r\n' + sseEv('乙') + '\r\n\r\n';
+  const sseRead = async (chunks) =>
+    (await readResponseBody(mkRes(chunks, 'text/event-stream'), { joiner: '', responseMode: 'auto' })).text;
+
+  eq('SSE 一整块：两个事件都拿到', await sseRead([sseStream]), '甲乙');
+  eq('SSE 按空行切开：不受影响', await sseRead([sseEv('甲') + '\n\n', sseEv('乙') + '\n\n']), '甲乙');
+  eq('SSE 块尾 \\r / 块头 \\n（TCP 切开 CRLF）：不丢事件',
+    await sseRead([sseEv('甲') + '\r\n\r', '\n' + sseEv('乙') + '\r\n\r\n']), '甲乙');
+  eq('SSE 每个字节一块（极端切法）：仍然是甲乙', await sseRead(sseStream.split('')), '甲乙');
+  eq('SSE 单事件、结尾没有空行：照样拿到', await sseRead([sseEv('甲')]), '甲');
+
+  /* Bing 重试的提示语必须只在**重试真的成了**时才出现 ——
+     否则「token 过期已重试」会和一条 HTTP 500 同时显示（kniph 2026-10-18 通读）。 */
+  const adapterSrc = readFileSync(new URL('../lib/adapters.js', import.meta.url), 'utf8');
+  check('Bing 重试提示只在重试成功时才加（不靠「有没有 body」判断）',
+    /if \(res\.ok && raw\.trim\(\)\) \{\s*\n\s*result\.warnings\.push\('Bing 的 token 过期了/.test(adapterSrc),
+    /if \(raw\.trim\(\)\) result\.warnings\.push/.test(adapterSrc) ? '旧写法还在' : 'ok');
+
+  const badIterMsg = async (v) => {
+    const f = JSON.stringify({ kind: 'request-translate-encrypted',
+      crypto: { scheme: 'pbkdf2-aesgcm-v1', salt: '00', iv: '00', iterations: v }, data: '00' });
+    try { await decryptExport(f, 'x'); return '(没抛错)'; } catch (err) { return err.message; }
+  };
+  check('iterations 是非法值时报「文件参数不对」，不赖口令',
+    /参数不对/.test(await badIterMsg('abc')) && !/口令/.test(await badIterMsg('abc')),
+    await badIterMsg('abc'));
+  check('iterations 大到离谱时拒绝解密（防被塞个 1e12 卡死浏览器）',
+    /异常大/.test(await badIterMsg(999999999999)), await badIterMsg(999999999999));
+  check('空口令不让导出', emptyErr.includes('没有口令'), emptyErr || '没抛错');
+}
+
+/* ------------------------------------------------------------------ */
+
+/* ---- 对比槽位（settings.panelSlots / slotConfigs 归一化）---- */
+{
+  const mkState = (settings) => ({
+    version: 9,
+    configs: [
+      { id: 'a', name: 'A', request: 'r' },
+      { id: 'b', name: 'B', request: 'r' },
+      { id: 'c', name: 'C', request: 'r' }
+    ],
+    activeConfigId: 'a',
+    vars: [],
+    ocr: { disabled: false, providers: [], activeId: '' },
+    settings
+  });
+  const loadWith = (state) => {
+    const origGet = globalThis.chrome.storage.local.get;
+    globalThis.chrome.storage.local.get = async () => ({ state });
+    return loadState().finally(() => {
+      globalThis.chrome.storage.local.get = origGet;
+    });
+  };
+
+  // 默认：1 条、空槽位（面板端用 activeConfigId 兜底成一条）
+  const d = await loadWith(mkState({}));
+  check('默认显示 1 条、槽位空表', d.settings.panelSlots === 1 && d.settings.slotConfigs.length === 0);
+  check('默认「新选的配置放最下面」（slotInsert=tail）', d.settings.slotInsert === 'tail', d.settings.slotInsert);
+
+  /* 「新选的往哪边放」由用户自己定（kniph 2026-10-17：「出顶部顶掉尾部，出尾部顶掉顶部」）。
+     只认 head / tail 两个值，别的一律回到 tail —— 老存档没这个键也走默认。 */
+  const headSet = await loadWith(mkState({ slotInsert: 'head' }));
+  check('slotInsert=head 会被保留', headSet.settings.slotInsert === 'head', headSet.settings.slotInsert);
+  const junkSet = await loadWith(mkState({ slotInsert: '乱写' }));
+  check('slotInsert 是垃圾值 → 回到 tail', junkSet.settings.slotInsert === 'tail', junkSet.settings.slotInsert);
+  const oldSave = await loadWith(mkState({ panelSlots: 2 }));
+  check('老存档没有 slotInsert 这个键 → tail（不用写迁移）', oldSave.settings.slotInsert === 'tail');
+
+  // 上限夹取 + 去重 + 滤不存在的 + 按条数截断
+  const n = await loadWith(mkState({ panelSlots: 99, slotConfigs: ['b', 'b', 'nope', 'c', 'a'] }));
+  check('条数上限夹到 4', n.settings.panelSlots === 4, String(n.settings.panelSlots));
+  check('槽位去重、滤掉不存在的配置、按条数截断',
+    JSON.stringify(n.settings.slotConfigs) === JSON.stringify(['b', 'c', 'a']),
+    JSON.stringify(n.settings.slotConfigs));
+
+  const m = await loadWith(mkState({ panelSlots: 2, slotConfigs: ['b', 'c', 'a'] }));
+  check('条数 2 时槽位只留前两条', JSON.stringify(m.settings.slotConfigs) === JSON.stringify(['b', 'c']));
+
+  const bad = await loadWith(mkState({ panelSlots: 0, slotConfigs: 'x' }));
+  check('条数 0 / 垃圾值 → 回到 1；槽位不是数组 → 空表',
+    bad.settings.panelSlots === 1 && Array.isArray(bad.settings.slotConfigs) && bad.settings.slotConfigs.length === 0);
+
+  // 导入也要走同一套归一化（备份文件里带槽位配置）
+  const exported = exportState(mkState({ panelSlots: 2, slotConfigs: ['b', 'c'] }));
+  const re = importState(exported);
+  /* 导入时 historyMax 必须归一化 —— loadState 那边靠 `{...DEFAULT_SETTINGS}` 合并兜住了，
+     但 importState 是**直接吃外部文件**的，`-5` / `"abc"` 会原样进来：
+     负数让 background 的 `.slice(0, -5)` 从尾部倒砍，字符串静默变成 0（= 不记录）。 */
+  const importHm = (v) => {
+    const data = { kind: 'request-translate', configs: [{ id: 'a', name: 'A', request: 'r' }], settings: { historyMax: v } };
+    return importState(JSON.stringify(data)).settings.historyMax;
+  };
+  check('导入时 historyMax 归一化：负数 → 0', importHm(-5) === 0, String(importHm(-5)));
+  check('导入时 historyMax 归一化：非数字 → 0', importHm('abc') === 0, String(importHm('abc')));
+  check('导入时 historyMax 归一化：null → 0', importHm(null) === 0, String(importHm(null)));
+  check('导入时 historyMax 归一化：超上限 999 → 200', importHm(999) === 200, String(importHm(999)));
+  check('导入时 historyMax 归一化：小数取整 3.7 → 4', importHm(3.7) === 4, String(importHm(3.7)));
+
+  /* maxChars 也必须归一化（2026-10-18 复查）—— 和第 1 轮修的 historyMax 是同一类漏洞：
+     importState 只做 { ...DEFAULT_SETTINGS, ...data.settings }，导入文件里的坏值原样进 state。
+     而三个消费方表现不一致：content.js / background.js 有 Math.max(1, ...) 兜底，
+     popup.js 直接 slice(0, x) —— slice(0, 'abc') 和 slice(0, 0) 都得到空串，
+     弹窗里选中的文字整个消失；slice(0, -5) 还会从尾部倒砍。 */
+  const importMc = (v) => {
+    const data = { kind: 'request-translate', configs: [{ id: 'a', name: 'A', request: 'r' }], settings: { maxChars: v } };
+    return importState(JSON.stringify(data)).settings.maxChars;
+  };
+  eq('导入时 maxChars 归一化：非数字 → 默认 8000', importMc('abc'), 8000);
+  eq('导入时 maxChars 归一化：负数 → 默认 8000（不是 1、也不倒砍）', importMc(-5), 8000);
+  eq('导入时 maxChars 归一化：0 → 默认 8000', importMc(0), 8000);
+  eq('导入时 maxChars 归一化：null → 默认 8000', importMc(null), 8000);
+  eq('导入时 maxChars 归一化：超上限 999999 → 200000', importMc(999999), 200000);
+  eq('导入时 maxChars 归一化：小数取整 3.7 → 4', importMc(3.7), 4);
+  eq('导入时 maxChars 归一化：正常值不动', importMc(5000), 5000);
+  {
+    const optSrcMax = readFileSync(new URL('../options.js', import.meta.url), 'utf8');
+    check('设置页 #s-max 清空时退回 8000，不写 0',
+      /key: 'maxChars'[\s\S]{0,200}save: \(el\) => Number\(el\.value\) \|\| 8000/.test(optSrcMax));
+    const popupSrcMax = readFileSync(new URL('../popup.js', import.meta.url), 'utf8');
+    check('popup.js 用 maxChars 时有和另外两处一样的守卫',
+      /Math\.max\(1, Number\(state\.settings\.maxChars\) \|\| 8000\)/.test(popupSrcMax));
+  }
+  check('导入时 historyMax 缺省 → 默认 10', importHm(undefined) === 10, String(importHm(undefined)));
+  check('导入回来的槽位设置也归一化过', re.settings.panelSlots === 2 &&
+    JSON.stringify(re.settings.slotConfigs) === JSON.stringify(['b', 'c']),
+    JSON.stringify(re.settings.slotConfigs));
+}
+
+/* ---- 语音映射必须覆盖 TARGET_LANG_CODES 的每一种语言 --------------------------
+   权威表在 lib/template.js（27 种）。content.js 不能 import，只能自己维护一份 ——
+   这里用**真代码**（抠出 speechTagsFor 跑）比对：加语言时漏改会当场红。 */
+/* ---- 朗读的语音挑选（2026-10-17 kniph 报「第二次朗读变粤语」）----
+   这两个函数在 content.js 的 IIFE 里，测不到实例；但它们**纯逻辑**，
+   这里按同样的算法复刻一份跑断言 —— 钉住两条不变量：
+     ① 普通话绝不落到 zh-HK / zh-TW / yue；
+     ② 「第一次列表为空、第二次才有」这个时序不能改变结果。
+   改动那两个函数时，这里要一起改（否则断言会失去意义，注释里写清楚）。 */
+{
+  // —— 复刻：与 content.js 的 speechTagsFor / pickVoice 逐字一致 ——
+  const SPEECH_DIALECT_TAGS = ['zh-hk', 'zh-tw', 'zh-hant', 'yue', 'hk', 'tw'];
+  function speechTagsFor(lang) {
+    const s = String(lang || '').toLowerCase();
+    if (s.includes('繁体') || s.includes('繁體') || s.includes('zh-tw') || s.includes('zh-hant')) {
+      return ['zh-TW', 'zh-HK'];
+    }
+    if (s.includes('英')) return ['en-US', 'en-GB', 'en'];
+    if (s.includes('日')) return ['ja-JP', 'ja'];
+    if (s.includes('韩') || s.includes('朝鲜')) return ['ko-KR', 'ko'];
+    if (s.includes('法')) return ['fr-FR', 'fr'];
+    if (s.includes('德')) return ['de-DE', 'de'];
+    if (s.includes('俄')) return ['ru-RU', 'ru'];
+    if (s.includes('西班牙')) return ['es-ES', 'es'];
+    if (s.includes('葡萄牙')) return ['pt-BR', 'pt'];
+    if (s.includes('意大利')) return ['it-IT', 'it'];
+    if (s.includes('中文') || s.includes('简体') || s.includes('zh') || !s) {
+      return ['zh-CN', 'zh-Hans', 'zh'];
+    }
+    if (s.startsWith('en')) return ['en-US', 'en-GB', 'en'];
+    if (s.startsWith('ja')) return ['ja-JP', 'ja'];
+    if (s.startsWith('ko')) return ['ko-KR', 'ko'];
+    return ['zh-CN', 'zh-Hans', 'zh'];
+  }
+  function pickVoice(voices, tags) {
+    if (!voices || !voices.length) return null;
+    const norm = (v) => String(v.lang || '').toLowerCase().replace(/_/g, '-');
+    for (const tag of tags) {
+      const t = tag.toLowerCase();
+      const exact = voices.filter((v) => norm(v) === t);
+      if (exact.length) return exact.find((v) => v.localService) || exact[0];
+    }
+    for (const tag of tags) {
+      const t = tag.toLowerCase();
+      const prefix = voices.filter((v) => {
+        const L = norm(v);
+        if (!L.startsWith(t.split('-')[0])) return false;
+        if (SPEECH_DIALECT_TAGS.some((d) => L.includes(d))) return false;
+        return true;
+      });
+      if (prefix.length) return prefix.find((v) => v.localService) || prefix[0];
+    }
+    return null;
+  }
+  const V = (lang, name, local) => ({ lang, name: name || lang, localService: !!local });
+
+  check('简体中文 → 候选标签是普通话（没有笼统的 zh）',
+    JSON.stringify(speechTagsFor('简体中文')) === JSON.stringify(['zh-CN', 'zh-Hans', 'zh']),
+    JSON.stringify(speechTagsFor('简体中文')));
+
+  /* 粤语语音排在列表**最前面**（Windows 上常见）—— 普通话目标也必须跳过它 */
+  const cantoneseFirst = [V('zh-HK', '粤语'), V('zh-CN', '普通话', true), V('en-US', 'English')];
+  const picked1 = pickVoice(cantoneseFirst, speechTagsFor('简体中文'));
+  check('粤语排第一时，普通话仍挑到 zh-CN（不会读成粤语）',
+    picked1 && picked1.lang === 'zh-CN', picked1 ? picked1.lang : 'null');
+
+  /* 只有粤语可用时：宁可不挑（交给 u.lang = zh-CN，浏览器自己兜） */
+  const onlyCantonese = [V('zh-HK', '粤语'), V('zh-TW', '台灣'), V('yue-HK', 'Cantonese')];
+  check('列表里只有粤语/台湾时，不挑它们（返回 null）',
+    pickVoice(onlyCantonese, speechTagsFor('简体中文')) === null);
+
+  /* 「第一次空、第二次才有」的时序：两次调用结果必须一致 */
+  check('首次 getVoices() 返回空 → null（与第二次的结论不冲突）',
+    pickVoice([], speechTagsFor('简体中文')) === null);
+  // 第二次拿到完整列表 → 仍然挑普通话，不该因为「这次有得挑」就挑到粤语
+  const cantoneseFirstFull = [V('zh-HK'), V('zh-CN', '普通话', true)];
+  const secondPick = pickVoice(cantoneseFirstFull, speechTagsFor('简体中文'));
+  check('第二次有列表了，挑的还是普通话（这才是「第二次变粤语」的病根）',
+    secondPick && secondPick.lang === 'zh-CN', secondPick ? secondPick.lang : 'null');
+
+  /* 繁体目标：允许 zh-TW */
+  const tw = pickVoice([V('zh-CN'), V('zh-TW', '台灣', true)], speechTagsFor('繁體中文'));
+  check('繁體中文目标 → 挑 zh-TW', tw && tw.lang === 'zh-TW', tw ? tw.lang : 'null');
+
+  /* 同标签优先本地语音（在线语音容易等半天/静默失败） */
+  const localFirst = pickVoice([V('zh-CN', '在线', false), V('zh-CN', '本地', true)], speechTagsFor('简体中文'));
+  check('同一标签下优先本地语音', localFirst && localFirst.localService === true);
+
+  check('英文目标 → en-US 优先', JSON.stringify(speechTagsFor('英文')).startsWith('["en-US"'));
+
+  /* 覆盖率：把 content.js 里那个 speechTagsFor **真跑一遍**，对 TARGET_LANG_CODES
+     的每个语言名都要挑得出标签 —— 加语言时漏改会当场红。 */
+  const { TARGET_LANG_CODES } = await import('../lib/template.js');
+  const speechFnSrc = (() => {
+    const src = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
+    const start = src.indexOf('function speechTagsFor(lang) {');
+    if (start < 0) return '';
+    // 大括号配平找函数体结束（比正则稳：函数体里有 / 和引号，正则容易踩坑）
+    let i = src.indexOf('{', start);
+    let depth = 0;
+    for (; i < src.length; i += 1) {
+      if (src[i] === '{') depth += 1;
+      else if (src[i] === '}') {
+        depth -= 1;
+        if (depth === 0) return src.slice(start, i + 1);
+      }
+    }
+    return '';
+  })();
+  check('能从 content.js 里抠出 speechTagsFor（改名/重构时这条会先红）', !!speechFnSrc);
+  if (speechFnSrc) {
+    const realFn = new Function('lang', speechFnSrc + '; return speechTagsFor(lang);');
+    const names = [...new Set(Object.keys(TARGET_LANG_CODES))];
+    const missing = names.filter((n) => {
+      const t = realFn(n);
+      return !t || !t.length || !t[0];
+    });
+    check(`语音映射覆盖全部 ${names.length} 个语言名（一个都不能漏）`,
+      missing.length === 0, missing.join(', '));
+
+    /* 「繁體中文」曾被简体的正则吃掉（两条规则都命中、繁体排在后面）——
+       这条钉住顺序：繁体必须排在简体前面判。 */
+    check('繁體中文 → zh-TW（繁体规则必须先于简体判定）',
+      JSON.stringify(realFn('繁體中文')) === JSON.stringify(['zh-TW', 'zh-HK']),
+      JSON.stringify(realFn('繁體中文')));
+    check('简体中文 → 只给 zh-CN / zh-Hans（不含笼统的 zh / 粤语）',
+      JSON.stringify(realFn('简体中文')) === JSON.stringify(['zh-CN', 'zh-Hans']),
+      JSON.stringify(realFn('简体中文')));
+  }
+
+  /* 源码侧：确认 content.js 里确实用了「排除方言」这套，别被改回去 */
+  const speechSrc = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
+  check('content.js 里保留了方言排除表（防改回 startsWith 的老写法）',
+    /SPEECH_DIALECT_TAGS/.test(speechSrc) && /zh-hk/.test(speechSrc) &&
+      !/startsWith\(want\)/.test(speechSrc));
+}
+
+/* ---- 翻译记录（v9：state.history + settings.historyMax）----
+   loadState 无参、从 mock 读 —— 和迁移测试同一种喂数方式（替换 get 再还原）。 */
+{
+  const mk = (settings, history) => ({
+    version: 9,
+    configs: [{ id: 'a', name: 'A', request: 'r' }],
+    activeConfigId: 'a',
+    vars: [],
+    ocr: { disabled: false, providers: [], activeId: '' },
+    settings,
+    history
+  });
+  const loadWith = (state) => {
+    const origGet = globalThis.chrome.storage.local.get;
+    globalThis.chrome.storage.local.get = async () => ({ state });
+    return loadState().finally(() => {
+      globalThis.chrome.storage.local.get = origGet;
+    });
+  };
+
+  // 老存档（没有 history 字段）：load 后是空表，不出错
+  const old = await loadWith(mk(DEFAULT_SETTINGS, undefined));
+  check('老存档没有 history → 空表', Array.isArray(old.history) && old.history.length === 0);
+
+  // 白名单构造：垃圾元素滤掉、字段截断、超出条数切掉
+  const junk = mk({ ...DEFAULT_SETTINGS, historyMax: 2 }, [
+    { src: 'a'.repeat(3000), dst: 'b'.repeat(9000), configName: 'C', lang: 'EN', ts: 111 },
+    null,
+    '垃圾',
+    { src: 'c', dst: 'd', ts: 222 }
+  ]);
+  const loaded = await loadWith(junk);
+  check('垃圾元素被滤掉、条数按上限截断', loaded.history.length === 2, String(loaded.history.length));
+  check('字段白名单 + 截断（src 2000 / dst 5000）',
+    loaded.history[0].src.length === 2000 && loaded.history[0].dst.length === 5000 &&
+      loaded.history[0].configName === 'C');
+
+  // historyMax = 0：一条都不留
+  const none = await loadWith(mk({ ...DEFAULT_SETTINGS, historyMax: 0 }, [{ src: 'x', dst: 'y', ts: 1 }]));
+  check('条数设成 0 → 一条不留', none.history.length === 0);
+
+  // 导出（备份口径）里不含 history —— 那是个人对话，不是配置
+  const withHist = mk(DEFAULT_SETTINGS, [{ src: '私人原文', dst: '私人译文', ts: 1 }]);
+  const exported = exportState(withHist);
+  check('导出文件里没有 history 字段', !exported.includes('私人原文') && !JSON.parse(exported).history);
+
+  // 导入时 history 不进 state（importState 的白名单本来就没有它）
+  const re = importState(exportState(withHist));
+  check('导入回来的 state 里也没有 history', !('history' in re));
+}
+
+/* ------------------------------------------------------------------ */
 console.log('\n' + '='.repeat(46));
 console.log(`通过 ${passed} 项，失败 ${failed} 项`);
 console.log('='.repeat(46));

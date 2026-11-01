@@ -350,7 +350,7 @@ Bing 网页版翻译是**两步**：先 GET `bing.com/translator`，从 630KB �
 | 准备打包 / 发版 | **`npm test` 全量**（四项都跑） |
 
 ```bash
-npm test              # 全量：静态检查 + 单元 + 端到端 + 真实浏览器 UI（1406 项）
+npm test              # 全量：静态检查 2 + test-lib 974 + test-engine 89 + test-strip 19 + e2e 543 = 1627 项
 npm run check         # 只跑两项静态检查
 npm run test:lib      # 解析器 / 模板 / 提取
 npm run test:engine   # 本地 mock 服务器，验证各类响应格式
@@ -362,7 +362,41 @@ npm run pack          # 跑 npm test → 剥注释出包 → 验包（语法 / �
 
 `npm run perf` 只跑指定档位可以快很多：`PERF_ONLY=heavy npm run perf`（可选档位 `normal` / `fewLong` / `manyShort` / `heavy`）。
 
-拆开看是 `test-lib` 810 项、`test-engine` 89 项、`test-strip` 19 项、`e2e-ui` 486 项，另加两项静态检查。各层补的盲区不同：
+### 环境要求（换机器 / 换 harness 时先看这段）
+
+三个外部依赖，缺一个就有脚本跑不起来，且**报错信息都不指向真因**：
+
+1. **Node 在 PATH 里** —— npm 脚本内部是 `node tools/xxx.mjs`，`npm run pack` 的 `verify-pack.py`
+   里也有一次 `node --check`。node 不在 PATH 时 python 那边报的是 `FileNotFoundError: [WinError 2]`
+   （看不出是缺 node）。
+2. **`PYTHONIOENCODING=utf-8`** —— 打包脚本的提示语里有 `✓` 这类字符，Windows 控制台默认 GBK
+   会直接 `UnicodeEncodeError: 'gbk' codec can't encode character '\u2713'` 崩在半路。
+3. **playwright-core**（仅 `test:ui` 需要）—— e2e 不下载浏览器，直接用系统 Edge；
+   模块从 `~/.workbuddy/binaries/node/workspace/node_modules/playwright-core` 找。
+
+```bash
+# DSH 沙箱下的一次性前置（node 不在 PATH、控制台是 GBK 时）
+export PATH="$HOME/.workbuddy/binaries/node/versions/22.22.2-6:$PATH"
+export PYTHONIOENCODING=utf-8
+```
+
+**在 PowerShell 里跑要另注意两件事**（2026-10-18 实测，别当成「没装」）：
+
+- PowerShell **默认禁止跑 `npm.ps1`**（执行策略 `UnauthorizedAccess`），而 `& npm ...` 解析到的正是 `.ps1`。**显式写 `npm.cmd`**：`& "$nb\npm.cmd" run pack`。报错原文是「无法加载文件 …npm.ps1，因为在此系统上禁止运行脚本」，和「命令不存在」长得不一样。
+- `$env:PATH` 要先补上 node 目录，否则 `pack.py` 内部那次 `npm test` 照样 `FileNotFoundError: [WinError 2]`（和上面第 1 条同源，只是换了个宿主）。`python` 本身在 PATH 里。
+
+
+3. **子进程输出的解码**（已修，无需手动处理）—— `pack.py` / `verify-pack.py` 里
+   `subprocess.run(..., text=True)` 在 Windows 上默认按 ANSI（GBK）解码子进程输出，
+   而测试输出含 `= · ✓` 这类 UTF-8 字符 → 解码线程抛 `UnicodeDecodeError`。
+   2026-10-17 已在两处显式加 `encoding="utf-8", errors="replace"`。
+   **新增调用 `node`/`npm` 的 python 代码时照抄这两个参数**，否则换台机器就会刷一屏红字。
+
+**沙箱注意**：`test:ui` 用 `--remote-debugging-pipe` 启动 Edge，属于「管道捕获」——
+文件沙箱禁止时表现为 `spawn EPERM`（这是沙箱边界，不是环境缺东西）。
+`danger-full-access` 下正常；`workspace-write` 下 e2e 跑不了，其余四层不受影响。
+
+拆开看是 `test-lib` 942 项、`test-engine` 89 项、`test-strip` 19 项、`e2e-ui` 534 项，另加两项静态检查。各层补的盲区不同：
 
 - **`check-globals`** — 语法检查看不出 `bindConfigList()` 这种「调用了但没写」，只有运行时才炸。它把注释、字符串、正则字面量剥掉之后逐个比对调用与声明。也可以指定文件：`node tools/check-globals.mjs lib/engine.js`。新增 `lib/*.js` 记得加进目标清单（含 `offscreen.js`）。识别**解构出来的对象参数**（`function f({ a, b })`）要单独一条正则 —— 只写 `\(([^()]*)\)` 的话 `{ a, b }` 整块留下来、拆开后每片都带花括号，一个都认不出来，里面的 `a` / `b` 反倒被报成「没定义」（`moveButton({ … onMove })` 踩过）。
 - **`check-dom`** — 比对 JS 里的 `$('#id')` / `querySelector('.x')` / `closest('.x')`，和「HTML 里写死的**加上** JS 里拼出来的」类名，防的是「选择器指向不存在的元素，启动时炸在 null 上」。正则里的坑：`querySelectorAll?` 那个 `?` 只管最后一个 `l`，**所有 `querySelector('.x')` 从来没被扫到**，得写 `querySelector(?:All)?`。
@@ -405,8 +439,79 @@ npm run pack          # 跑 npm test → 剥注释出包 → 验包（语法 / �
 
 ---
 
+## 几条「看着像对、其实不生效」的守卫（2026-10-18 通读补）
+
+这些地方的共同点：**代码在、注释也写了意图，但实际一次都没生效**。加断言时优先钉这类。
+
+- **恒假的守卫 = 死分支**：`parseCurl` 里「组合短选项逐个查」那段原来写 `inlineValue === null && tok.length > 2` —— `tok.length > 2` 时 `inlineValue` 必不为 null，反过来 `inlineValue === null` 时 `tok.length <= 2`，**恒假**。后果不是「少个优化」而是解析错：`curl -sd 'a=1'` 里 `d` 被丢掉、`a=1` 变成了 URL。现在按 curl 语义「有值旗标吃掉余下字符」。**找这类问题用覆盖率扫 `lib/*.js` 的未执行行，比人眼靠谱**。
+- **正则按想象的文案写 = 对真实报错永不命中**：`ocrErrorHint` 的模型名分支原来是 `model.{0,24}(…)`，而真机是 `The model `X` does not exist`（「model」到「does not exist」间隔 32 字符）；百度那条只认 `access_token`，而百度文案是 `Access token`（**空格**）。**写这类判据时拿厂商文档里的原文报错当输入跑一遍**，别自己编一句；放宽窗口时还要防误报（正文回显了 `model` + 无关的 `invalid` 不能算模型名错）。
+- **收好了但没人用的字段**：`parseCurl` 的 `warnings` 原来一次都没 push 过，`engine` 也从没读过它 —— 于是「`-d @file` 会原样发出去」这种事**闷着不吭声**。现在解析期提示会一路带到面板的「…」和设置页预览里（`runRequest` / `previewRequest` / `buildOcrRequest` 三处都要并进去）。
+- **读改写要排队**：`chrome.storage` 的「读→改→写」中间隔着 `await`，并发时后来者读到的是别人还没写回去的那份。两处踩过：`background.js` 写翻译记录（一次对比并发跑 2~4 条 → 只剩 1 条）、`content.js` 的 `mutateState`（连点两下开关）。修法都是**用 promise 串成队列** —— `clipboardRead` / `saveChain` / `historyQueue` 三个是同一套写法。
+- **两个写者 + 整份覆盖 = 互相顶掉**：面板按单键 RMW 写 `showOriginal` / `targetLang` / `ocr.imageConfigId`，而设置页是**整份 state 覆盖写**。设置页保存前要 `adoptPanelOwned()` 把「面板也会写、且页面没动过」的键以存档为准。**面板也会写的键要加进 `PANEL_OWNED_SETTING_KEYS`**。
+- **SSE 的 `\r\n` 会被 TCP 切开**：归一化不能逐块做，也不能「先把上一块的 `\r` 塞回 buffer 再处理本块」—— 塞回去的那 `\r` 不在本块的 replace 范围里，buffer 会留下 `\n\r\n`（本该 `\n\n`），事件切不开、整条流被末尾兜底拼成一段。做法是**把结尾那个 `\r` 扣下来**（`carryCr`），下一块来了拼回去**一起**归一。`test-lib` 里有五种切法（含「每个字节一块」）的断言。
+- **`postMessage` 本身会抛**：端口「存在但已断开」时抛 `Attempting to use a disconnected port object`。`content.js` 的 `postOrFail` 原来是这个文件里唯一漏了 try/catch 的发送点（另两处裸 abort 和后台的 `safePost` 都包了）。
+- **跨文件手抄的那一份要配逐字/逐值断言**：`formatBytes` 两份实现的小数位规则原来不同，同一张图在设置页是「49 KB」、面板是「48.8 KB」。两份面板 CSS 同理（`content.js` 内联 vs `lib/panel-styles.js`）。
+- **加了用户设置就别在别处写死默认值**：`frame-bridge.js` 原来写死 `slice(0, 8000)`，于是「单次最多发送字数」调到 8000 以上的用户，iframe 里的选区被静默砍到 8000。执行点只留一处（`content.js` 的 `translate()`）。
+
+---
+
+## 自定义面板样式（2026-10-18）
+
+设置页「面板」分组里有一个 CSS 文本框，内容会**追加注入到面板 shadow root 的末尾**。
+
+- **为什么必须由我们注入**：面板在 shadow DOM 里，页面级 CSS（Stylus / user.css / 浏览器用户样式表）**进不来**。
+  hcfy 那种能直接写 `#translate-panel` 的玩法，前提是它的面板在页面 DOM 里 —— 我们不是。
+  这条必须写在 UI 说明里，否则一定有人贴到 Stylus 里然后说没用。
+- **为什么追加在最后**：和预设主题的选择器同优先级时靠「后出现」胜出，
+  天然形成 `默认值 < 预设主题 < 用户自定义` 三层，不需要 `!important`。
+- **`#rt-panel` 是 id 选择器**，优先级高于我们的 `.rt-panel` 类 —— 用户改底色/圆角/阴影一般不用 `!important`。
+
+### 可以用的钩子（这些名字不改；真要改会给别名）
+
+| 选择器 | 是什么 |
+| --- | --- |
+| `#rt-panel` | 面板本体（宽度 / 圆角 / 阴影 / 底色 / 内边距都在它身上） |
+| `[data-rt-theme="dark"]` / `[data-rt-theme="light"]` | 按主题分别写（等价于 hcfy 的 `.bp6-dark`） |
+| `.rt-head` | 顶栏（配置下拉 + 语言下拉 + 眼睛/关闭按钮） |
+| `.rt-cfg` / `.rt-lang` | 那两个下拉框 |
+| `.rt-src` | 原文区（`hidden` 类表示收起） |
+| `.rt-out` | 结果区（滚动容器） |
+| `.rt-slot` / `.rt-slot-h` / `.rt-slot-name` / `.rt-slot-b` | 对比槽位：整块 / 块头 / 配置名 / 译文 |
+| `.rt-acts` / `.rt-act` | 每条译文尾部那排「复制 / 朗读 / 重试」 |
+| `.rt-foot` / `.rt-msg` / `.rt-more` | 底栏：状态文字 / 「⋯」诊断按钮 |
+| `.rt-diag` / `.d-k` / `.d-v` | 诊断面板（首字 / 总耗时 / 响应格式… 及其值） |
+| `.rt-btn` / `.rt-dot` | 顶栏图标按钮 / 那盏状态灯 |
+
+### 内置示例：护眼暖色
+
+设置页有个「填入示例：护眼暖色」按钮，注入的是这组变量（参照 Gruvbox Dark 的暖褐基调，
+**对比度已验过：正文 11.2、次要 6.7**）：
+
+```css
+#rt-panel {
+  --rt-bg: #181713;        --rt-bg-head: #1f1e19;
+  --rt-bg-sub: #1b1a16;    --rt-bg-diag: #151410;
+  --rt-border: #332f27;    --rt-border-soft: #2a2721;
+  --rt-slot-line: #453f34; --rt-hover: #282520;
+  --rt-scroll: #3b372e;    --rt-accent: #b8863b;
+  --rt-accent-soft: #2a2118; --rt-accent-text: #d9a95a;
+}
+```
+
+**只覆盖颜色变量、不动布局，也不改文字色** —— 文字色复用深色预设那套（那套的对比度是算过并写了断言的，
+随手改会把可读性改掉）。想加第四个配色就往 `options.js` 的 `PANEL_CSS_WARM` 旁边加一段示例，不用动主题逻辑。
+
+### 两个已知限制
+
+- 有些站点（如 mikanani.me）**自己内嵌了 Dark Reader**（`/js/darkreader.min.js`），它会往我们的
+  shadow root 里塞 4 个 `darkreader--*` 样式表、用 `!important` 重新配色。
+  用户的自定义 CSS 若不加 `!important` 会输给它 —— 这是第三方行为，不是我们的 bug。
+- 写坏的 CSS 会把面板搞乱，所以必须留着「清空」按钮；20 万字符以上的样式表也会卡渲染，
+  所以 `panelCss` 在 `normalizeThemeAndCss` 里被截到 20000 字符。
+
+---
 ## 已知的硬边界
 
 - **`manifest.json` 的 `proxy` 权限已经整块删掉**（原先只为「临时直连」服务）。别再捡回来 —— 代理分流应该在代理软件里按规则做，加这个权限会让 Edge 显示「读取和更改您的代理设置」。
 - Bing 通道**代理开启时必然空 body**。首选在代理客户端加 `DOMAIN-SUFFIX,bing.com,DIRECT`；插件侧不再有任何兜底手段。
-- API key 明文存 `chrome.storage.local`，导出配置文件等于泄 key。
+- API key 明文存 `chrome.storage.local`。**勾了「加密导出」的配置文件除外**（口令派生密钥，PBKDF2 60 万次 + AES-GCM，见 `lib/crypto.js`）——这是可选功能，不勾就还是泄 key。

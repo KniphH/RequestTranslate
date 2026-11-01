@@ -98,7 +98,10 @@ async function init() {
       });
       const selected = res && res[0] && res[0].result;
       if (selected) {
-        txt.value = selected.slice(0, state.settings.maxChars);
+        // 和 content.js / background.js 同一条守卫：清空设置项后会存成 0，
+        // slice(0, 0) 会把选中的文字整个吞掉、弹窗里一片空白
+        const limit = Math.max(1, Number(state.settings.maxChars) || 8000);
+        txt.value = selected.slice(0, limit);
       }
     }
   } catch {

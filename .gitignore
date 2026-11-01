@@ -4,3 +4,5 @@ dist/
 *.log
 Thumbs.db
 .DS_Store
+.dsh/
+.dsh-ops/

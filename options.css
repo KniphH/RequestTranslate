@@ -129,7 +129,6 @@ header {
   border-color: rgba(124, 108, 245, .38);
 }
 
-.head-actions { display: flex; gap: 8px; }
 
 
 main { flex: 1; min-height: 0; position: relative; }
@@ -162,7 +161,15 @@ main { flex: 1; min-height: 0; position: relative; }
 
 .list-tip { letter-spacing: 0; text-transform: none; font-size: 10px; opacity: .8; }
 
-.list-body { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
+/* scrollbar-gutter: stable —— 滚动条槽**始终预留** 10px（= ::-webkit-scrollbar 的宽度）。
+   不加的话：配置一多就冒出滚动条、把行挤窄 10px，屏幕会「跳」一下；
+   更糟的是三个左栏只要有一个在滚、另外两个不滚，它们的行宽就对不齐了。 */
+.list-body {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding: 0 8px 8px;
+}
 .list-body.is-dragging { cursor: grabbing; }
 
 /* 一行 = 手柄 + 可点的主体 + 上下移。顺序靠这三样一起调 */
@@ -293,6 +300,21 @@ main { flex: 1; min-height: 0; position: relative; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 参与对比（可以多条同时亮，kniph 2026-10-17）：
+   比「正在编辑」的 is-active 淡一档，只加一圈边框 + 名字带主色，
+   这样两种状态同时出现时仍然分得清谁是编辑、谁在对比。
+   底色用 rgba 直接写（--accent-soft 已经带 alpha，再叠一层会算不出来）。 */
+.cfg-item.in-compare {
+  border-color: rgba(124, 108, 245, .34);
+  background: rgba(124, 108, 245, .07);
+}
+.cfg-item.in-compare .name { color: var(--accent); }
+/* 既是编辑又在对比：加深一档（两种标记叠加，不冲突） */
+.cfg-item.in-compare.is-active {
+  background: var(--accent-soft);
+  border-color: rgba(124, 108, 245, .5);
+}
+.cfg-item.in-compare.is-active .name { color: var(--fg); }
 .cfg-item.is-active .name::before {
   content: "";
   display: inline-block;
@@ -316,6 +338,7 @@ main { flex: 1; min-height: 0; position: relative; }
 /* ---------------- 编辑器 ---------------- */
 
 .editor {
+  scrollbar-gutter: stable;
   flex: 1;
   min-width: 0;
   overflow-y: auto;
@@ -331,8 +354,6 @@ main { flex: 1; min-height: 0; position: relative; }
 .field.grow { flex: 1; min-width: 0; }
 .mode-field { width: 160px; flex: none; }
 
-.field-head { display: flex; align-items: center; gap: 10px; }
-.field-head label { margin-right: auto; }
 
 label {
   font-size: 12px;
@@ -756,6 +777,7 @@ button.block { width: 100%; }
 /* ---------------- 变量 / 设置页 ---------------- */
 
 .page {
+  scrollbar-gutter: stable;
   flex: 1;
   overflow-y: auto;
   padding: 26px 34px 60px;
@@ -771,6 +793,69 @@ button.block { width: 100%; }
   font-weight: 600;
 }
 .page h2:first-child { margin-top: 0; }
+
+/* ---- 设置页的分组折叠（kniph 2026-10-17：7 个区块 25 行平铺，一屏装不下）----
+   用原生 <details>：零 JS、键盘可达、浏览器自带开合语义。
+   标题沿用 h2 那套「小号大写字母 + 淡色」的观感，只是加了个箭头。 */
+.set-group {
+  margin: 26px 0 0;
+  border-top: 1px solid var(--line-soft);
+}
+.set-group:first-of-type { margin-top: 0; border-top: none; }
+.set-group > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 0 2px;
+  cursor: pointer;
+  list-style: none;          /* 去掉默认三角，自己画（Safari/Chrome 都要） */
+  user-select: none;
+}
+.set-group > summary::-webkit-details-marker { display: none; }
+.set-group > summary::before {
+  content: "";
+  flex: none;
+  width: 0; height: 0;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  color: var(--fg-faint);
+  transition: transform .13s;
+}
+.set-group[open] > summary::before { transform: rotate(90deg); }
+.set-group > summary:hover::before,
+.set-group > summary:hover .set-group-t { color: var(--fg-dim); }
+.set-group-t {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: .09em;
+  color: var(--fg-faint);
+  font-weight: 600;
+  transition: color .13s;
+}
+/* 收起来时给一句「几项」的提示，免得以为里面是空的 */
+.set-group:not([open]) > summary::after {
+  content: attr(data-count);
+  font-size: 11px;
+  color: var(--fg-faint);
+  opacity: .7;
+}
+.set-group-body { padding-bottom: 6px; }
+
+/* ---- 面板效果预览（kniph 2026-10-17）----
+   这里是**真的**结果面板：样式表来自 lib/panel-styles.js（和 content.js 共用），
+   同样跑在 shadow root 里。所以不再需要「模拟」的样式，只要一个容器。 */
+.pv-wrap {
+  /* 面板宽度可到 1600px，塞不下时由 JS 用 transform 等比缩，
+     所以容器只负责裁掉溢出、给点内边距。 */
+  display: block;
+  padding: 16px;
+  background: var(--bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  overflow: auto;
+}
+.pv-host { display: block; }
 
 /* ---- 自定义变量列表：卡片网格 + 点击编辑 ----
    一条 = 一张卡片（名字 + 值摘要 + 眼睛 + ✕），点了才摊开编辑。
@@ -1127,3 +1212,86 @@ button.block { width: 100%; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 5px; border: 2px solid var(--bg); }
 ::-webkit-scrollbar-thumb:hover { background: var(--scroll-hover); }
+
+/* ---- 加密导出：勾选框 + 口令小模态 ---- */
+/* 勾选框贴着导出按钮，是一行小字不是第二个按钮（HCFY 作者的教训：做成必经流程会被嫌复杂） */
+.enc-opt {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  color: var(--fg-dim);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.enc-opt input { accent-color: var(--accent); cursor: pointer; }
+
+/* 口令模态：遮罩 + 居中小盒。和「框选截图」的遮罩同一个思路 —— 盖住页面防误触 */
+#pass-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, .35);
+}
+#pass-dialog[hidden] { display: none; }
+.pass-box {
+  width: 300px;
+  padding: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 9px;
+}
+.pass-title { margin: 0; font-weight: 550; color: var(--fg); }
+.pass-box input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  font: inherit;
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  color: var(--fg);
+}
+.pass-box input:focus { outline: none; border-color: var(--accent); }
+.pass-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg-dim);
+  /* 错误提示走这一行 —— 不另起元素，盒子不跳动 */
+}
+.pass-note.is-err { color: var(--danger, #c0392b); }
+.pass-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* ---- 导入 / 导出（设置页签底部，kniph 2026-10-15：别占顶部那排空间）----
+   行结构复用 .setting（label 210px 在左 + 控件在右），这里只有导出备份那一行的横排小组件 */
+
+.io-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.io-row button { white-space: nowrap; }
+
+/* 翻译记录列表：紧凑行，原文/译文各截一行 */
+.history-list {
+  scrollbar-gutter: stable; display: grid; gap: 6px; max-height: 300px; overflow: auto; }
+.history-item {
+  padding: 7px 9px;
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+.history-item .h-meta { color: var(--fg-dim); font-size: 11.5px; margin-bottom: 3px; }
+.history-item .h-src,
+.history-item .h-dst {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.history-item .h-dst { color: var(--fg); }
+
+#hotkey-now.is-err { color: var(--danger); }

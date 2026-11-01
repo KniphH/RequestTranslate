@@ -23,11 +23,6 @@
       <button class="tab" data-tab="settings">设置</button>
     </nav>
 
-    <div class="head-actions">
-      <button id="btn-import" class="ghost" title="从导出的 JSON 文件恢复配置（会替换当前的全部配置）">导入</button>
-      <button id="btn-export" class="ghost" title="把全部配置 / 变量 / 设置 / OCR 导出成一个 JSON 文件（里面有明文 API Key，分享前先清掉）">导出</button>
-      <input type="file" id="file-import" accept="application/json,.json" hidden>
-    </div>
   </header>
 
   <main>
@@ -194,7 +189,9 @@
     <!-- ============================ 设置 ============================ -->
     <section class="tabpanel" data-panel="settings">
       <div class="page">
-        <h2>划词行为</h2>
+        <details class="set-group" open>
+          <summary><span class="set-group-t">划词行为</span></summary>
+          <div class="set-group-body">
 
         <div class="setting">
           <label for="s-trigger">选中文字后</label>
@@ -205,6 +202,25 @@
           </select>
         </div>
 
+        <div class="setting">
+          <label for="s-hotkey">翻译选中内容的快捷键</label>
+          <div class="stack">
+            <div class="io-row">
+              <button id="btn-hotkey-open" class="ghost">打开浏览器的快捷键设置页</button>
+              <span class="hint" data-hint="s-hotkey">三条快捷键都在那一个页面里改；重载扩展后显示「未设置」的，去那里设一次就好。</span>
+            </div>
+            <p class="hint" id="hotkey-list"></p>
+          </div>
+        </div>
+        <div class="setting">
+          <label for="s-framebridge">iframe 划词</label>
+          <div class="stack">
+            <label class="switch">
+              <input type="checkbox" id="s-framebridge">
+              <span>在网页内嵌的小页面（iframe，比如一些评论框和编辑器）里也支持划词。桥接脚本只上报选区，按钮和面板仍只有一份。</span>
+            </label>
+          </div>
+        </div>
         <div class="setting">
           <label for="s-ctx">右键菜单</label>
           <div class="stack">
@@ -221,9 +237,11 @@
               <span>加一项「框选截图翻译」（当场拖框截一块屏幕区域去翻译，不用先按系统截图）</span>
             </label>
           </div>
-        </div>
-
-        <h2>翻译</h2>
+        </div>          </div>
+        </details>
+<details class="set-group" open>
+          <summary><span class="set-group-t">翻译</span></summary>
+          <div class="set-group-body">
 
         <div class="setting">
           <label for="s-lang">目标语言（<code>{{target}}</code> 的值）</label>
@@ -243,7 +261,42 @@
           <input id="s-max" type="number" min="100" max="200000" step="100">
         </div>
 
-        <h2>翻译按钮</h2>
+        <div class="setting">
+          <label for="s-slots">面板显示条数</label>
+          <div class="stack">
+            <select id="s-slots">
+              <option value="1">1 条结果</option>
+              <option value="2">2 条对比</option>
+              <option value="3">3 条对比</option>
+              <option value="4">4 条对比</option>
+            </select>
+            <p class="hint" data-hint="s-slots">大于 1 时面板同时显示多条结果，看哪条翻得更好。<strong>在下面的配置列表里左键点亮要对比的那几条</strong>（可以亮多条），右键取消；不点亮任何一条时就用当前选中的那条。</p>
+          </div>
+        </div>
+
+        <!-- 只在「面板显示条数」> 1 时才有意义：显示 1 条时两种放法都是「切换」 -->
+        <div class="setting" id="row-slotinsert" hidden>
+          <label for="s-slotinsert">在面板里新选一条配置时</label>
+          <div class="stack">
+            <select id="s-slotinsert">
+              <option value="tail">放在最下面（顶掉最上面那条）</option>
+              <option value="head">放在最上面（顶掉最下面那条）</option>
+            </select>
+            <p class="hint" data-hint="s-slotinsert">显示 1 条时两种放法都是直接切换，所以这条只在「面板显示条数」大于 1 时出现。它只影响面板里临时点出来的组合，不动设置页那份默认名单。</p>
+          </div>
+        </div>
+
+        <div class="setting">
+          <label for="s-historymax">翻译记录条数</label>
+          <div class="stack">
+            <input id="s-historymax" type="number" min="0" max="200" step="1">
+            <p class="hint" data-hint="s-history">成功的翻译会在本地留一条记录（原文 / 译文 / 用的哪条配置），只存这台浏览器里，不上传、不进导出文件。填 0 = 不记录。</p>
+          </div>
+        </div>          </div>
+        </details>
+<details class="set-group">
+          <summary><span class="set-group-t">翻译按钮</span></summary>
+          <div class="set-group-body">
 
         <div class="setting">
           <label>按钮样式</label>
@@ -306,10 +359,27 @@
               <button type="button" id="btn-trigsvg-clear" class="trig-ex">清空</button>
             </div>
           </div>
+        </div>          </div>
+        </details>
+<details class="set-group" open>
+          <summary><span class="set-group-t">面板</span></summary>
+          <div class="set-group-body">
+
+
+        <!-- 实时预览（kniph 2026-10-17）：面板那 9 个参数改完不知道长什么样。
+             画的是「示意」不是像素级复刻 —— 只反映字号 / 宽高 / 结果区上限 / 主题
+             这几个**能一眼看出来**的量；复刻细节会随面板样式漂移而腐坏。 -->
+        <div class="setting">
+          <label>效果预览</label>
+          <div class="stack">
+            <div class="pv-wrap">
+              <!-- 真面板：样式表和 DOM 与 content.js 共用（见 lib/panel-styles.js），
+                   跑在 shadow root 里，所以两边渲染结果一致。 -->
+              <div id="panel-preview" class="pv-host"></div>
+            </div>
+            <p class="hint" data-hint="s-preview">这是**真的**结果面板（和网页上同一样式、同一套 DOM），跟着上面的宽度 / 字号 / 高度 / 主题实时变。里面的文字是示例内容。</p>
+          </div>
         </div>
-
-        <h2>面板</h2>
-
         <div class="setting">
           <label for="s-width">结果面板宽度（px）</label>
           <input id="s-width" type="number" min="280" max="1600" step="10">
@@ -352,15 +422,102 @@
           </label>
         </div>
 
+        <div class="setting">
+          <label for="s-panelcss">自定义面板样式（CSS）</label>
+          <div class="stack">
+            <textarea id="s-panelcss" rows="6" spellcheck="false" placeholder="/* 例： #rt-panel { border-radius: 8px } */"></textarea>
+            <div class="io-row">
+              <button id="btn-panelcss-warm" class="ghost" title="填入一套护眼暖色配色（可以再改）">填入示例：护眼暖色</button>
+              <button id="btn-panelcss-clear" class="ghost">清空</button>
+            </div>
+            <p class="hint" data-hint="panel-css">
+              这段 CSS 会<strong>注入到面板自己的 shadow root 里</strong>。面板不在页面 DOM 中，
+              所以把它贴到 Stylus / user.css 是<strong>无效的</strong> —— 只能写在这儿。
+              <br>可用的钩子：<code>#rt-panel</code>（面板本体，id 选择器优先级高于预设，一般不用 <code>!important</code>）、
+              <code>[data-rt-theme="dark"]</code> 与 <code>[data-rt-theme="light"]</code>（按主题分别写）、
+              <code>.rt-head</code> <code>.rt-cfg</code> <code>.rt-lang</code> <code>.rt-out</code> <code>.rt-src</code>
+              <code>.rt-slot</code> <code>.rt-slot-h</code> <code>.rt-slot-name</code> <code>.rt-slot-b</code>
+              <code>.rt-acts</code> <code>.rt-act</code> <code>.rt-foot</code> <code>.rt-msg</code> <code>.rt-more</code>
+              <code>.rt-diag</code> <code>.d-k</code> <code>.d-v</code> <code>.rt-btn</code> <code>.rt-dot</code>。
+              这些名字<strong>不会改</strong>（真要改会给别名）。
+            </p>
+          </div>
+        </div>
+          </div>
+        </details>
+
+        <details class="set-group">
+          <summary><span class="set-group-t">导入 / 导出</span></summary>
+          <div class="set-group-body">
+
+        <div class="setting">
+          <label>导出备份</label>
+          <div class="stack">
+            <div class="io-row">
+              <button id="btn-export" class="ghost" title="把全部配置 / 变量 / 设置 / OCR 导出成一个 JSON 文件（里面有明文 API Key，只发给你自己）">导出备份</button>
+              <label class="enc-opt" title="勾上后导出的文件会用口令加密（AES-GCM），发给别人、存网盘都不怕泄露。口令不恢复 —— 丢了文件就解不开。">
+                <input type="checkbox" id="chk-encrypt"> 加密导出
+              </label>
+            </div>
+            <p class="hint" data-hint="io-backup">备份版里有<strong>明文 API Key</strong>，只发给你自己。勾上「加密导出」则用口令加密（AES-GCM）—— 口令不恢复，丢了文件就解不开。</p>
+          </div>
+        </div>
+
+        <div class="setting">
+          <label>导出分享版</label>
+          <div class="stack">
+            <button id="btn-export-share" class="ghost" title="生成一份去掉密钥的配置文件，发给别人填他自己的 Key">导出分享版（不含 Key）</button>
+            <p class="hint" data-hint="io-share">自动清空名字里含 key 的变量值，发给别人填他自己的 Key。<strong>请求模板正文里手写的 Key 不会被自动发现</strong>，分享前自己检查一遍。</p>
+          </div>
+        </div>
+
+        <div class="setting">
+          <label>导入</label>
+          <div class="stack">
+            <button id="btn-import" class="ghost" title="从导出的 JSON 文件恢复配置（会替换当前的全部配置）">从文件导入</button>
+            <p class="hint" data-hint="io-import">整体替换当前的配置、变量、设置和 OCR。加密的文件会先问口令。</p>
+          </div>
+        </div>
+
+          <input type="file" id="file-import" accept="application/json,.json" hidden>
+          </div>
+        </details>
+
+        <details class="set-group">
+          <summary><span class="set-group-t">翻译记录</span></summary>
+          <div class="set-group-body">
+
+        <div class="setting">
+          <label>最近的记录</label>
+          <div class="stack">
+            <div id="history-list" class="history-list"></div>
+            <button id="btn-clear-history" class="ghost" title="清空全部翻译记录，不可恢复">清空翻译记录</button>
+          </div>
+        </div>
+
         <div class="page-foot">
           <button id="btn-restore-hints" class="ghost" hidden>把藏起来的说明文字都放回来</button>
           <button id="btn-reset" class="danger ghost">恢复全部默认配置</button>
         </div>
+          </div>
+        </details>
       </div>
     </section>
   </main>
 </div>
 
 <script type="module" src="options.js"></script>
+  <div id="pass-dialog" hidden>
+    <div class="pass-box">
+      <p class="pass-title" id="pass-title">设置口令</p>
+      <input type="password" id="pass-input" autocomplete="new-password" placeholder="口令">
+      <input type="password" id="pass-again" autocomplete="new-password" placeholder="再输一遍" hidden>
+      <p class="pass-note" id="pass-note"></p>
+      <div class="pass-actions">
+        <button type="button" class="ghost" id="pass-cancel">取消</button>
+        <button type="button" id="pass-ok">确定</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

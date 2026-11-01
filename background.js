@@ -72,6 +72,39 @@ function ensureMenu() {
   return menuPending;
 }
 
+/* 全局快捷键（可在 edge://extensions/shortcuts 改）：选区在页面那边，后台只转发；
+   框选截图要先 captureVisibleTab —— **必须赶在这次按键的手势里截**，
+   对没有 <all_urls> 的页面，captureVisibleTab 靠的就是这次手势授予的 activeTab，
+   拖完框再截就晚了（和右键菜单那条同一个原因）。 */
+chrome.commands.onCommand.addListener(async (command) => {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || typeof tab.id !== 'number') return;
+
+    if (command === 'translate-selection') {
+      await chrome.tabs.sendMessage(tab.id, { type: 'hotkey-translate' });
+      return;
+    }
+    if (command === 'ocr-clipboard') {
+      // via 标记：快捷键没有右键上下文，content 端别用陈旧的 lastRightClick 定面板
+      await chrome.tabs.sendMessage(tab.id, { type: 'rt-ocr-clipboard', via: 'hotkey' });
+      return;
+    }
+    if (command === 'shot-translate') {
+      try {
+        const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' });
+        await chrome.tabs.sendMessage(tab.id, { type: 'rt-shot-translate', dataUrl });
+      } catch (err) {
+        await chrome.tabs
+          .sendMessage(tab.id, { type: 'rt-shot-translate', error: String((err && err.message) || err) })
+          .catch(() => {});
+      }
+    }
+  } catch {
+    /* 页面没注入 content script（浏览器内部页等）—— 静默 */
+  }
+});
+
 chrome.runtime.onInstalled.addListener(() => {
   ensureMenu();
 });
@@ -222,23 +255,63 @@ function readClipboardImage() {
   return clipboardRead;
 }
 
+/* ---- 翻译记录（必须串行写）---- */
+
+/** 写入队列：见 appendHistory 的注释 */
+let historyQueue = Promise.resolve();
+
+/**
+ * 往翻译记录里插一条，**排队执行**。
+ *
+ * 为什么必须排队：一次翻译可以并发跑 2~4 条配置（面板的对比槽位，`Promise.all`），
+ * 每条跑完都要写记录。而写入是「读最新存档 → 改 history → 写回」，中间隔着 await ——
+ * 不排队的话后来者读到的是**别人还没写回去**的那一份，直接把先写的那条覆盖掉。
+ * 实测：并发 2 条只留 1 条、并发 4 条也只留 1 条（kniph 2026-10-18 通读发现）。
+ *
+ * 只改 storage 里**最新**存档的 history 字段 —— 不能拿流程开头 load 的那份全量写回，
+ * 翻译几十秒里用户改过的设置会被旧值覆盖回去。
+ *
+ * （读剪切板那段用的也是同一套「拿 promise 串成队列」的写法，见 clipboardRead。）
+ */
+function appendHistory(entry, max) {
+  const run = async () => {
+    try {
+      const { state: fresh } = await chrome.storage.local.get('state');
+      if (!fresh) return;
+      fresh.history = [entry, ...(Array.isArray(fresh.history) ? fresh.history : [])].slice(0, max);
+      await chrome.storage.local.set({ state: fresh });
+    } catch {
+      /* 记不了就不记，别影响出结果 */
+    }
+  };
+  historyQueue = historyQueue.then(run, run);
+  return historyQueue;
+}
+
 /* ---- 翻译端口 ---- */
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== PORT_NAME) return;
 
-  /** @type {AbortController|null} */
-  let controller = null;
+  /* 翻译的「一笔」= 一次触发可以同时跑几条配置（面板的对比槽位）。
+     runBatch 是批次号：新一次翻译 +1，旧批次的回包全丢（老 seq 的单值逻辑
+     撑不住并发 —— 每条配置得能各跑各的）。
+     runCtrls 里每条配置一个 controller：面板关掉 / 新一次翻译 / 端口断开，全都要停。 */
+  let runBatch = 0;
+  /** @type {Map<string, AbortController>} */
+  const runCtrls = new Map();
   // OCR 识别用的是自己那个 —— 翻译和识别是前后脚两件事，抢同一个会让「先到的那个 abort
   // 把后到的那个一起杀掉」（面板关掉时两条都得停，所以 abort 消息两个都发）
   let ocrController = null;
-  let seq = 0;
-  // OCR 单独计数：识别和翻译是前后脚两件事，共用一个计数器会互相把结果丢掉
+  // OCR 单独计数：识别是前后脚另一件事，和翻译的批次号互不干扰
   let ocrSeq = 0;
   /* 上一次真正用过的截图（{ ok:true, dataUrl, bytes }）。「重试」要的是**重发刚才那张**，
      不是再翻一遍剪切板 —— 用户在那之后可能又复制了别的东西。放在端口作用域里：
      一个页面一份，不跟别的标签页串。SW 被回收 / 端口重建后这里会空，那时退回读剪切板。 */
   let lastShot = null;
+
+  /** 这次请求带图吗（图片直传 / 截图直传同一判据） */
+  const hasImageInContext = (m) => !!(m.context && m.context.image);
 
   const safePost = (msg) => {
     try {
@@ -252,8 +325,16 @@ chrome.runtime.onConnect.addListener((port) => {
     if (!msg || typeof msg !== 'object') return;
 
     if (msg.type === 'abort') {
-      if (controller) controller.abort();
+      /* **两道都要**（和 translate 那边 ++runBatch 同一个道理）：
+         abort() 只是让请求早点停，它有个窄窗口 —— 请求刚好在 abort 之前收完，
+         runRequest / runOcr 会正常返回成功。光靠 signal 拦不住那一帧，
+         必须让「批次号 / 序号」也过期，回包才会被判废。 */
+      runBatch += 1;
+      for (const c of runCtrls.values()) c.abort();
+      runCtrls.clear();
+      ocrSeq += 1;
       if (ocrController) ocrController.abort();
+      ocrController = null;
       return;
     }
 
@@ -358,123 +439,158 @@ chrome.runtime.onConnect.addListener((port) => {
     }
 
     if (msg.type === 'translate') {
-      const mySeq = ++seq;
-      if (controller) controller.abort();
-      controller = new AbortController();
+      /* 一次翻译可以同时跑几条配置（面板的对比槽位）：configIds 有值就用它；
+         没有就退回单条 configId —— 老路径就是一个元素的数组，行为一个字节不变。 */
+      const ids = Array.isArray(msg.configIds) && msg.configIds.length
+        ? msg.configIds.map((x) => String(x || ''))
+        : [String(msg.configId || '')];
+
+      // 新批次开跑：旧批次连它正在飞的请求一起作废（abort + 批次号判废，两道都要 ——
+      // abort 是让请求早点停，批次号是保证极窄窗口里漏回来的包也进不来）
+      const myBatch = ++runBatch;
+      for (const c of runCtrls.values()) c.abort();
+      runCtrls.clear();
 
       const state = await loadState();
-      // 图片直传（勾了「禁用外置 OCR」）时用的是 OCR 栏里选定的那条**图片配置**，
-      // 和顶栏那条（翻文字用的）互不干扰 —— 规则和兜底都在 pickRequestConfig 里
-      const config = pickRequestConfig(state, msg.configId, !!(msg.context && msg.context.image));
-      if (!config) {
-        safePost({ type: 'fatal', message: '没有任何可用配置，请先到设置页新建一条' });
-        return;
-      }
-
       // Math.max 兜负数 —— 手改存档/导入文件塞进 -5 的话，slice(0,-5) 会从尾部倒砍
       const text = String(msg.text || '').slice(0, Math.max(1, Number(state.settings.maxChars) || 8000));
       const vars = buildVars(state, text, msg.context || {});
 
-      /* ---- 两层「换一个再试」 ----
-         外层：一条配置里可以挂几条**后备请求**，主请求挂了就按顺序试下一条
-               （勾是唯一的开关，一条都没勾时退回主请求 —— 见 lib/store.js 的 requestChain）。
-         内层：管模型的那个变量填了多行时，这条请求自己还会换一个 model 再试。
-               「哪个变量管模型」由**这条请求的模板**决定（模板里名字含 model 的占位符，
-               见 lib/template.js 的 modelVarFor）—— 一个人可以同时存着 GEMINI_MODEL 和
-               DEEPSEEK_MODEL，看变量表挑不出该轮换哪一个，看模板才挑得准。
+      /* 每条配置各跑各的：互不等待、互不影响（某条挂了其余照常出结果）。
+         回包统统带 configId —— 面板按它把结果放进对应的槽位；
+         没有 configId 的老回包按「第一条」处理（面板端兼容）。 */
+      const runOne = async (wantId) => {
+        // 图片直传（勾了「禁用外置 OCR」）时用的是 OCR 栏里选定的那条**图片配置**，
+        // 和顶栏那条（翻文字用的）互不干扰 —— 规则和兜底都在 pickRequestConfig 里
+        const config = pickRequestConfig(state, wantId, !!(msg.context && msg.context.image));
+        if (!config) {
+          safePost({ type: 'fatal', configId: wantId, message: '没有任何可用配置，请先到设置页新建一条' });
+          return;
+        }
+        /* 注意：这条路径还没 set 进 runCtrls，不需要清理（见下面 set 的位置）。 */
+        const cid = config.id;
+        const ctrl = new AbortController();
+        runCtrls.set(cid, ctrl);
+        // 本次作废的判据：批次过期（用户又触发了一次）或这条被 abort
+        const alive = () => myBatch === runBatch && !ctrl.signal.aborted;
 
-         两条都只跑一轮时**和以前完全一样**（没有后备 + 只有单值 model = 老行为）。
-         循环放这儿而不是 runRequest 里：runRequest 是「一次调用 = 一次请求」，
-         它的返回值面板 / 诊断 / 设置页测试四处共用，不能改成内部循环。 */
-      const chain = requestChain(config);
+        /* ---- 两层「换一个再试」 ----
+           外层：一条配置里可以挂几条**后备请求**，主请求挂了就按顺序试下一条
+                 （勾是唯一的开关，一条都没勾时退回主请求 —— 见 lib/store.js 的 requestChain）。
+           内层：管模型的那个变量填了多行时，这条请求自己还会换一个 model 再试。
+                 「哪个变量管模型」由**这条请求的模板**决定（模板里名字含 model 的占位符，
+                 见 lib/template.js 的 modelVarFor）—— 一个人可以同时存着 GEMINI_MODEL 和
+                 DEEPSEEK_MODEL，看变量表挑不出该轮换哪一个，看模板才挑得准。
 
-      /* 图片直传只试**填了图片模板**的那些条目。
-         `requestTemplateFor` 对没填的会回退到普通那段（老配置靠这个保行为），但截图这条路
-         回退出来的模板里没有 {{image}} —— 发出去必然失败，白跑一次还报错给人看。
-         判据和 `canTranslateImage` / 设置页的 `imageItem` 同一句：那一段非空。 */
-      const hasImage = !!(msg.context && msg.context.image);
-      const runnable = hasImage
-        ? chain.filter((it) => String(it.imageRequest || '').trim())
-        : chain;
-      // 一条都没填 → 报错说清是哪一条，别让 for 一次都不进、最后报一句「没有结果」
-      if (hasImage && !runnable.length) {
-        safePost({ type: 'fatal', message: `「${config.name}」里没有任何一条填了「图片请求模板」` });
-        return;
-      }
+           两条都只跑一轮时**和以前完全一样**（没有后备 + 只有单值 model = 老行为）。
+           循环放这儿而不是 runRequest 里：runRequest 是「一次调用 = 一次请求」，
+           把重试塞进去会让「请求预览」「测试」那些只想发一次的地方跟着重试。 */
+        const hasImage = hasImageInContext(msg);
+        const runnable = hasImage
+          ? requestChain(config).filter((it) => String(it.imageRequest || '').trim())
+          : requestChain(config);
+        if (hasImage && !runnable.length) {
+          safePost({ type: 'fatal', configId: cid, message: '这条配置没填「图片请求模板」，没法带图翻译' });
+          runCtrls.delete(cid);
+          return;
+        }
 
-      let result = null;
-      for (let r = 0; r < runnable.length; r += 1) {
-        const item = runnable[r];
-        // 这次带图就用「图片请求模板」，否则用普通那段（图片模板留空时也回退到它）
-        const requestText = requestTemplateFor(item, msg.context || {});
-        // 状态行：主请求只报 model（老样子）；切到后备才带上它的名字，
-        // 不然用户不知道「现在跑的是别人」。拼不出东西就是空串。
-        const label = item.main ? '' : (item.name || '');
+        let result = null;
+        for (let r = 0; r < runnable.length; r += 1) {
+          const item = runnable[r];
+          // 这次带图就用「图片请求模板」，否则用普通那段（图片模板留空时也回退到它）
+          const requestText = requestTemplateFor(item, msg.context || {});
+          // 状态行：主请求只报 model（老样子）；切到后备才带上它的名字，
+          // 不然用户不知道「现在跑的是别人」。拼不出东西就是空串。
+          const label = item.main ? '' : (item.name || '');
 
-        /* 候选**在链循环里**算：每条后备有自己的模板，管模型的变量可能不是同一个。
-           覆盖时用的是**命中的那个键名**（`mkey`），不是写死的 `model` ——
-           覆盖错了键，模板里的 {{GEMINI_MODEL}} 根本没被换掉，看起来就是「轮换没生效」。 */
-        const mkey = modelVarFor(requestText, vars);
-        const models = modelCandidates(requestText, vars);
-        const attempts = models.length ? models : [null];
+          /* 候选**在链循环里**算：每条后备有自己的模板，管模型的变量可能不是同一个。
+             覆盖时用的是**命中的那个键名**（`mkey`），不是写死的 `model` ——
+             覆盖错了键，模板里的 {{GEMINI_MODEL}} 根本没被换掉，看起来就是「轮换没生效」。 */
+          const mkey = modelVarFor(requestText, vars);
+          const models = modelCandidates(requestText, vars);
+          const attempts = models.length ? models : [null];
 
-        for (let i = 0; i < attempts.length; i += 1) {
-          const model = attempts[i];
-          // 试第几个就把那个变量换成哪个（只覆盖这一次的组装，不动 state）
-          const runVars = model == null ? vars : { ...vars, [mkey]: model };
-          const bits = [label, model].filter(Boolean).join(' · ');
-          const statusText = bits ? `（${bits}）` : '';
+          for (let i = 0; i < attempts.length; i += 1) {
+            const model = attempts[i];
+            // 试第几个就把那个变量换成哪个（只覆盖这一次的组装，不动 state）
+            const runVars = model == null ? vars : { ...vars, [mkey]: model };
+            const bits = [label, model].filter(Boolean).join(' · ');
+            const statusText = bits ? `（${bits}）` : '';
 
-          safePost({
-            type: 'start',
-            configName: config.name,
-            text,
-            statusText
-          });
-
-          try {
-            result = await runRequest({
-              requestText,
-              adapter: item.adapter,
-              vars: runVars,
-              path: item.path,
-              responseMode: item.responseMode,
-              signal: controller.signal,
-              onDelta: (current) => {
-                if (mySeq !== seq) return;
-                safePost({ type: 'delta', text: current });
-              }
+            safePost({
+              type: 'start',
+              configId: cid,
+              configName: config.name,
+              text,
+              statusText
             });
-          } catch (err) {
-            if (mySeq !== seq) return;
-            safePost({ type: 'fatal', message: err && err.message ? err.message : String(err) });
-            return;
+
+            try {
+              result = await runRequest({
+                requestText,
+                adapter: item.adapter,
+                vars: runVars,
+                path: item.path,
+                responseMode: item.responseMode,
+                signal: ctrl.signal,
+                onDelta: (current) => {
+                  if (!alive()) return;
+                  safePost({ type: 'delta', configId: cid, text: current });
+                }
+              });
+            } catch (err) {
+              if (!alive()) return;
+              safePost({ type: 'fatal', configId: cid, message: err && err.message ? err.message : String(err) });
+              runCtrls.delete(cid);
+              return;
+            }
+
+            // 这期间用户又触发了一次 → 本批次已作废，别再往下试（否则白发几次请求）
+            if (!alive()) return;
+            // 作废（abort）不是失败：它来自「新一次翻译中止上一次」，
+            // 继续试下一个 model 没有任何意义（结果会被批次号判丢弃）。立刻收手。
+            if (result && result.error === '已取消') return;
+
+            // 拿到译文就是成功，收工 —— 注意判据**只在「有没有 text」这一处**：
+            // HTTP 错误 / 空结果 / 解析失败都让 result.text 为空，自然落进「继续试」。
+            if (result && result.text) break;
           }
 
-          // 这期间用户切了配置 / 又触发了一次 → 本次已作废，别再往下试（否则白发几次请求）
-          if (mySeq !== seq) return;
-          // 作废（abort）不是失败：它来自「后台收到新的 translate 时中止上一次」，
-          // 继续试下一个 model 没有任何意义（结果会被 seq 判丢弃）。立刻收手。
-          if (result && result.error === '已取消') return;
-
-          // 拿到译文就是成功，收工 —— 注意判据**只在「有没有 text」这一处**：
-          // HTTP 错误 / 空结果 / 解析失败都让 result.text 为空，自然落进「继续试」。
+          // 这条请求（它自己的所有 model 都试过了）拿到译文 → 整条链收工；否则换下一条后备
           if (result && result.text) break;
         }
 
-        // 这条请求（它自己的所有 model 都试过了）拿到译文 → 整条链收工；否则换下一条后备
-        if (result && result.text) break;
-      }
+        if (!alive()) return;
 
-      if (mySeq !== seq) return;
+        /* 翻译记录（settings.historyMax 条数上限，0 = 不记）。
+           **必须走 appendHistory 排队**（原因见那个函数的注释）：一次对比会并发跑
+           2~4 条配置，而写入是「读 → 改 → 写」的读改写，不排队就会互相覆盖。 */
+        if (result && result.text) {
+          const max = Math.max(0, Number(state.settings.historyMax) || 0);
+          if (max > 0) {
+            await appendHistory({
+              src: text.slice(0, 2000),
+              dst: String(result.text).slice(0, 5000),
+              configName: config.name,
+              lang: state.settings.targetLang || '',
+              ts: Date.now()
+            }, max);
+          }
+        }
 
-      safePost({ type: 'done', result: { ...result, raw: undefined } });
+        runCtrls.delete(cid);
+        safePost({ type: 'done', configId: cid, result: { ...result, raw: undefined } });
+      };
+
+      // 并发跑（不串行）：总耗时取决于最慢的那条，不是加起来
+      await Promise.all(ids.map((id) => runOne(id)));
     }
   });
 
   port.onDisconnect.addListener(() => {
-    if (controller) controller.abort();
-    controller = null;
+    for (const c of runCtrls.values()) c.abort();
+    runCtrls.clear();
     /* OCR 也在跑的话同样得停 —— 它能跑几十秒，端口都断了还白跑到底，
        最后 safePost 全落进死端口。注释里说的「面板关掉时两条都得停」在
        断开这条路上也得兑现。 */

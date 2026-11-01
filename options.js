@@ -2,6 +2,7 @@
  * 设置页逻辑
  */
 
+import { PANEL_CSS } from './lib/panel-styles.js';
 import {
   loadState,
   saveState,
@@ -11,12 +12,15 @@ import {
   moveItem,
   moveVisibleItem,
   dropIndex,
-  canTranslateImage
+  canTranslateImage,
+  PANEL_OWNED_SETTING_KEYS,
+  adoptPanelOwned
 } from './lib/store.js';
 /* 「主请求 + 后备」那套链函数住在 lib/requests.js —— 配置和 OCR 供应商共用
    （store.js 和 ocr.js 都 import 它，谁也不用反过来依赖谁）。 */
 import { uid, allRequests, requestChain, requestTemplateFor } from './lib/requests.js';
 import { runRequest, previewRequest } from './lib/engine.js';
+import { encryptExport, decryptExport, isEncryptedExport } from './lib/crypto.js';
 import { ADAPTERS } from './lib/adapters.js';
 import { BUILTIN_VAR_HINTS, TARGET_PRESETS, isSecretVar, modelCandidates, modelVarFor } from './lib/template.js';
 import {
@@ -49,6 +53,8 @@ let state = null;
 let editingId = '';
 let editingOcrId = '';
 let saveTimer = null;
+/** 这次会话里**用户在设置页改过**的那几个「面板也会写」的键（见 adoptPanelOwned） */
+const panelTouched = new Set();
 /** OCR 测试要用的那张本地图片（没选就用剪切板里的） */
 let ocrTestFile = null;
 /** 最后一处获得焦点的模板输入框（文字 / 图片两个框共用一排标签） */
@@ -82,6 +88,11 @@ const els = {
   varsBody: $('#vars-body'),
   builtinBody: $('#builtin-body'),
   fileImport: $('#file-import'),
+  chkEncrypt: $('#chk-encrypt'),
+  panelCss: $('#s-panelcss'),
+  btnPanelCssWarm: $('#btn-panelcss-warm'),
+  btnPanelCssClear: $('#btn-panelcss-clear'),
+  passDialog: $('#pass-dialog'),
   langSelect: $('#s-lang'),
   langOther: $('#s-lang-other'),
 
@@ -152,6 +163,8 @@ async function init() {
   renderOcrEditor();
   renderVars();
   renderSettings();
+  syncGroupCounts();
+  renderPanelPreview();
   applyHintHides();
 }
 
@@ -249,6 +262,8 @@ function bindTabs() {
       // 变量栏的值输入框是按内容撑高的，但藏着的标签量不到高度 —— 显示出来了补量一次，
       // 不然存档里的多行值还缩在一条缝里（kniph 报过）
       if (btn.dataset.tab === 'vars') growVarValues();
+      // 设置页签刚显示出来 —— 之前藏着的预览量不到尺寸，这里补画一次
+      if (btn.dataset.tab === 'settings' && pvNeedsRender) renderPanelPreview();
     });
   });
 }
@@ -271,11 +286,46 @@ const EYE_SVG =
   'stroke-width="1.3" stroke-linecap="round" aria-hidden="true">' +
   '<path d="M1.6 8s2.5-4.3 6.4-4.3S14.4 8 14.4 8s-2.5 4.3-6.4 4.3S1.6 8 1.6 8Z"/>' +
   '<circle cx="8" cy="8" r="1.8"/></svg>';
+/**
+ * 预览的缩放比与假想视口高度。
+ *
+ * 真面板宽度可以到 1600px，塞不进设置页 —— 整体乘一个统一的比例缩下来，
+ * **所有量共用同一个比例**，这样预览里「宽 460 : 字号 20」的比值和真面板一致。
+ * 以前三个量各乘各的（0.45 / 0.75 / …），所以看着对不上（kniph 2026-10-17）。
+ */
+const PV_SCALE = 0.42;
+/** 换算 vh 用的假想视口高度（真面板按浏览器窗口算，预览没窗口可用） */
+const PV_VIEWPORT_H = 800;
+
+/** 「面板显示条数」的取值范围（1~4）。**只在这里写一次** ——
+ *  原来这个夹取散在 6 处（store 归一化 / 设置页读 / 写 / 两处业务判断 / 预览），
+ *  改上限时漏一处就会打架（kniph 2026-10-17 通读时指出）。 */
+const SLOT_MIN = 1;
+const SLOT_MAX = 4;
+const clampSlots = (v) => Math.min(SLOT_MAX, Math.max(SLOT_MIN, Math.round(Number(v)) || SLOT_MIN));
+
+/** 改这些设置会直接影响面板外观 → 触发预览重画 */
+const PREVIEW_KEYS = new Set(['fontSize', 'panelWidth', 'panelHeight', 'panelMaxHeight', 'panelCss']);
+
 const EYE_OFF_SVG =
   '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" ' +
   'stroke-width="1.3" stroke-linecap="round" aria-hidden="true">' +
   '<path d="M1.6 8s2.5-4.3 6.4-4.3S14.4 8 14.4 8s-2.5 4.3-6.4 4.3S1.6 8 1.6 8Z"/>' +
   '<circle cx="8" cy="8" r="1.8"/><path d="M3.2 12.8 12.8 3.2"/></svg>';
+
+/**
+ * 「配置变了」之后的统一收尾：重画左栏 + 重画编辑器 + 落盘。
+ *
+ * 这三步在 4 处（新建 / 删除 / 切选中 / 改名）连着出现 —— 抽出来，
+ * 以后多一个「跟着配置变」的面板只改这一处，不会漏（kniph 2026-10-17 通读）。
+ *
+ * `save` 传 false 时只重画不落盘（调用方自己已经在存 / 不想立刻存）。
+ */
+function refreshConfigViews(save = true) {
+  renderConfigList();
+  renderEditor();
+  if (save) persist(false);
+}
 
 function renderConfigList() {
   const total = state.configs.length;
@@ -287,13 +337,107 @@ function renderConfigList() {
       name: cfg.name,
       sub: summarizeUrl(cfg.request, '(空)'),
       active: cfg.id === editingId,
+      inCompare: slotConfigIds().includes(cfg.id),
       index: idx,
       total,
       listEl: els.cfgList,
       onSelect: () => selectConfig(cfg.id),
-      onMove: moveConfig
+      onMove: moveConfig,
+      onAddToCompare: toggleSlotConfig,
+      onRemoveFromCompare: (cid) => toggleSlotConfig(cid, { force: false })
     }));
   });
+  syncSlotsHint();
+}
+
+/** 当前参与对比的配置 id（存档里的 slotConfigs；空表 = 只用当前选中那条） */
+function slotConfigIds() {
+  return Array.isArray(state.settings.slotConfigs) ? state.settings.slotConfigs : [];
+}
+
+/* 图片直传那一屏的对比名单**单独一份**（settings.imageSlotConfigs）。
+   和文字那份互不覆盖：两屏各有各的池子（文字=全部配置，图片=填了图片模板的），
+   共用一份的话来回切一次就把对方的组合顶掉了（2026-10-18）。 */
+function imgSlotConfigIds() {
+  return Array.isArray(state.settings.imageSlotConfigs) ? state.settings.imageSlotConfigs : [];
+}
+
+/**
+ * 把一条配置加入 / 移出对比集合。
+ *
+ * **多条可以同时亮** —— 这就是「显示 X 条」的那个 X（kniph 2026-10-17 定的：
+ * 以前列表里只能亮一条 = 单选，现在要能亮 X 条）。
+ * 上限跟着「面板显示条数」走：满了再加就顶掉最前面那条（和面板里的规矩一致）。
+ * 全空 = 只用当前选中的那条（老行为，升级看不出变化）。
+ *
+ * **存下来的顺序始终按配置列表的顺序排**（kniph 2026-10-17：面板的默认顺序要和
+ * 设置里一样）—— 所以写入前统一过一遍 `sortByConfigOrder`，而不是按点击先后 append。
+ */
+/**
+ * 把一条**图片配置**加入 / 移出「图片直传」那一屏的对比集合。
+ *
+ * 和 toggleSlotConfig 同形，只有两点不同：名单存在 `imageSlotConfigs`、
+ * 上限仍跟着「面板显示条数」。重画的是图片配置那个列表。
+ */
+function toggleImgSlotConfig(id, opts) {
+  const redraw = !(opts && opts.redraw === false);
+  const cur = imgSlotConfigIds();
+  const max = clampSlots(state.settings.panelSlots);
+  const has = cur.includes(id);
+  const force = opts && typeof opts.force === 'boolean' ? opts.force : !has;
+  let next;
+  if (force) {
+    if (has) return;
+    next = [...cur, id];
+    if (next.length > max) next = next.slice(next.length - max);
+  } else {
+    if (!has) return;
+    next = cur.filter((x) => x !== id);
+  }
+  // 顺序按配置列表排（和文字那份同一个规矩：面板默认顺序要跟设置一致）
+  const order = state.configs.map((c) => c.id);
+  next.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  state.settings.imageSlotConfigs = next;
+  scheduleSave();
+  if (redraw) renderImageConfigList();
+}
+
+function toggleSlotConfig(id, opts) {
+  const redraw = !(opts && opts.redraw === false);
+  const cur = slotConfigIds();
+  const max = clampSlots(state.settings.panelSlots);
+  const has = cur.includes(id);
+  // opts 里 force 明确给值就用它（右键取消传 false）；否则按「点一下切换」来
+  const force = opts && typeof opts.force === 'boolean' ? opts.force : !has;
+  let next;
+  if (force) {
+    if (has) return;
+    next = [...cur, id];
+    if (next.length > max) next = next.slice(next.length - max); // 顶掉最早那条
+  } else {
+    if (!has) return;
+    next = cur.filter((x) => x !== id);
+  }
+  state.settings.slotConfigs = sortByConfigOrder(next);
+  // 左键那条路紧随其后会 selectConfig() 重画（传 redraw:false 就不在这里画，避免闪）
+  if (redraw) renderConfigList();
+  persist(false);
+  setSaveStatus(next.length ? `对比 ${next.length} 条` : '对比已清空');
+}
+
+/** 把一组配置 id 按**设置页列表的当前顺序**排好（面板默认顺序靠它和设置一致） */
+function sortByConfigOrder(ids) {
+  const order = new Map(state.configs.map((c, i) => [c.id, i]));
+  return ids.slice().sort((a, b) => (order.get(a) ?? 1e9) - (order.get(b) ?? 1e9));
+}
+
+/** 条数改了之后，把超出的对比项裁掉并提示一句 */
+function syncSlotsHint() {
+  const max = clampSlots(state.settings.panelSlots);
+  const cur = slotConfigIds();
+  if (cur.length > max) {
+    state.settings.slotConfigs = cur.slice(cur.length - max);
+  }
 }
 
 /**
@@ -306,7 +450,7 @@ function renderConfigList() {
  * 三处一律**都能排**（kniph 2026-10-14：「连排序的用处也统一」）。原来供应商那栏是
  * 「顺序没意义 → 摆两个同宽空位对齐」的特例，留着它就会长歪 —— 干脆没有这个分支。
  */
-function sortableRow({ id, name, sub, active, index, total, listEl, onSelect, onMove }) {
+function sortableRow({ id, name, sub, active, inCompare, index, total, listEl, onSelect, onMove, onAddToCompare, onRemoveFromCompare }) {
   const row = document.createElement('div');
   row.className = 'cfg-row';
   row.dataset.id = id;
@@ -319,7 +463,8 @@ function sortableRow({ id, name, sub, active, index, total, listEl, onSelect, on
 
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.className = 'cfg-item' + (active ? ' is-active' : '');
+  // is-active = 正在编辑的那条（永远只有一条）；in-compare = 参与对比（可以多条）
+  btn.className = 'cfg-item' + (active ? ' is-active' : '') + (inCompare ? ' in-compare' : '');
 
   const nameEl = document.createElement('div');
   nameEl.className = 'name';
@@ -330,7 +475,27 @@ function sortableRow({ id, name, sub, active, index, total, listEl, onSelect, on
   subEl.textContent = sub;
 
   btn.append(nameEl, subEl);
-  btn.addEventListener('click', onSelect);
+  /* 左键 = 选中来编辑；**已点亮的不再取消**（kniph 2026-10-17 报的：
+     「左键可能只是想查看一下、改请求」，不该顺手把对比关掉）。
+     所以左键只在「还没点亮」时加入对比；已经点亮了就只管切换编辑。
+     取消对比一律走右键（明确的意图，见下）。
+     **先改对比集合、再 onSelect** —— onSelect 里会 renderConfigList() 重画一次，
+     那时读到的就是刚更新的 slotConfigs，所以不需要各自画一次（会闪）。 */
+  btn.addEventListener('click', () => {
+    if (!inCompare && typeof onAddToCompare === 'function') {
+      onAddToCompare(id, { redraw: false });
+    }
+    if (typeof onSelect === 'function') onSelect();
+  });
+  /* 右键 = 取消这条的对比点亮（kniph 2026-10-17：「右键取消应用」）。
+     不在对比里就不拦，交给浏览器（比如「在新标签打开」这类原生菜单）。 */
+  if (typeof onRemoveFromCompare === 'function') {
+    btn.addEventListener('contextmenu', (e) => {
+      if (!inCompare) return;
+      e.preventDefault();
+      onRemoveFromCompare(id);
+    });
+  }
 
   const mv = document.createElement('div');
   mv.className = 'cfg-mv';
@@ -460,6 +625,9 @@ function moveConfig(id, to) {
   const next = moveItem(state.configs, from, to);
   if (next === state.configs) return false; // 原地没动
   state.configs = next;
+  /* 配置顺序变了 → 对比名单也要跟着重排（面板的默认顺序 = 设置里的顺序，
+     kniph 2026-10-17）。不重排的话拖一次顺序，面板里那几条就还是老次序。 */
+  state.settings.slotConfigs = sortByConfigOrder(slotConfigIds());
   renderConfigList();
   persist();
   return true;
@@ -607,9 +775,7 @@ function selectConfig(id) {
   flushEditor();
   editingId = id;
   state.activeConfigId = id;
-  renderConfigList();
-  renderEditor();
-  persist(false);
+  refreshConfigViews();
 }
 
 /* ---- 编辑器 ---- */
@@ -981,9 +1147,7 @@ function bindConfigList() {
     state.configs.push(cfg);
     editingId = cfg.id;
     state.activeConfigId = cfg.id;
-    renderConfigList();
-    renderEditor();
-    persist();
+    refreshConfigViews();
     els.name.focus();
     els.name.select();
   });
@@ -1067,9 +1231,7 @@ $('#btn-duplicate').addEventListener('click', () => {
     state.configs.splice(idx + 1, 0, copy);
     editingId = copy.id;
     state.activeConfigId = copy.id;
-    renderConfigList();
-    renderEditor();
-    persist();
+    refreshConfigViews();
   });
 
   $('#btn-delete').addEventListener('click', () => {
@@ -1085,9 +1247,11 @@ $('#btn-duplicate').addEventListener('click', () => {
     state.configs.splice(idx, 1);
     editingId = state.configs[Math.max(0, idx - 1)].id;
     state.activeConfigId = editingId;
-    renderConfigList();
-    renderEditor();
-    persist();
+    // 删掉的这条如果还在对比名单里，得摘掉（不然面板会拿到一个不存在的 id）
+    state.settings.slotConfigs = sortByConfigOrder(
+      slotConfigIds().filter((x) => x !== cfg.id)
+    );
+    refreshConfigViews();
   });
 
   $('#btn-test').addEventListener('click', runTest);
@@ -1186,6 +1350,7 @@ function previewBlock(b, vars, ivars) {
     notes.push('未定义的变量（按空串替换）：' + info.missing.map((m) => '{{' + m + '}}').join(' '));
   }
   for (const p of info.problems) notes.push('问题：' + p);
+  for (const w of info.warnings || []) notes.push('提示：' + w);
   for (const n of info.notes) notes.push('修正：' + n);
 
   let out = formatPreview(info.request, notes);
@@ -1199,6 +1364,7 @@ function previewBlock(b, vars, ivars) {
       inotes.push('未定义的变量（按空串替换）：' + iinfo.missing.map((m) => '{{' + m + '}}').join(' '));
     }
     for (const p of iinfo.problems) inotes.push('问题：' + p);
+    for (const w of iinfo.warnings || []) inotes.push('提示：' + w);
     for (const n of iinfo.notes) inotes.push('修正：' + n);
     out += '\n\n══════ 图片请求模板（截图直传那一次用它）══════\n\n' + formatPreview(iinfo.request, inotes);
   }
@@ -1834,18 +2000,24 @@ function renderImageConfigList() {
       name: c.name,
       sub: it ? summarizeUrl(it.imageRequest, '(空)') : '(空)',
       active: c.id === state.ocr.imageConfigId,
+      inCompare: imgSlotConfigIds().includes(c.id),
       index: i,
       total: list.length,
       listEl: els.imgcfgList,
       onSelect: () => {
         state.ocr.imageConfigId = c.id;
+        panelTouched.add('imageConfigId'); // 面板图片模式下也写它
         renderImageConfigList();
         // 换了对象：预览跟着换，上次的测试结果也不再是这条的了 —— 收起来免得看岔
         renderOcrPreview();
         els.ocrTestResult.hidden = true;
         persist(false);
       },
-      onMove: moveImageConfig
+      onMove: moveImageConfig,
+      /* 点行 = 加入对比。原来这里没传这两个回调 —— 图片配置永远只能选一条来编辑，
+         表现就是「勾了禁用外置 OCR 之后不能多选」（kniph 2026-10-18 报的）。 */
+      onAddToCompare: toggleImgSlotConfig,
+      onRemoveFromCompare: (cid) => toggleImgSlotConfig(cid, { force: false })
     }));
   }
 }
@@ -1867,6 +2039,8 @@ function moveImageConfig(id, to) {
   const next = moveVisibleItem(state.configs, vis, from, to);
   if (next === state.configs) return false; // 原地没动
   state.configs = next;
+  // 同上：配置顺序变了，对比名单跟着重排（面板默认顺序 = 设置里的顺序）
+  state.settings.slotConfigs = sortByConfigOrder(slotConfigIds());
   renderConfigList();
   renderImageConfigList();
   persist();
@@ -2161,10 +2335,19 @@ function bindOcr() {
    区别只在输入 —— 那边是一段文本，这边是一张图片：默认拿**剪切板里的第一张图**
    （就是你平时右键要翻的那张），也可以先挑一张本地图片再点。 */
 
+/**
+ * 字节数 → 人能读的大小。
+ *
+ * ⚠️ **这个函数有两份**：这份是设置页的，`content.js` 里那份是面板的
+ * （content script 不能 import，只能手抄 —— 和 TRIGGER_CSS / PANEL_CSS 同一个处境）。
+ * 两份**必须逐字一致**：它们显示的是同一个量（截图 / 响应的大小），
+ * 各写各的就会出现「设置页说 49 KB、面板说 48.8 KB」（kniph 2026-10-18 通读发现，
+ * 原来两份的小数位规则就不一样）。test-lib 有一条断言逐值比对两边的输出。
+ */
 function formatBytes(n) {
-  const b = Number(n) || 0;
+  const b = Math.max(0, Number(n) || 0);
   if (b < 1024) return b + ' B';
-  if (b < 1024 * 1024) return (b / 1024).toFixed(b < 10240 ? 1 : 0) + ' KB';
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
   return (b / 1024 / 1024).toFixed(1) + ' MB';
 }
 
@@ -2358,8 +2541,30 @@ const SETTING_MAP = [
     load: (v) => v !== false, save: (el) => el.checked
   },
   {
+    // 清空输入框时退回默认 8000 —— 写 0 是「一个字都不发」，而 popup 那边
+    // slice(0, 0) 会把选中的文字整个吞掉（2026-10-18 复查）
     sel: '#s-max', key: 'maxChars', kind: 'number',
-    load: (v) => v, save: (el) => Number(el.value) || 0
+    load: (v) => v, save: (el) => Number(el.value) || 8000
+  },
+  {
+    sel: '#s-framebridge', key: 'frameBridge', kind: 'checked',
+    load: (v) => v !== false, save: (el) => !!el.checked
+  },
+  {
+    sel: '#s-slots', key: 'panelSlots', kind: 'number',
+    load: (v) => String(clampSlots(v)),
+    save: (el) => clampSlots(el.value),
+    // 条数一变，「新选配置放哪边」的显隐要立刻跟上（不用等整页重渲染）
+    after: () => syncSlotInsertRow()
+  },
+  {
+    sel: '#s-slotinsert', key: 'slotInsert', kind: 'value',
+    load: (v) => (v === 'head' ? 'head' : 'tail'),
+    save: (el) => (el.value === 'head' ? 'head' : 'tail')
+  },
+  {
+    sel: '#s-historymax', key: 'historyMax', kind: 'number',
+    load: (v) => v, save: (el) => Math.max(0, Math.round(Number(el.value) || 0))
   },
   {
     sel: '#s-width', key: 'panelWidth', kind: 'number',
@@ -2386,6 +2591,10 @@ const SETTING_MAP = [
   {
     sel: '#s-showsrc', key: 'showOriginal', kind: 'checked',
     load: (v) => !!v, save: (el) => el.checked
+  },
+  {
+    sel: '#s-panelcss', key: 'panelCss', kind: 'value',
+    load: (v) => String(v == null ? '' : v), save: (el) => el.value
   },
   {
     sel: '#s-trigsize', key: 'triggerSize', kind: 'number',
@@ -2415,6 +2624,174 @@ const SETTING_MAP = [
   }
 ];
 
+/**
+ * 「新选配置放哪边」那一行的显隐。
+ *
+ * 只在「面板显示条数」> 1 时才有意义 —— 显示 1 条时两种放法都是「切换」，
+ * 摆在那儿只会让人以为有区别（kniph 2026-10-17）。
+ * 设置页初渲染和条数下拉变化时都调它。
+ */
+/**
+ * 给每个折叠分组的标题标上「里面有几项」。
+ *
+ * 收起时 summary 后面会显示这个数字（CSS 的 ::after 读 data-count）——
+ * 不然一屏全是收起的标题，看不出哪个分组是空的、哪个有内容。
+ * 渲染完调一次即可（设置行是静态的，不会动态增删）。
+ */
+function syncGroupCounts() {
+  for (const group of document.querySelectorAll('.set-group')) {
+    const n = group.querySelectorAll('.set-group-body .setting').length;
+    group.querySelector('summary').dataset.count = n ? n + ' 项' : '';
+  }
+}
+
+/**
+ * 面板效果预览：把「字号 / 宽度 / 结果区上限 / 主题」这几个量画成示意图。
+ *
+ * **刻意不做像素级复刻** —— 真面板的 CSS 在 content.js 的 shadow DOM 里，
+ * 复刻一份必然随它漂移而腐坏，那比没有预览更糟（看着像真的、其实不对）。
+ * 这里只保证「调大字号它真的变大」这类**一眼可验证**的关系。
+ */
+/**
+ * 设置页的「效果预览」= **一个真的结果面板**。
+ *
+ * 以前是自己画示意图，比例和真面板对不上（kniph 2026-10-17）。
+ * 现在直接复用 lib/panel-styles.js 的样式表 + 和 content.js 一样的 DOM，
+ * 并且同样跑在 shadow root 里 —— 渲染路径一致，结果就不可能不一致。
+ *
+ * 尺寸语义也照抄 content.js：
+ *   宽度   → .rt-panel 的 width
+ *   字号   → --rt-fs（真面板也是直接写这个变量）
+ *   面板高度 → max-height（不是定高），0 = 自适应
+ *   结果区 → --rt-max-h（vh），0 = 不限
+ */
+const PV_SAMPLE_SRC =
+  "原文：This is a paragraph of source text that was selected on a web page, used here to show what the source area looks like.";
+const PV_SAMPLE_OUT =
+  "译文：这是选中的那段原文的译文示例。字号、行距、换行、滚动条都按真面板来 —— " +
+  "因为它就是真面板。调整上面的宽度 / 字号 / 高度，这里会跟着变，和网页上的效果一致。" +
+  "\n\n第二段：多写几行，好让结果区真的出现滚动条，这样「结果区最大高度」也能看出区别。" +
+  "\n\n第三段：如果内容不够长，面板高度设多大都撑不满，看着就像没生效 —— 所以这段故意写长。";
+
+let pvBuilt = false;
+/** 页签隐藏时跳过了渲染，等切过去要补一次 */
+let pvNeedsRender = false;
+
+function renderPanelPreview() {
+  const host = document.getElementById("panel-preview");
+  if (!host || !state) return;
+  /* 页签没打开时不画（offsetParent 为 null = 祖先 display:none）：
+     那时量不到任何尺寸，画出来也是错的；打开设置页签时会再调一次。 */
+  if (!host.offsetParent && host.getClientRects().length === 0) {
+    pvNeedsRender = true;
+    return;
+  }
+  pvNeedsRender = false;
+  const s = state.settings || {};
+
+  // 首次：建 shadow root + 样式表 + 和 content.js 相同的 DOM 骨架
+  if (!pvBuilt) {
+    const shadow = host.attachShadow({ mode: "open" });
+    const style = document.createElement("style");
+    style.textContent = PANEL_CSS;
+    shadow.appendChild(style);
+    const panel = document.createElement("div");
+    panel.className = "rt-panel show";
+    // 和真面板同一套自定义 CSS 钩子（shadow 作用域内 id 不冲突）
+    panel.id = "rt-panel";
+    panel.innerHTML =
+      '<div class="rt-head"><span class="rt-dot ok"></span>' +
+      '<select class="rt-cfg"><option>配置名</option></select>' +
+      '<select class="rt-lang"><option>简体中文</option></select>' +
+      '<div class="rt-actions">' +
+      '<button class="rt-btn" data-act="src" title="显示 / 隐藏原文">◉</button>' +
+      '<button class="rt-btn" title="关闭">✕</button>' +
+      "</div></div>" +
+      '<div class="rt-body"><div class="rt-src"></div><div class="rt-out"></div></div>' +
+      '<div class="rt-foot"><span class="rt-msg">HTTP 200 · 0.8s</span></div>';
+    shadow.appendChild(panel);
+    // 真面板是 fixed 定位、藏在页面上的；预览里要它占住版面
+    panel.style.position = "static";
+    panel.style.display = "flex";
+    pvBuilt = true;
+  }
+
+  const panel = host.shadowRoot.querySelector(".rt-panel");
+  const srcEl = host.shadowRoot.querySelector(".rt-src");
+  const outEl = host.shadowRoot.querySelector(".rt-out");
+
+  /* 自定义面板样式：和真面板同一套 —— 追加到 shadow root 末尾，排在预设之后。
+     预览必须一起注入，否则「预览和实际不一致」这个老坑立刻回来。 */
+  {
+    const sh = host.shadowRoot;
+    let ucss = sh.querySelector("#rt-user-css");
+    const cssText = String(s.panelCss == null ? "" : s.panelCss);
+    if (!cssText.trim()) {
+      if (ucss) ucss.remove();
+    } else {
+      if (!ucss) {
+        ucss = document.createElement("style");
+        ucss.id = "rt-user-css";
+        sh.appendChild(ucss);
+      }
+      ucss.textContent = cssText;
+    }
+  }
+
+  // 撑满预览区可用宽度，高度由内容/上限决定
+  panel.style.maxWidth = "100%";
+
+  // —— 以下四个量：语义与 content.js 的 applyPanelSize / applyFontSize 完全一致 ——
+  const w = Math.min(1600, Math.max(280, Number(s.panelWidth) || 460));
+  const fs = Math.min(48, Math.max(11, Number(s.fontSize) || 20));
+  const h = Math.min(2400, Math.max(0, Number(s.panelHeight) || 0));
+  const mh = Math.min(100, Math.max(0, Number(s.panelMaxHeight) || 46));
+
+  /* 预览区放不下 1600px 时按可用宽度等比缩（只影响预览，不改设置值）。
+     注意：页签没显示时 clientWidth 是 0 —— 拿 0 去除会得到 Infinity/NaN，
+     transform 写进去就废了，所以给个兜底宽度。 */
+  const avail = (host.parentElement && host.parentElement.clientWidth) || 720;
+  const k = avail > 0 ? Math.min(1, avail / w) : 1;
+  panel.style.width = w + "px";
+  panel.style.transform = k < 1 ? "scale(" + k.toFixed(3) + ")" : "none";
+  panel.style.transformOrigin = "top left";
+  host.style.height = Math.round((panel.scrollHeight || 0) * k) + "px";
+
+  panel.style.setProperty("--rt-fs", fs + "px");
+  panel.style.setProperty("--rt-fs-sm", (fs * 0.92).toFixed(2) + "px");
+  panel.style.setProperty("--rt-fs-xs", (fs * 0.85).toFixed(2) + "px");
+
+  // 面板高度：max-height（真面板就是这条）+ fixed-h 类
+  panel.style.maxHeight = h > 0 ? h + "px" : "";
+  panel.classList.toggle("fixed-h", h > 0);
+  panel.classList.toggle("no-max-h", mh === 0);
+  panel.style.setProperty("--rt-max-h", mh + "vh");
+
+  // 主题
+  /* 预览的主题要跟**面板的 theme 设置**，不能跟设置页自己的外观 ——
+     否则「设了深色但预览是浅色」会让人以为没生效。 */
+  const pvLight = (() => {
+    const t = s.theme || "auto";
+    if (t === "light") return true;
+    if (t === "dark") return false;
+    return !(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  })();
+  panel.classList.toggle("light", pvLight);
+  panel.dataset.rtTheme = pvLight ? "light" : "dark";
+
+  // 示例内容
+  srcEl.textContent = PV_SAMPLE_SRC;
+  outEl.textContent = PV_SAMPLE_OUT;
+  srcEl.classList.toggle("hidden", !(s.showOriginal !== false));
+}
+
+function syncSlotInsertRow() {
+  const row = $('#row-slotinsert');
+  if (!row) return;
+  const n = clampSlots(state.settings.panelSlots);
+  row.hidden = n <= 1;
+}
+
 function renderSettings() {
   for (const row of SETTING_MAP) {
     const el = $(row.sel);
@@ -2422,12 +2799,42 @@ function renderSettings() {
     if (row.kind === 'checked') el.checked = v;
     else el.value = v;
   }
+  syncSlotInsertRow();
+
   // 这两条不是原生控件驱动的，单独走
   renderTargetLang();
   renderTriggerStyles();
   updateTriggerSvgMsg();
   renderPreview();
+  renderHistory();
   applyTheme();
+}
+
+/** 设置页底部那份「翻译记录」—— 只读展示 + 清空，条数上限在「翻译记录条数」里调 */
+function renderHistory() {
+  const list = $('#history-list');
+  if (!list) return;
+  const max = Math.max(0, Number(state.settings.historyMax) || 0);
+  const items = (Array.isArray(state.history) ? state.history : []).slice(0, max);
+  if (!items.length) {
+    list.innerHTML = '<p class="hint">还没有记录（或上面把条数设成了 0）。</p>';
+    return;
+  }
+  const fmt = (ts) => {
+    const d = new Date(ts);
+    const p = (n) => String(n).padStart(2, '0');
+    return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  };
+  list.innerHTML = items
+    .map(
+      (h) =>
+        '<div class="history-item">' +
+        `<div class="h-meta">${escapeHtml(fmt(h.ts))} · ${escapeHtml(h.configName || '')} · ${escapeHtml(h.lang || '')}</div>` +
+        `<div class="h-src">${escapeHtml(h.src)}</div>` +
+        `<div class="h-dst">${escapeHtml(h.dst)}</div>` +
+        '</div>'
+    )
+    .join('');
 }
 
 /* ---- 翻译按钮 ---- */
@@ -2535,15 +2942,89 @@ function bindSettings() {
   fillTargetLangOptions();
   bindTargetLang();
 
+  /* 快捷键：Chromium 不给扩展改快捷键的 API（只有 getAll / onCommand —— e2e 实证
+     chrome.commands.update 根本不存在），所以这里只能「显示当前绑定 + 跳转浏览器设置页」。
+     重载扩展不算重新安装，manifest 里新加的 commands 不会自动绑（Alt+T 空绑的根因）——
+     全新安装才会带上，否则去浏览器设置页手动设一次。 */
+  if (chrome.commands && chrome.commands.getAll) {
+    const NAMES = {
+      'translate-selection': '翻译选中文字',
+      'shot-translate': '框选截图翻译',
+      'ocr-clipboard': '翻译剪切板中的截图'
+    };
+    const render = () => {
+      chrome.commands.getAll((list) => {
+        const rows = Object.entries(NAMES).map(([name, label]) => {
+          const cur = (list.find((c) => c.name === name) || {}).shortcut;
+          return `${label}：${cur || '未设置'}`;
+        });
+        $('#hotkey-list').textContent = rows.join('　｜　');
+      });
+    };
+    render();
+    $('#btn-hotkey-open').addEventListener('click', () => {
+      // Edge 和 Chromium 的快捷键设置页路径同名，只有协议头不同
+      const url = /^edge/i.test(navigator.userAgent)
+        ? 'edge://extensions/shortcuts'
+        : 'chrome://extensions/shortcuts';
+      chrome.tabs.create({ url });
+      // 从设置页回来时刷新一遍绑定显示（用户可能刚设完）
+      chrome.windows.getCurrent((w) => {
+        if (w && typeof w.id === 'number') {
+          chrome.windows.onFocusChanged.addListener(function onFocus(wid) {
+            if (wid === w.id) {
+              chrome.windows.onFocusChanged.removeListener(onFocus);
+              render();
+            }
+          });
+        }
+      });
+    });
+  }
+
   // 绑定也走同一张表 —— 加设置只改 SETTING_MAP 一行
   for (const row of SETTING_MAP) {
     const el = $(row.sel);
     el.addEventListener('input', () => {
       state.settings[row.key] = row.save(el);
+      // 用户亲自动的，保存时以页面为准（别被存档里面板写的那份盖掉）
+      if (PANEL_OWNED_SETTING_KEYS.includes(row.key)) panelTouched.add(row.key);
       scheduleSave();
       if (row.after) row.after();
+      /* 影响面板外观的那几项，改一下就把预览重画一遍 ——
+         比给每条单独挂 after 省事，也不会漏（kniph 2026-10-17 要的实时预览）。 */
+      if (PREVIEW_KEYS.has(row.key)) renderPanelPreview();
     });
   }
+
+  /* 「自定义面板样式」的两个按钮。示例直接内置在这儿：
+     它本质就是一组 CSS 变量覆盖，所以「预设」和「自定义」用的是同一套机制 ——
+     以后想加第四个配色，往这里加一段示例就行，不用再动主题逻辑。 */
+  const PANEL_CSS_WARM = [
+    '/* 护眼暖色（参照 Gruvbox Dark 的暖褐基调；对比度已验过：正文 11.2、次要 6.7）',
+    '   只覆盖颜色变量，不动布局 —— 想微调就改这里的值 */',
+    '#rt-panel {',
+    '  --rt-bg: #181713;',
+    '  --rt-bg-head: #1f1e19;',
+    '  --rt-bg-sub: #1b1a16;',
+    '  --rt-bg-diag: #151410;',
+    '  --rt-border: #332f27;',
+    '  --rt-border-soft: #2a2721;',
+    '  --rt-slot-line: #453f34;',
+    '  --rt-hover: #282520;',
+    '  --rt-scroll: #3b372e;',
+    '  --rt-accent: #b8863b;',
+    '  --rt-accent-soft: #2a2118;',
+    '  --rt-accent-text: #d9a95a;',
+    '}',
+  ].join('\n');
+
+  const setPanelCss = (value) => {
+    els.panelCss.value = value;
+    els.panelCss.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  els.btnPanelCssWarm.addEventListener('click', () => setPanelCss(PANEL_CSS_WARM));
+  els.btnPanelCssClear.addEventListener('click', () => setPanelCss(''));
 
   els.trigStyles.addEventListener('click', (e) => {
     const card = e.target.closest('.trig-card');
@@ -2575,6 +3056,15 @@ function bindSettings() {
     setSaveStatus('已放回全部说明');
   });
 
+  // 清空翻译记录：只动 history 字段，配置 / 设置 / OCR 一概不碰
+  $('#btn-clear-history').addEventListener('click', async () => {
+    if (!confirm('清空全部翻译记录？不可恢复。')) return;
+    state.history = [];
+    await persist();
+    renderHistory();
+    setSaveStatus('已清空翻译记录');
+  });
+
   $('#btn-reset').addEventListener('click', async () => {
     if (!confirm('会删掉你所有自定义配置，恢复成内置的那几条。确定？')) return;
     await chrome.storage.local.remove('state');
@@ -2597,25 +3087,115 @@ function bindSettings() {
 
 /* ---- 导入导出 ---- */
 
-function bindImportExport() {
-  /** 2026-10-05 —— 带日期，多台设备来回导出不至于互相覆盖下载 */
-  function stamp() {
-    const d = new Date();
-    const p = (n) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-  }
+/* 口令小模态。`twice` = 设置口令（输两遍防手误）；取消返回 null。
+   用页面内 DOM 而不是 window.prompt：密码框不回显明文，且一次能收两个输入。 */
+function askPassphrase({ title, note, twice }) {
+  return new Promise((resolve) => {
+    const dlg = els.passDialog;
+    const input = $('#pass-input');
+    const again = $('#pass-again');
+    const noteEl = $('#pass-note');
+    const btnOk = $('#pass-ok');
+    const btnCancel = $('#pass-cancel');
 
-  $('#btn-export').addEventListener('click', () => {
+    $('#pass-title').textContent = title;
+    noteEl.textContent = note || '';
+    noteEl.classList.remove('is-err');
+    input.value = '';
+    again.value = '';
+    again.hidden = !twice;
+    dlg.hidden = false;
+    input.focus();
+
+    const done = async () => {
+      const a = input.value;
+      if (twice && a !== again.value) {
+        noteEl.textContent = '两次输入的不一致，再试一次';
+        noteEl.classList.add('is-err');
+        return;
+      }
+      if (!a) {
+        noteEl.textContent = '口令不能是空的';
+        noteEl.classList.add('is-err');
+        return;
+      }
+      cleanup();
+      resolve(a);
+    };
+    const cancel = () => {
+      cleanup();
+      resolve(null);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') cancel();
+      if (e.key === 'Enter') done();
+    };
+    const cleanup = () => {
+      dlg.hidden = true;
+      btnOk.removeEventListener('click', done);
+      btnCancel.removeEventListener('click', cancel);
+      document.removeEventListener('keydown', onKey);
+    };
+    btnOk.addEventListener('click', done);
+    btnCancel.addEventListener('click', cancel);
+    document.addEventListener('keydown', onKey);
+  });
+}
+
+function downloadJson(text) {
+  const blob = new Blob([text], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  a.download = `request-translate-config-${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function bindImportExport() {
+  $('#btn-export').addEventListener('click', async () => {
     // 正在编辑器里改的那条先收进 state，免得导出的还是上一版
     collectEditor();
-    const blob = new Blob([exportState(state)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `request-translate-config-${stamp()}.json`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const plain = exportState(state);
+
+    if (els.chkEncrypt.checked) {
+      const pass = await askPassphrase({
+        title: '设置导出口令',
+        note: '口令不保存在任何地方 —— 丢了它，这份文件就解不开了。',
+        twice: true
+      });
+      if (!pass) return; // 取消就不导出，勾选框保持原样
+      const wrapped = await encryptExport(plain, pass);
+      downloadJson(wrapped);
+      setSaveStatus('已导出（加密） · ' + state.configs.length + ' 条配置');
+      return;
+    }
+
+    downloadJson(plain);
     setSaveStatus('已导出 ' + state.configs.length + ' 条配置');
+  });
+
+  /* 分享版：把名字里含 key 的变量值清空，发给别人填他自己的。
+     只能处理「变量形式」的 Key —— 请求模板正文里手写死的那份识别不出来，
+     页面 hint 里已经明说，这里不再弹确认框烦人。 */
+  $('#btn-export-share').addEventListener('click', () => {
+    collectEditor();
+    const shared = structuredClone(state);
+    let cleared = 0;
+    for (const v of shared.vars || []) {
+      if (isSecretVar(v.name) && v.value) {
+        v.value = '';
+        cleared += 1;
+      }
+    }
+    downloadJson(exportState(shared));
+    setSaveStatus(
+      cleared
+        ? `已导出分享版（清掉了 ${cleared} 个密钥值）`
+        : '已导出分享版（没有发现要清的密钥值）'
+    );
   });
 
   $('#btn-import').addEventListener('click', () => els.fileImport.click());
@@ -2627,8 +3207,26 @@ function bindImportExport() {
 
     try {
       const text = await file.text();
+
+      /* 加密文件先过口令，解出来的明文走下面同一套确认 + 导入 ——
+         两条路在「确认覆盖」这里汇合，后面那段只写一遍。 */
+      let plainText = text;
+      if (isEncryptedExport(text)) {
+        const pass = await askPassphrase({
+          title: '输入口令',
+          note: '这份配置文件是加密导出的。'
+        });
+        if (!pass) return;
+        try {
+          plainText = await decryptExport(text, pass);
+        } catch (err) {
+          alert('导入失败：' + (err && err.message));
+          return;
+        }
+      }
+
       // exportedAt 只用来写确认框 —— 别让它跟着进 state（否则下次导出会顶着旧日期）
-      const { exportedAt, ...parsed } = importState(text);
+      const { exportedAt, ...parsed } = importState(plainText);
       const when = exportedAt ? `（导出于 ${exportedAt.slice(0, 16).replace('T', ' ')}）` : '';
       if (!confirm(
         `导入 ${parsed.configs.length} 条配置${when}？\n` +
@@ -2677,12 +3275,26 @@ async function persist(showStatus = true) {
   // 存之前把两个编辑器都收一遍：谁在打字谁就得落盘
   collectEditor();
   collectOcrEditor();
+  /* 面板也会写几个键（`showOriginal` / `targetLang` / `ocr.imageConfigId`），
+     而这里是**整份 state 覆盖写**。页面没动过的那几个键先以存档为准，
+     否则「面板里关了原文 → 回设置页随手打个字」会把面板的改动顶回去。 */
+  try {
+    const saved = (await chrome.storage.local.get('state')).state;
+    adoptPanelOwned(state, saved, panelTouched);
+  } catch {
+    /* 读不到就按本地的写，和以前一样 */
+  }
   await saveState(state);
   if (showStatus) flashSaved();
 }
 
-/** 「已保存」那行字。**两个编辑器的页脚各有一个**（配置栏 / OCR 栏），一起写 ——
-    两栏共用同一个存档，提示也必须同步，不然会看见「这边说已保存、那边还空着」。 */
+/** 「把说明都放回来」那个按钮的显隐 —— 跟着 `hiddenHints` 走。
+    `applyHintHides` 每次重画完块都会跑一遍，藏过说明的入口由它统一维护。 */
+function syncRestoreHints() {
+  const b = document.querySelector('#btn-restore-hints');
+  if (b) b.hidden = !(state.settings.hiddenHints || []).length;
+}
+
 /**
  * 说明文字的「不再显示」——**全页共用这一处**。
  *
@@ -2693,15 +3305,10 @@ async function persist(showStatus = true) {
  * 有几条说明（OCR / 图片直传的测试说明）的 `hidden` 是**模式逻辑在管**的，
  * 一个属性两个主人迟早打架（踩过：一个开关两处 toggle）。
  *
- * 恢复入口没做（kniph 2026-10-14 只要「点了不再显示」）—— 要恢复就把 `hiddenHints` 清空。
+ * 恢复入口是「把说明都放回来」那个按钮，显隐归 `syncRestoreHints` 管。
+ * （这条注释原来挂在 `syncRestoreHints` 上、还写着「恢复入口没做」—— 按钮是后来加的，
+ * 注释没跟着改，2026-10-18 通读挪位并订正。）
  */
-/** 「把说明都放回来」那个按钮的显隐 —— 跟着 `hiddenHints` 走。
-    `applyHintHides` 每次重画完块都会跑一遍，藏过说明的入口由它统一维护。 */
-function syncRestoreHints() {
-  const b = document.querySelector('#btn-restore-hints');
-  if (b) b.hidden = !(state.settings.hiddenHints || []).length;
-}
-
 function applyHintHides() {
   const hidden = new Set(state.settings.hiddenHints || []);
 
@@ -2725,6 +3332,9 @@ function applyHintHides() {
   syncRestoreHints();
 }
 
+/** 「已保存」那行字。**两个编辑器的页脚各有一个**（配置栏 / OCR 栏），一起写 ——
+    两栏共用同一个存档，提示也必须同步，不然会看见「这边说已保存、那边还空着」。
+    （这条注释原来孤零零悬在 `persist` 后面、下面紧跟着别人的文档注释，2026-10-18 通读归位。） */
 function setSaveStatus(text, saved = false) {
   for (const el of document.querySelectorAll('.save-status')) {
     el.textContent = text;
@@ -2779,6 +3389,7 @@ function renderTargetLang() {
 
 function setTargetLang(value) {
   state.settings.targetLang = value;
+  panelTouched.add('targetLang'); // 面板顶栏那个下拉也写它，页面动过就以页面为准
   scheduleSave();
   updatePreview();
 }

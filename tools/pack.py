@@ -46,6 +46,7 @@ ROOT_FILES = [
     "manifest.json",
     "background.js",
     "content.js",
+    "frame-bridge.js",
     "offscreen.html",
     "offscreen.js",
     "options.html",
@@ -274,7 +275,16 @@ def run_tests():
     `skip-npm` 是应急出口：测试环境和打包环境不是一台机器时（比如在别的机器上只管出包）。"""
     print("跑全量测试（npm test）…")
     r = subprocess.run(
-        ["npm", "test", "--silent"], cwd=ROOT, shell=True, capture_output=True, text=True
+        ["npm", "test", "--silent"],
+        cwd=ROOT,
+        shell=True,
+        capture_output=True,
+        text=True,
+        # 必须显式指定：Windows 上默认用 ANSI（GBK）解码，而测试输出里有
+        # 「=」「·」这类 UTF-8 字符 —— 解码线程会抛 UnicodeDecodeError，
+        # 虽然不影响结论，但会刷一屏吓人的红字（kniph 2026-10-17 换环境时撞到）。
+        encoding="utf-8",
+        errors="replace",
     )
     if r.returncode != 0:
         print(r.stdout[-4000:])

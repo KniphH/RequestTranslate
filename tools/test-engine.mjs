@@ -51,6 +51,8 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  /* 增量流里「译文自己重复自己」的歧义场景（kniph 2026-10-18 通读发现）：
+     第 2 帧恰好以第 1 帧开头，旧实现会误判成「全量替换」而丢字。 */
   // 2. 全量替换式 SSE（每帧给完整文本）
   if (path === '/sse-replace') {
     res.writeHead(200, { 'Content-Type': 'text/event-stream' });
