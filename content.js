@@ -849,9 +849,26 @@ ${TRIGGER_CSS}
     if (p.y !== y) panel.style.top = p.y + 'px';
   }
 
+  /*
+   * 面板尺寸一变就把自己拉回视口内。
+   *
+   * 原来只有「流式输出 / 展开诊断 / 露原文区」这几处**代码主动调用** keepPanelInView ——
+   * 但高度变化也可能来自**纯 CSS**（自定义面板样式里的悬停展开之类），那边调用不了 JS。
+   * 于是展开时面板会顶出屏幕底部（kniph 2026-11-01 报的）。
+   *
+   * 用 ResizeObserver 盯住面板本身：高度一变就校正一次。它在**过渡期间**每帧都会回调，
+   * 所以展开动画全程都贴着视口走，不会先冲出去再被拉回来。
+   * 只在真的出界时才动（keepPanelInView 内部就是这么判的），不会让面板无谓地跳。
+   */
+  const panelResizeObs = new ResizeObserver(() => {
+    keepPanelInView();
+  });
+
   /* ---- 面板开关 ---- */
 
   function showPanel(anchor) {
+    panelResizeObs.observe(panel);   // 高度一变就贴回视口
+
     mount();
     // 先显示再定位：面板高度是内容撑出来的，藏着的时候量到的是 0，
     // 夹取会以为它塞得下而贴着底边放，结果底部被切掉。
@@ -1680,16 +1697,122 @@ ${TRIGGER_CSS}
    * kniph 2026-10-17：单条也走这里就行 —— 块结构本来就有名字，
    * 「不隐藏」就好，不需要另做一套显示。
    */
+  /**
+   * 重画结果区。
+   *
+   * **槽位数量没变时只增量更新文本，不重建元素**（kniph 2026-11-01 要求）。
+   *
+   * 为什么原来每次全量 `innerHTML = slots.map(slotHtml)` 是错的：
+   *  - 流式翻译每 50ms 重画一次，每个分片都把整个结果区（含 4 个 SVG 图标 × N 条）重建一遍；
+   *  - **元素全换新 → 在途的 CSS 过渡当场作废**，任何依赖过渡的样式（悬停展开之类）
+   *    都会变成「瞬间跳到终态」。实测：不重建 DOM 时 42 个中间高度值，20ms 处重建一次
+   *    就只剩 5 个值（直接跳到末尾）。
+   *  - 滚动位置也得靠「存了再还」硬救（原来那句话就是为此而写的）。
+   *
+   * 现在：结构只在「条数 / 配置 id 序列」变化时重建，其余情况只改文本与状态。
+   * 副作用全都跟着变好：过渡能跑完、滚动更稳、SEC 省一大截。
+   */
   function renderSlots() {
     if (!slots.length) return;
     outBox.classList.remove('empty');
-    /* **整块替换会把 scrollTop 归零** —— 多条对比时窗口很长，一点重试 /
-       每 50ms 流式刷新一次就被弹回顶部，正读着的位置全丢（kniph 2026-10-17 报的）。
-       所以替换前存、替换后还回；内容变短时浏览器自己会把超出的部分夹掉。 */
     const keepTop = outBox.scrollTop;
-    outBox.innerHTML = slots.map(slotHtml).join('');
+
+    /* 结构是否可以直接复用：条数一致 + 每条的 data-cid 对得上。
+       只要有一条对不上（增删 / 换配置）就整块重建 —— 那种情况本来就是新结构。 */
+    const kids = outBox.children;
+    let reusable = kids.length === slots.length;
+    if (reusable) {
+      for (let i = 0; i < slots.length; i += 1) {
+        if (kids[i].getAttribute('data-cid') !== slots[i].configId) { reusable = false; break; }
+      }
+    }
+
+    if (!reusable) {
+      outBox.innerHTML = slots.map(slotHtml).join('');
+    } else {
+      for (let i = 0; i < slots.length; i += 1) patchSlot(kids[i], slots[i]);
+    }
+
     if (keepTop) outBox.scrollTop = keepTop;
     keepPanelInView();
+  }
+
+  /**
+   * 把一个槽位的新状态**就地**写进已经存在的那份 DOM。
+   *
+   * 只碰「值」，不碰「结构」：文本、状态字、err 类、以及按钮的 disabled 与朗读图标。
+   *
+   * 子元素用 data-p 定位，不用类名选择器 —— 那几个类名是拼在模板字符串里的
+   * （`class="rt-slot-st${cls}"`），tools/check-dom.mjs 的正则识别不到，会误报
+   * 「类没有定义」。data-* 是数据契约，语义也更清楚。
+   * 结构（块头、×、操作条）保持不变 —— 它们只跟配置 id / 条数有关，那两项变了整块会重建。
+   */
+  function patchSlot(el, s) {
+    const esc = (t) =>
+      String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    let st = '';
+    let body = '';
+    let err = false;
+    if (s.state === 'busy') {
+      st = '翻译中…' + (s.statusText || '');
+      body = s.text || '';
+    } else if (s.state === 'done') {
+      st = '完成';
+      body = s.text || '';
+    } else if (s.state === 'fail') {
+      st = '失败';
+      err = true;
+      body = s.error || '出错了';
+    } else {
+      st = '等待…';
+    }
+
+    const nameEl = el.querySelector('[data-p="name"]');
+    if (nameEl && nameEl.textContent !== s.name) nameEl.textContent = s.name;
+
+    const stEl = el.querySelector('[data-p="st"]');
+    if (stEl) {
+      if (stEl.textContent !== st) stEl.textContent = st;
+      stEl.classList.toggle('err', err);
+    }
+
+    const bodyEl = el.querySelector('[data-p="body"]');
+    if (bodyEl) {
+      /* body 是纯文本槽（`esc()` 出来的），这里用 textContent 直接写 ——
+         等价于当天的 esc(body) 再塞回去，但不用重新解析一遍 HTML。 */
+      if (bodyEl.textContent !== body) bodyEl.textContent = body;
+      bodyEl.classList.toggle('err', err);
+    }
+
+    /* 操作条：只有「有没有文本」和「在不在朗读」两件事会变。
+       文案不用重写（复制/朗读/重试这几个字是固定的），只切 disabled 和朗读那张图标。 */
+    const acts = el.querySelector('.rt-acts');
+    if (acts) {
+      const hasText = !!(body && String(body).trim());
+      const speaking = speakingKey === s.configId;
+      const copyBtn = acts.querySelector('[data-act="copy"]');
+      const speakBtn = acts.querySelector('[data-act="speak"]');
+      const retryBtn = acts.querySelector('[data-act="retry-one"]');
+      if (copyBtn) copyBtn.disabled = !hasText;
+      if (retryBtn) retryBtn.disabled = !hasText;
+      if (speakBtn) {
+        speakBtn.disabled = !hasText;
+        speakBtn.title = speaking ? '停止朗读' : '朗读这条译文';
+        const label = speakBtn.querySelector('span');
+        const want = speaking ? '停止' : '朗读';
+        if (label && label.textContent !== want) label.textContent = want;
+        /* 图标只有两套，切换时整体换一次那个 svg —— 只在真正变了才动 */
+        const wantSvg = speaking ? 'rt-act-stop' : 'rt-act-speak';
+        const curSvg = speakBtn.getAttribute('data-icon');
+        if (curSvg !== wantSvg) {
+          const old = speakBtn.querySelector('svg');
+          if (old) old.remove();
+          speakBtn.insertAdjacentHTML('afterbegin', speaking ? ACT_STOP_SVG : ACT_SPEAK_SVG);
+          speakBtn.setAttribute('data-icon', wantSvg);
+        }
+      }
+    }
   }
 
   /**
@@ -1725,7 +1848,10 @@ ${TRIGGER_CSS}
       '<div class="rt-acts">' +
       `<button class="rt-act" data-act="copy" data-cid="${cid}"${hasText ? '' : ' disabled'} title="复制这条译文">` +
       ACT_COPY_SVG + '<span>复制</span></button>' +
+      /* data-icon 是给 patchSlot 用的：增量渲染时要靠它判断图标该不该换，
+         否则首次 patch 会误以为要换、把 svg 重复插一遍（2026-11-01）。 */
       `<button class="rt-act" data-act="speak" data-cid="${cid}"${hasText ? '' : ' disabled'} ` +
+      `data-icon="${speaking ? 'rt-act-stop' : 'rt-act-speak'}" ` +
       `title="${speaking ? '停止朗读' : '朗读这条译文'}">` +
       (speaking ? ACT_STOP_SVG : ACT_SPEAK_SVG) +
       `<span>${speaking ? '停止' : '朗读'}</span></button>` +
@@ -1762,10 +1888,10 @@ ${TRIGGER_CSS}
         : '';
     return (
       `<div class="rt-slot" data-cid="${esc(s.configId)}">` +
-      `<div class="rt-slot-h"><span class="rt-slot-name">${esc(s.name)}</span>` +
+      `<div class="rt-slot-h"><span class="rt-slot-name" data-p="name">${esc(s.name)}</span>` +
       del +
-      `<span class="rt-slot-st${cls}">${esc(st)}</span></div>` +
-      `<div class="rt-slot-b${cls}">${esc(body)}</div>` +
+      `<span class="rt-slot-st${cls}" data-p="st">${esc(st)}</span></div>` +
+      `<div class="rt-slot-b${cls}" data-p="body">${esc(body)}</div>` +
       actsHtml(esc(s.configId), body) +
       '</div>'
     );

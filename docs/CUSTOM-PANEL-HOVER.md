@@ -43,54 +43,49 @@
    鼠标悬停在这一条上时展开。
    ═══════════════════════════════════════════════════════════════ */
 
-/* height:auto 要能参与过渡，靠这一句（Edge / Chrome 129+）。
-   老浏览器不支持时降级成瞬开，不会坏。 */
-#rt-panel { interpolate-size: allow-keywords; }
+/* ⚠️ interpolate-size 必须写在**被动画的那个元素自己身上**。
+   写在祖先（比如 #rt-panel）上不生效 —— 它虽会继承，但 height:auto 的插值
+   只对「自己声明了这一项的元素」起作用。
+   实测：写祖先上只有 24 个中间高度值、第一帧就跳到 105px（看着像直接展开）；
+        写自己身上有 39 个值，逐帧均匀。 */
 
 /* 译文：默认收起 */
 #rt-panel .rt-slot-b {
+  interpolate-size: allow-keywords;
   height: 0;
   overflow: hidden;
+  transition: height .34s cubic-bezier(.2, .9, .3, 1), opacity .22s ease;
 }
 
-/* 悬停在**这一条**（.rt-slot）上时展开 —— 不是只挂在块头。
-   只挂块头的话，鼠标往按钮移就会离开块头、当场收起，按钮点不到。 */
+/* 悬停在这一条（.rt-slot）上时展开 —— 不能只挂块头，
+   否则鼠标往按钮移会离开块头、当场收起，按钮点不到。 */
 #rt-panel .rt-slot:hover .rt-slot-b,
 #rt-panel .rt-slot:focus-within .rt-slot-b {
   height: auto;
 }
 
-/* 三个按钮同样收起 / 展开。display:flex 是它们原本就有的，别覆盖掉 */
+/* 三个按钮：同样收起 / 展开（display:flex 是原本就有的，别丢掉） */
 #rt-panel .rt-acts {
+  interpolate-size: allow-keywords;
+  display: flex;
   height: 0;
   overflow: hidden;
   opacity: 0;
   margin-top: 0;
+  transition: height .34s cubic-bezier(.2, .9, .3, 1), opacity .22s ease, margin-top .34s cubic-bezier(.2, .9, .3, 1);
 }
 #rt-panel .rt-slot:hover .rt-acts,
 #rt-panel .rt-slot:focus-within .rt-acts {
   height: auto;
-  opacity: .55;   /* 默认就是 .55，别改 */
+  opacity: .55;   /* 默认就是 .55 */
   margin-top: .25em;
-}
-
-/* 淡入淡出 + 非线性缓动（只影响观感，不改任何尺寸 / 颜色 / 布局） */
-#rt-panel .rt-slot-b,
-#rt-panel .rt-acts {
-  transition: height .32s cubic-bezier(.2, .9, .3, 1), opacity .2s ease, margin-top .32s cubic-bezier(.2, .9, .3, 1);
-}
-
-/* 块头做成可以悬停的「标题条」：只加一条很淡的悬停底色，尺寸和字号一概不动 */
-#rt-panel .rt-slot-h {
-  cursor: default;
 }
 
 /* 无障碍：不做缓动 */
 @media (prefers-reduced-motion: reduce) {
   #rt-panel .rt-slot-b,
   #rt-panel .rt-acts { transition-duration: .01ms !important; }
-}
-```
+}```
 
 ## 两个必须知道的点
 
@@ -106,7 +101,7 @@ t=195ms  max-height=669px   到终态，但视觉上 400ms 前就不动了
 `max-height` 只是上限，动画一开头就冲过真实内容高度，之后全程空转。
 `grid-template-rows: 0fr → 1fr` 也不行（实测只有 4 个中间高度值）。
 
-唯一可行的是 `height: 0 ↔ auto` + `interpolate-size: allow-keywords`
+唯一可行的是 `height: 0 ↔ auto` + `interpolate-size: allow-keywords`（**写在被动画的元素自己身上**）
 （Edge / Chrome **129+**）。实测 37 个不同高度值，逐帧均匀。
 老浏览器降级成瞬开，不会坏。
 

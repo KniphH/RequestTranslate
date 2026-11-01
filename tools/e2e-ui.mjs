@@ -1026,6 +1026,8 @@ try {
       opt.evaluate(() => {
         document.querySelector('.tab[data-tab="settings"]')?.click();
         const host = document.getElementById('panel-preview');
+        // 预览面板现在是「点按钮才浮出来」的真面板（fixed）。没点开时 host 是 hidden，量到的宽高全是 0。
+        if (host.hidden) document.getElementById('btn-pv-open')?.click();
         const sh = host && host.shadowRoot;
         const p = sh && sh.querySelector('.rt-panel');
         const u = sh && sh.querySelector('#rt-user-css');

@@ -366,20 +366,21 @@
           <div class="set-group-body">
 
 
-        <!-- 实时预览（kniph 2026-10-17）：面板那 9 个参数改完不知道长什么样。
-             画的是「示意」不是像素级复刻 —— 只反映字号 / 宽高 / 结果区上限 / 主题
-             这几个**能一眼看出来**的量；复刻细节会随面板样式漂移而腐坏。 -->
+        <!-- 真面板预览（kniph 2026-11-01）：不是「示意」，也不是「框里的样子」。
+             点按钮 → 一个和网页上**一模一样**的面板浮到设置页上：fixed 定位、
+             顶栏能拖、✕ 能关。关掉之后按钮还在，再点又回来。
+             样式表和 DOM 与 content.js 共用（lib/panel-styles.js），两边必然一致。 -->
         <div class="setting">
           <label>效果预览</label>
           <div class="stack">
-            <div class="pv-wrap">
-              <!-- 真面板：样式表和 DOM 与 content.js 共用（见 lib/panel-styles.js），
-                   跑在 shadow root 里，所以两边渲染结果一致。 -->
-              <div id="panel-preview" class="pv-host"></div>
+            <div class="io-row">
+              <button id="btn-pv-open" class="ghost" title="把一个和网页上一模一样的面板浮到页面上（能拖动、点 ✕ 关闭）">显示面板</button>
             </div>
-            <p class="hint" data-hint="s-preview">这是**真的**结果面板（和网页上同一样式、同一套 DOM），跟着上面的宽度 / 字号 / 高度 / 主题实时变。里面的文字是示例内容。</p>
+            <p class="hint" data-hint="s-preview">浮出来的就是**网页上那个真面板**：样式、顶栏、拖动、✕ 关闭全都一样，跟着上面的宽度 / 字号 / 高度 / 主题实时变。里面的文字是示例内容。</p>
           </div>
         </div>
+        <!-- 面板挂载点：平时 hidden 不占版面，点了「显示面板」才以 fixed 浮出来 -->
+        <div id="panel-preview" hidden></div>
         <div class="setting">
           <label for="s-width">结果面板宽度（px）</label>
           <input id="s-width" type="number" min="280" max="1600" step="10">

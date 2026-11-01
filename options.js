@@ -91,6 +91,7 @@ const els = {
   chkEncrypt: $('#chk-encrypt'),
   panelCss: $('#s-panelcss'),
   btnPanelCssWarm: $('#btn-panelcss-warm'),
+  btnPvOpen: $('#btn-pv-open'),
   btnPanelCssClear: $('#btn-panelcss-clear'),
   passDialog: $('#pass-dialog'),
   langSelect: $('#s-lang'),
@@ -2665,6 +2666,47 @@ function syncGroupCounts() {
  *   面板高度 → max-height（不是定高），0 = 自适应
  *   结果区 → --rt-max-h（vh），0 = 不限
  */
+/** 预览面板里那三个按钮的图标 —— 和 content.js 的 ACT_*_SVG 逐字一致
+ *  （content script 不能 import，这份是镜像；test-lib 有同形断言钉着）。 */
+const PV_ACT_COPY_SVG =
+  '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="9" height="9" rx="1.6"/><path d="M13 4.5H5.6A1.6 1.6 0 0 0 4 6.1V13"/></svg>';
+const PV_ACT_RETRY_SVG =
+  '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16.5 10a6.5 6.5 0 1 1-1.9-4.6"/><path d="M16.5 3.5V7H13"/></svg>';
+const PV_ACT_SPEAK_SVG =
+  '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7.5h2.8L10 4.2v11.6l-3.7-3.3H3.5z"/><path d="M13 7.6a3.4 3.4 0 0 1 0 4.8"/><path d="M15.2 5.4a6.6 6.6 0 0 1 0 9.2"/></svg>';
+
+/**
+ * 把示例内容渲染成**真面板的槽位结构**（.rt-slot / .rt-slot-h / .rt-slot-b / .rt-acts）。
+ *
+ * 为什么不能用 outEl.textContent：那样结果区只是一坨纯文本，**没有槽位块**，
+ * 于是所有作用在 .rt-slot* 上的自定义样式（悬停展开之类）在预览里根本触发不了 ——
+ * kniph 2026-11-01 报的「外面能收起、里面不行」就是这个原因。
+ *
+ * 两个槽位：一个是「完成」，一个是「失败」。故意都给，这样 err 态的样式也能看到。
+ */
+function pvSlotHtml(idx, name, state, body) {
+  const err = state === "fail";
+  const st = state === "fail" ? "失败" : "完成";
+  const cls = err ? " err" : "";
+  const cid = "pv-" + idx;
+  return (
+    '<div class="rt-slot" data-cid="' + cid + '">' +
+    '<div class="rt-slot-h"><span class="rt-slot-name" data-p="name">' + name + '</span>' +
+    '<button class="rt-slot-x" data-del="' + cid + '" title="不再显示这一条（只影响这次，不改设置里的默认组合）">×</button>' +
+    '<span class="rt-slot-st' + cls + '" data-p="st">' + st + '</span></div>' +
+    '<div class="rt-slot-b' + cls + '" data-p="body">' + body + '</div>' +
+    '<div class="rt-acts">' +
+    '<button class="rt-act" data-act="copy" data-cid="' + cid + '" title="复制这条译文">' +
+    PV_ACT_COPY_SVG + '<span>复制</span></button>' +
+    '<button class="rt-act" data-act="speak" data-cid="' + cid + '" data-icon="rt-act-speak" title="朗读这条译文">' +
+    PV_ACT_SPEAK_SVG + '<span>朗读</span></button>' +
+    '<button class="rt-act" data-act="retry-one" data-cid="' + cid + '" title="只重试这一条">' +
+    PV_ACT_RETRY_SVG + '<span>重试</span></button>' +
+    '</div></div>'
+  );
+}
+
+
 const PV_SAMPLE_SRC =
   "原文：This is a paragraph of source text that was selected on a web page, used here to show what the source area looks like.";
 const PV_SAMPLE_OUT =
@@ -2680,39 +2722,57 @@ let pvNeedsRender = false;
 function renderPanelPreview() {
   const host = document.getElementById("panel-preview");
   if (!host || !state) return;
-  /* 页签没打开时不画（offsetParent 为 null = 祖先 display:none）：
-     那时量不到任何尺寸，画出来也是错的；打开设置页签时会再调一次。 */
-  if (!host.offsetParent && host.getClientRects().length === 0) {
-    pvNeedsRender = true;
-    return;
-  }
-  pvNeedsRender = false;
   const s = state.settings || {};
 
-  // 首次：建 shadow root + 样式表 + 和 content.js 相同的 DOM 骨架
+  /* 首次：建 shadow root + 样式表 + 和 content.js **完全相同**的 DOM 骨架。
+     这里不是"画个示意"，是把真面板搬过来 —— 所以顶栏的两个下拉、眼睛、✕、
+     底栏、诊断区全在，data-drag 也照抄，拖动才和网页上一个手感。 */
   if (!pvBuilt) {
     const shadow = host.attachShadow({ mode: "open" });
     const style = document.createElement("style");
     style.textContent = PANEL_CSS;
     shadow.appendChild(style);
+
     const panel = document.createElement("div");
-    panel.className = "rt-panel show";
-    // 和真面板同一套自定义 CSS 钩子（shadow 作用域内 id 不冲突）
+    panel.className = "rt-panel";
     panel.id = "rt-panel";
     panel.innerHTML =
-      '<div class="rt-head"><span class="rt-dot ok"></span>' +
-      '<select class="rt-cfg"><option>配置名</option></select>' +
-      '<select class="rt-lang"><option>简体中文</option></select>' +
-      '<div class="rt-actions">' +
+      '<div class="rt-head" data-drag>' +
+      '<span class="rt-dot ok"></span>' +
+      /* 下拉内容在下面按**真实配置 / 语言**填 —— 硬编码「配置名」会让人以为预览里只有一条假配置 */
+      '<select class="rt-cfg"></select>' +
+      '<select class="rt-lang"></select>' +
       '<button class="rt-btn" data-act="src" title="显示 / 隐藏原文">◉</button>' +
-      '<button class="rt-btn" title="关闭">✕</button>' +
+      '<button class="rt-btn" data-act="close" title="关闭 (Esc)">&#10005;</button>' +
       "</div></div>" +
       '<div class="rt-body"><div class="rt-src"></div><div class="rt-out"></div></div>' +
-      '<div class="rt-foot"><span class="rt-msg">HTTP 200 · 0.8s</span></div>';
+      '<div class="rt-foot"><span class="rt-msg">HTTP 200 · 0.8s</span></div>' +
+      '<div class="rt-diag" hidden></div>';
     shadow.appendChild(panel);
-    // 真面板是 fixed 定位、藏在页面上的；预览里要它占住版面
-    panel.style.position = "static";
+
+    /* 真面板在网页上是 fixed 弹层；预览也照做 —— 不再塞进框里、不再 transform 缩放。
+       位置先给个默认（设置页右侧偏上），之后可以拖。 */
+    panel.style.position = "fixed";
+    panel.style.left = "auto";
+    panel.style.right = "32px";
+    panel.style.top = "80px";
     panel.style.display = "flex";
+    panel.style.zIndex = "2147483647";
+
+    /* 拖动：和 content.js 的 head mousedown 同一套做法（排除按钮/下拉）。 */
+    pvBindDrag(panel);
+
+    /* ✕ 关闭：不是删面板，只是收起来 —— 按钮还在，再点就回来。 */
+    panel
+      .querySelector('[data-act="close"]')
+      .addEventListener("click", () => setPvVisible(false));
+
+    /* 眼睛：切「显示原文」看得见效果，但不写回设置（预览里的操作不该改存档）。 */
+    panel.querySelector('[data-act="src"]').addEventListener("click", () => {
+      const src = host.shadowRoot.querySelector(".rt-src");
+      if (src) src.classList.toggle("hidden");
+    });
+
     pvBuilt = true;
   }
 
@@ -2720,8 +2780,7 @@ function renderPanelPreview() {
   const srcEl = host.shadowRoot.querySelector(".rt-src");
   const outEl = host.shadowRoot.querySelector(".rt-out");
 
-  /* 自定义面板样式：和真面板同一套 —— 追加到 shadow root 末尾，排在预设之后。
-     预览必须一起注入，否则「预览和实际不一致」这个老坑立刻回来。 */
+  /* 自定义面板样式：和真面板同一套 —— 追加到 shadow root 末尾，排在预设之后。 */
   {
     const sh = host.shadowRoot;
     let ucss = sh.querySelector("#rt-user-css");
@@ -2738,38 +2797,27 @@ function renderPanelPreview() {
     }
   }
 
-  // 撑满预览区可用宽度，高度由内容/上限决定
-  panel.style.maxWidth = "100%";
-
-  // —— 以下四个量：语义与 content.js 的 applyPanelSize / applyFontSize 完全一致 ——
+  /* 宽度 / 字号 / 高度 / 主题：语义与 content.js 的 applyPanelSize / applyFontSize 一致。
+     **不再有 maxWidth: 100% 和 transform 缩放** —— 真面板不会因为容器窄就缩自己，
+     放不下就由用户拖走，这正是"和网页上一样"的含义。 */
   const w = Math.min(1600, Math.max(280, Number(s.panelWidth) || 460));
   const fs = Math.min(48, Math.max(11, Number(s.fontSize) || 20));
   const h = Math.min(2400, Math.max(0, Number(s.panelHeight) || 0));
   const mh = Math.min(100, Math.max(0, Number(s.panelMaxHeight) || 46));
 
-  /* 预览区放不下 1600px 时按可用宽度等比缩（只影响预览，不改设置值）。
-     注意：页签没显示时 clientWidth 是 0 —— 拿 0 去除会得到 Infinity/NaN，
-     transform 写进去就废了，所以给个兜底宽度。 */
-  const avail = (host.parentElement && host.parentElement.clientWidth) || 720;
-  const k = avail > 0 ? Math.min(1, avail / w) : 1;
   panel.style.width = w + "px";
-  panel.style.transform = k < 1 ? "scale(" + k.toFixed(3) + ")" : "none";
-  panel.style.transformOrigin = "top left";
-  host.style.height = Math.round((panel.scrollHeight || 0) * k) + "px";
-
+  panel.style.maxWidth = "";
+  panel.style.transform = "";
   panel.style.setProperty("--rt-fs", fs + "px");
   panel.style.setProperty("--rt-fs-sm", (fs * 0.92).toFixed(2) + "px");
   panel.style.setProperty("--rt-fs-xs", (fs * 0.85).toFixed(2) + "px");
 
-  // 面板高度：max-height（真面板就是这条）+ fixed-h 类
   panel.style.maxHeight = h > 0 ? h + "px" : "";
   panel.classList.toggle("fixed-h", h > 0);
   panel.classList.toggle("no-max-h", mh === 0);
   panel.style.setProperty("--rt-max-h", mh + "vh");
 
-  // 主题
-  /* 预览的主题要跟**面板的 theme 设置**，不能跟设置页自己的外观 ——
-     否则「设了深色但预览是浅色」会让人以为没生效。 */
+  /* 主题跟**面板的 theme 设置**，不跟设置页自己的外观。 */
   const pvLight = (() => {
     const t = s.theme || "auto";
     if (t === "light") return true;
@@ -2779,10 +2827,107 @@ function renderPanelPreview() {
   panel.classList.toggle("light", pvLight);
   panel.dataset.rtTheme = pvLight ? "light" : "dark";
 
-  // 示例内容
+  /* 顶栏两个下拉填**真东西**：配置取 state.configs、语言取 targetLang。
+     只显示不联动 —— 拨它不该改存档（和眼睛按钮同一个原则）。 */
+  {
+    const cfgSel = host.shadowRoot.querySelector(".rt-cfg");
+    const langSel = host.shadowRoot.querySelector(".rt-lang");
+    const cfgs = (state.configs || []).filter((c) => c && c.name);
+    if (cfgSel) {
+      const list = cfgs.length ? cfgs : [{ id: "", name: "（没有配置）" }];
+      cfgSel.textContent = "";
+      for (const c of list) {
+        const o = document.createElement("option");
+        o.value = c.id || "";
+        o.textContent = c.name;
+        cfgSel.appendChild(o);
+      }
+      const wantId = s.activeConfigId || (list[0] && list[0].id) || "";
+      cfgSel.value = wantId;
+      const cur = list.find((c) => c.id === wantId) || list[0];
+      cfgSel.title = "翻译接口：" + cur.name;
+    }
+    if (langSel) {
+      const lang = s.targetLang || "简体中文";
+      if (!langSel.options.length) {
+        const o = document.createElement("option");
+        o.value = lang;
+        o.textContent = lang;
+        langSel.appendChild(o);
+      }
+      langSel.value = lang;
+      langSel.title = "目标语言：" + lang;
+    }
+  }
+
   srcEl.textContent = PV_SAMPLE_SRC;
-  outEl.textContent = PV_SAMPLE_OUT;
+  /* 结果区画成**真面板的槽位结构**，不是一坨纯文本 —— 否则作用在 .rt-slot* 上的
+     自定义样式（比如悬停展开）在预览里根本触发不了（kniph 2026-11-01 报的）。
+     两个槽位：一条「完成」、一条「失败」，这样 err 态的样式也能看到。 */
+  outEl.classList.remove("empty");
+  outEl.innerHTML =
+    pvSlotHtml(1, "配置甲", "done", PV_SAMPLE_OUT) +
+    pvSlotHtml(2, "配置乙", "fail", "译文：这一条故意标成失败，用来预览 err 态的颜色。");
   srcEl.classList.toggle("hidden", !(s.showOriginal !== false));
+}
+
+/** 预览面板的拖动：和 content.js 的 data-drag 逻辑同形（排除按钮与下拉）。 */
+function pvBindDrag(panel) {
+  const head = panel.querySelector("[data-drag]");
+  if (!head) return;
+  let dragging = false;
+  let sx = 0;
+  let sy = 0;
+  let px = 0;
+  let py = 0;
+
+  head.addEventListener("mousedown", (e) => {
+    if (e.target.closest(".rt-btn") || e.target.closest(".rt-cfg") || e.target.closest(".rt-lang")) return;
+    /* fixed + right 定位时 left 是 auto，先量出真实 left 再改成显式值，否则算不准。 */
+    const r = panel.getBoundingClientRect();
+    panel.style.left = r.left + "px";
+    panel.style.right = "auto";
+    panel.style.top = r.top + "px";
+    dragging = true;
+    sx = e.clientX;
+    sy = e.clientY;
+    px = r.left;
+    py = r.top;
+    e.preventDefault();
+  });
+
+  window.addEventListener("mousemove", (e) => {
+    if (!dragging) return;
+    const k = 1 / pvZoom();
+    const w = panel.offsetWidth * k;
+    const h = panel.offsetHeight * k;
+    const edge = 12 * k;
+    let nx = px + (e.clientX - sx) * k;
+    let ny = py + (e.clientY - sy) * k;
+    nx = Math.min(Math.max(nx, edge), Math.max(edge, window.innerWidth - w - edge));
+    ny = Math.min(Math.max(ny, edge), Math.max(edge, window.innerHeight - h - edge));
+    panel.style.left = nx + "px";
+    panel.style.top = ny + "px";
+  });
+
+  window.addEventListener("mouseup", () => {
+    dragging = false;
+  });
+}
+
+/** 设置页没有被反向缩放（真面板那套 --rt-zs 补偿在 content.js 里），这里恒为 1。 */
+function pvZoom() {
+  return 1;
+}
+
+/** 显示 / 收起预览面板。收起只是隐藏 host，不动 DOM —— 再点回来位置/状态都还在。 */
+function setPvVisible(on) {
+  const host = document.getElementById("panel-preview");
+  const btn = document.getElementById("btn-pv-open");
+  if (!host) return;
+  host.hidden = !on;
+  if (btn) btn.textContent = on ? "收起面板" : "显示面板";
+  if (on) renderPanelPreview();
 }
 
 function syncSlotInsertRow() {
@@ -3024,6 +3169,11 @@ function bindSettings() {
     els.panelCss.dispatchEvent(new Event('input', { bubbles: true }));
   };
   els.btnPanelCssWarm.addEventListener('click', () => setPanelCss(PANEL_CSS_WARM));
+
+  /* 「显示面板」：把真面板浮出来 / 收回去。收起只是 hidden，位置和状态都留着。 */
+  els.btnPvOpen.addEventListener('click', () => {
+    setPvVisible(document.getElementById('panel-preview').hidden);
+  });
   els.btnPanelCssClear.addEventListener('click', () => setPanelCss(''));
 
   els.trigStyles.addEventListener('click', (e) => {

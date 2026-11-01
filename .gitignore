@@ -12,3 +12,5 @@ tools/_*.css
 tools/_*.png
 tools/cmp_*.png
 docs/*.png
+tools/e2e*.log
+tools/*.log
