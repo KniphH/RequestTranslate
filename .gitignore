@@ -10,3 +10,5 @@ tools/_*.mjs
 tools/_*.txt
 tools/_*.css
 tools/_*.png
+tools/cmp_*.png
+docs/*.png
