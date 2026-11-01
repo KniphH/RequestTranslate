@@ -1,25 +1,27 @@
-# 自定义面板样式 · 能力上限演示
+# 自定义面板样式 · 能力演示
 
-> 这份是**样张**，不是给人长期用的配色。用途是让人一眼看到「自定义面板能做到什么程度」。
-> 设置页里「填入示例：能力上限演示」按钮注入的是同一份（注释精简过，效果一样）。
-> 想逐段挑着用，按 `★` 标题剪。
+> **这是一张样张，不是给人长期用的配色。**
+> 它的唯一用途是让人一眼看到：面板的自定义**能做到什么程度**。
+> 故意把所有手段都用了一遍 —— 渐变、毛玻璃、伪元素、动画、自动编号、网格重排、
+> 定制滚动条、按主题分支、容器查询、无障碍降级。看起来「花里胡哨」是刻意的。
 
 ## 怎么用
 
-1. 设置页 →「面板」→「自定义面板样式（CSS）」→ 点「填入示例：能力上限演示」
-2. 上面的效果预览立刻变
-3. 想回到原样 → 点「清空」
+1. 打开设置页 →「面板」分组 →「自定义面板样式（CSS）」
+2. 把下面**完整源码**整段复制进去
+3. 上面的「效果预览」立刻变；想微调就改那段里的值
+4. 想回到原样 → 点输入框旁边的「清空」
 
-**注意**：面板在自己的 shadow DOM 里，把这段贴到 Stylus / user.css **一个字都不会生效** ——
-只能写进设置页那个框（由我们注入到 shadow root 末尾）。
+> ⚠️ **面板在自己的 shadow DOM 里，把这段贴到 Stylus / user.css 一个字都不会生效。**
+> 只能写进设置页那个框 —— 由我们注入到 shadow root 的末尾。
 
-## 这份样例用到了哪些能力
+## 它用到了哪些能力
 
 | 手段 | 演示在哪 |
 | --- | --- |
 | 改尺寸 / 圆角 / 溢出 | ★1 |
-| 多层渐变 + 毛玻璃 + 内/外阴影 | ★2 |
-| `::before` 伪元素装饰 | ★2 顶彩带、★4 斜纹、★5 编号 |
+| 多层渐变 + 毛玻璃 + 内外阴影 | ★2 |
+| `::before` 伪元素画装饰 | ★2 顶部彩带、★4 斜纹、★5 编号 |
 | CSS 动画（`@keyframes`） | ★2 流动彩带、★3 呼吸灯 |
 | 改原生 `<select>` 外观 | ★3 胶囊下拉 |
 | 悬停 / 过渡 | ★3 按钮、★5 卡片、★6 操作条 |
@@ -347,4 +349,74 @@
 }
 ```
 
-3. 可用的全部钩子与变量清单见 `docs/DEVELOPMENT.md` 的「自定义面板样式」一节。
+## 能做到 / 做不到
+
+**能做到的**（下面这份样例里都实测跑过）：
+
+- 改颜色 / 圆角 / 阴影 / 边框 / 背景（渐变、图案、毛玻璃）
+- 改尺寸与间距、隐藏任意部件（`display: none`）
+- 重排：卡片化、网格化、伪元素装饰与自动编号
+- 动画与过渡
+- 改原生 `select` / `button` / `::-webkit-scrollbar` 的外观
+- 用 `[data-rt-theme]` 给深浅两套主题分别配色
+- `@container` / `@media` 响应式与无障碍降级
+
+**做不到的**（别在这上面花时间）：
+
+| 想做的事 | 为什么不行 |
+| --- | --- |
+| 加一个新按钮 / 新部件 | CSS 改不了 DOM 结构。想在面板加按钮 = 改代码 |
+| 改「翻译中…」这类文案 | `content` 只能加伪元素装饰字，真实文本由 JS 管 |
+| 改点击 / 拖拽 / 朗读行为 | 这些不在 CSS 里 |
+| 让面板跟随当前网页的配色 | 面板自封闭，读不到页面的 CSS 变量（设计如此，不是缺陷） |
+| 稳赢第三方网站的 `!important` | 有些站（如 mikanani.me）内嵌 Dark Reader，会往我们的 shadow root 塞 `!important` 规则。`#rt-panel` + `!important` 能赢过它，但你的自定义漏了 `!important` 就压不过 |
+
+## 怎么让自己写的东西更稳
+
+1. **优先用 `#rt-panel`** —— id 选择器优先级 `1-0-0`，高于我们的 `.rt-panel` 类，多数情况不用 `!important`
+
+2. **只调配色的话，覆盖变量比硬写颜色省事**。默认样式全部走 `var(--rt-*)`：
+
+   ```css
+   #rt-panel {
+     --rt-bg: #181713;
+     --rt-border: #332f27;
+     --rt-accent: #b8863b;
+   }
+   ```
+
+3. **承诺不改的**：`#rt-panel`、`[data-rt-theme]`、以及下面这些类名。真要改名会给别名。
+
+   `.rt-head` `.rt-cfg` `.rt-lang` `.rt-src` `.rt-out` `.rt-slot` `.rt-slot-h`
+   `.rt-slot-name` `.rt-slot-st` `.rt-slot-b` `.rt-slot-x` `.rt-acts` `.rt-act`
+   `.rt-foot` `.rt-msg` `.rt-more` `.rt-diag` `.d-k` `.d-v` `.rt-btn` `.rt-dot`
+
+4. **可覆盖的 CSS 变量**（全部 26 个）：
+
+   `--rt-bg` `--rt-bg-head` `--rt-bg-sub` `--rt-bg-diag` `--rt-border` `--rt-border-soft`
+   `--rt-slot-line` `--rt-text` `--rt-text-dim` `--rt-text-out` `--rt-text-foot`
+   `--rt-placeholder` `--rt-hover` `--rt-accent` `--rt-accent-soft` `--rt-accent-text`
+   `--rt-scroll` `--rt-shadow` `--rt-fs` `--rt-fs-sm` `--rt-fs-xs` `--rt-max-h`
+
+## 中间档：只想要「好看又好用」
+
+上面那份是**上限**，日常用会太吵。想要克制一点的话，只留这几段就够：
+
+```css
+/* 渐变底 + 卡片化 + 诊断网格 —— 这三样收益最高 */
+#rt-panel {
+  background-image: linear-gradient(160deg, #16141f 0%, #0f0e16 100%);
+  border-radius: 14px;
+}
+#rt-panel .rt-slot {
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+#rt-panel .rt-slot + .rt-slot { border-top: 0; margin-top: 6px; padding-top: 8px; }
+#rt-panel .rt-diag .d-row { display: grid; grid-template-columns: 6.5em 1fr; gap: 8px; }
+```
+
+---
+
+完整的钩子与实现约定见 `docs/DEVELOPMENT.md` 的「自定义面板样式」一节。
