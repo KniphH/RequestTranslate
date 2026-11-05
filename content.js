@@ -365,7 +365,9 @@ ${TRIGGER_CSS}
 .rt-body { display: flex; flex-direction: column; overflow: hidden; }
 
 .rt-src {
-  padding: .5em .7em;
+  /* 同上：右侧给滚动条槽让位，左右才对称 */
+  padding: .5em calc(.7em - 8px) .5em .7em;
+  scrollbar-gutter: stable;
   font-size: var(--rt-fs-sm);
   line-height: 1.6;
   color: var(--rt-text-dim);
@@ -391,7 +393,11 @@ ${TRIGGER_CSS}
 }
 
 .rt-out {
-  padding: .6em .7em;
+  /* 右边留出滚动条槽（8px）：scrollbar-gutter: stable 让它始终占着，
+     出现/消失都不跳；再从右内边距扣掉这 8px，左右才一样宽。
+     calc 算出负数时浏览器按 0 处理（最小字号下最多差不到 1px）。 */
+  padding: .6em calc(.7em - 8px) .6em .7em;
+  scrollbar-gutter: stable;
   min-height: 3.6em;
   /* 自适应时的上限 = 设置里那条「结果区最大高度」（vh），默认 46 就是原来写死的那个值。
      单位是 vh 而不是 px：这条上限的用意是「别顶出视口」，跟着窗口走才对。
@@ -448,7 +454,9 @@ ${TRIGGER_CSS}
 .rt-diag {
   border-top: 1px solid var(--rt-border-soft);
   background: var(--rt-bg-diag);
-  padding: 10px 15px;
+  /* 同上：15px = 7px 内边距 + 8px 滚动条槽 */
+  padding: 10px 7px 10px 15px;
+  scrollbar-gutter: stable;
   font-family: ui-monospace, Consolas, "Cascadia Mono", monospace;
   font-size: calc(var(--rt-fs) * 0.8);
   line-height: 1.9;

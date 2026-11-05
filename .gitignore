@@ -15,3 +15,6 @@ docs/*.png
 tools/e2e*.log
 tools/*.log
 tools/CM*.txt
+tools/MSG*.txt
+tools/*.png
+tools/_*

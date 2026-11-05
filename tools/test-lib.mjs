@@ -2619,6 +2619,23 @@ section('20. 「临时直连」已彻底移除：权限 / 模块 / 调用点都�
   check('两份面板 CSS 内容一致（content.js 内联 vs lib/panel-styles.js）',
     !!cssInline && !!cssShared && norm(cssInline) === norm(cssShared),
     `内联 ${cssInline.split('\n').length} 行 / 共享 ${cssShared.split('\n').length} 行`);
+
+  /* 滚动条不能把右边距撑大、也不能让左右不一样（kniph 2026-11-01 报的）。
+     做法：scrollbar-gutter: stable 让槽位**始终**占着（出现/消失都不跳），
+     再从右内边距扣掉这 8px（自绘滚动条宽度）—— 这样 .7em 的左右才真正相等。 */
+  {
+    /* 带分号的才是真声明（注释里那句没有分号，别被它蒙了） */
+    const gutters = (cssInline.match(/scrollbar-gutter: stable;/g) || []).length;
+    check("三个可滚动区都留了滚动条槽（.rt-out / .rt-src / .rt-diag）",
+      gutters === 3, gutters + " 处");
+    check("右内边距扣掉了滚动条那 8px（左右才对称）",
+      cssInline.includes("padding: .6em calc(.7em - 8px) .6em .7em;") &&
+        cssInline.includes("padding: .5em calc(.7em - 8px) .5em .7em;") &&
+        cssInline.includes("padding: 10px 7px 10px 15px;"));
+    /* 滚动条宽度是这件事的前提：改宽了补偿值就得跟着改 */
+    check("自绘滚动条仍是 8px（补偿值按它算的）",
+      cssInline.includes("::-webkit-scrollbar { width: 8px; }"));
+  }
   const bridge = read('../frame-bridge.js');
   check('桥在非顶层才干活（window.top 自检在最先）',
     /window\.top === window\) return/.test(bridge.slice(0, 1500)));
