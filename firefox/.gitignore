@@ -1,0 +1,10 @@
+# 浏览器本体 374 MB，不入库 —— README.md 里有从官方 MSI 重建的完整步骤
+app/
+
+# profile 里全是运行期数据（缓存/证书/会话），只保留 user.js ——
+# 它是「预置设置」的源，改了它等于改了便携版的默认值
+profile/*
+!profile/user.js
+
+# 启动器可能留下的日志
+_launcher.log

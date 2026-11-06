@@ -2251,18 +2251,7 @@ ${TRIGGER_CSS}
 
   /* ---- 划词监听 ---- */
 
-  function isEditable(node) {
-    let el = node && node.nodeType === 1 ? node : node && node.parentElement;
-    let hops = 0;
-    while (el && hops < 4) {
-      const tag = el.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
-      if (el.isContentEditable) return true;
-      el = el.parentElement;
-      hops += 1;
-    }
-    return false;
-  }
+  
 
   /**
    * 「活动那一端」的光标位置 —— 键盘扩展选区（Shift+方向键 / Shift+Home…）时贴它。
@@ -2293,9 +2282,14 @@ ${TRIGGER_CSS}
     // isCollapsed 会是 true，但 toString() 照样能拿到文字 —— 拿 isCollapsed 挡会误杀。
     const text = sel.toString().trim();
     if (!text || text.length < 1) return null;
-    // 注意：同一套重定目标也发生在 anchorNode 上（拿到的是 Shadow 外面的节点），
-    // 所以 Shadow DOM 内部的输入框认不出来 —— 认不出就放行，宁可多弹一次。
-    if (isEditable(sel.anchorNode)) return null;
+    // 这里原本有一句 `if (isEditable(sel.anchorNode)) return null;`（初衷是「不打扰
+    // 输入框里的编辑」），2026-11-06 去掉 —— 因为它的效果**不一致**，实测 anchorNode 归属：
+    //   · <input> / <textarea> 里划词，选区被重定目标到 BODY，anchorNode 是 BODY 而不是
+    //     那个输入框 → 这句**从来就挡不住**它（bilibili 搜索框一直是能划的）；
+    //   · contenteditable（评论框、富文本编辑器）里划词，anchorNode 就是它自己
+    //     → 被挡住，于是「搜索框能划、评论框不能划」。
+    // kniph 2026-11-06 报的 TikTok 评论框划不了词，就是后半条。
+    // 既然那份保护在 input 上本来就没生效，与其留一个只对富文本生效的特例，不如统一放行。
 
     // 鼠标划词：**按钮**直接贴鼠标，一个字节的选区几何量都不看（按钮要的是「手边」）。
     // 以前是从选区里挑「第一行 / 最后一行」再挑离鼠标近的那一头 —— 一拖一大段、或者

@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "RT Firefox Probe",
+  "version": "1.0",
+  "description": "检测火狐的 WebExtension API 行为（RequestTranslate 移植用）",
+  "background": {
+    "scripts": [
+      "probe.js"
+    ]
+  },
+  "permissions": [
+    "storage",
+    "tabs"
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "rt-probe@local.test",
+      "strict_min_version": "109.0"
+    }
+  }
+}

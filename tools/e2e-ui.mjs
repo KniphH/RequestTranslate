@@ -119,6 +119,12 @@ const PAGE = `<!doctype html>
 </style></head>
 <body>
 <p id="t">第一行文字稍微长一点，长到能把整段选区的右边界推到很远的地方<br>第二行是中等长度的文字，用来撑出多行选区<br>短短一行</p>
+<!-- 可编辑元素里划词也要弹（2026-11-06）：这三块专给「划词一致性」断言用。
+     以前 isEditable(anchorNode) 只挡得住 contenteditable —— <input> 里 anchorNode
+     被重定目标到 BODY，所以「搜索框能划、评论框不能」。判定去掉后三者应一致。 -->
+<div id="rt-sel-ce" contenteditable="true" style="width:600px;border:1px solid #999;padding:8px;margin-top:20px">评论框 alpha beta gamma delta</div>
+<input id="rt-sel-in" value="搜索框 alpha beta gamma delta" style="width:600px;font-size:16px;padding:8px;margin-top:20px;display:block">
+<div id="rt-sel-plain" style="width:600px;border:1px dashed #999;padding:8px;margin-top:20px">普通文字 alpha beta gamma delta</div>
 </body></html>`;
 
 /** 慢接口：让请求在飞行中停一会儿，好让我们采样代理状态 */
@@ -535,6 +541,37 @@ try {
   /* ------------------------------------------------------------------ */
   /* 1. 划词 → 小圆点贴哪儿                                              */
   /* ------------------------------------------------------------------ */
+  /* 可编辑元素里划词也要弹（kniph 2026-11-06 报的 TikTok 评论框）。
+     原来是 `if (isEditable(sel.anchorNode)) return null;`，但它只挡得住
+     contenteditable：<input> 里的选区被重定目标到 BODY，anchorNode 不是那个
+     输入框，所以从来挡不住 —— 表现就是「bilibili 搜索框能划、TikTok 评论框不能」。
+     判定已去掉，这里钉住三种场景**行为一致**。 */
+  async function selectIn(sel, ratioFrom, ratioTo) {
+    const b = await page.locator(sel).boundingBox();
+    const y = b.y + b.height / 2;
+    await page.mouse.move(b.x + b.width * ratioFrom, y);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width * ratioTo, y, { steps: 14 });
+    await page.mouse.up();
+    await page.waitForTimeout(500);
+    return page.evaluate(() => {
+      const h = document.getElementById("request-translate-host");
+      const t = h && h.shadowRoot && h.shadowRoot.querySelector(".rt-trigger");
+      const r = t ? t.getBoundingClientRect() : null;
+      return { show: !!(t && t.classList.contains("show")), w: r ? r.width : 0 };
+    });
+  }
+  for (const [sel, label] of [
+    ["#rt-sel-ce", "contenteditable（评论框型）"],
+    ["#rt-sel-in", "<input>（搜索框型）"],
+    ["#rt-sel-plain", "普通文本（对照）"]
+  ]) {
+    const r = await selectIn(sel, 0.04, 0.5);
+    check(`${label} 里划词会弹按钮`, r.show && r.w > 0, JSON.stringify(r));
+    await page.mouse.move(2, 2);
+    await page.waitForTimeout(300);
+  }
+
 
   console.log('1. 划词，看小圆点落在哪');
 
