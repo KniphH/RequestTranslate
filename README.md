@@ -11,7 +11,17 @@
 换服务 = 新建一条配置；主请求挂了会自动试后备；OCR、划词、截图翻译共用同一套配置。
 变量可以拖动归类，配置列表也能排序。
 
-[**从 Edge 商店安装**](https://microsoftedge.microsoft.com/addons/detail/kbkgflnmkghalnfhgdjefbalgbljlpod) ・ [下载 zip 手动装](https://github.com/KniphH/RequestTranslate/releases)
+<!-- 商店徽章：shields.io 的 for-the-badge 样式，28px 高，带厂商 logo。
+       Edge 那个是 dynamic 的 —— 版本号由微软的公开接口读取，发版后自动跟着变，
+       不用改 README。（http:MicrosoftEdge.GetVersion 就是那个接口，
+       它返回的 version 字段＝线上生效的版本，不是提交中的。）
+       Firefox 那个暂时写死版本号：AMO 还没过审，等上线后换成 dynamic：
+       https://img.shields.io/amo/v/requesttranslate-请求式划词翻译?style=for-the-badge
+       注意 AMO 的 slug 里有中文，URL 里要 percent-encode。 -->
+
+<a href="https://microsoftedge.microsoft.com/addons/detail/kbkgflnmkghalnfhgdjefbalgbljlpod"><img alt="Microsoft Edge" src="https://img.shields.io/badge/dynamic/json?label=Microsoft%20Edge&query=%24.version&url=https%3A%2F%2Fmicrosoftedge.microsoft.com%2Faddons%2Fgetproductdetailsbycrxid%2Fkbkgflnmkghalnfhgdjefbalgbljlpod&style=for-the-badge&logo=microsoftedge&logoColor=white&color=0078D7"></a>
+<img alt="Firefox Add-ons · coming soon" src="https://img.shields.io/badge/Firefox%20Add--ons-in%20review-FF7139?style=for-the-badge&logo=firefoxbrowser&logoColor=white">
+<a href="https://github.com/KniphH/RequestTranslate/releases"><img alt="Download" src="https://img.shields.io/badge/Releases-download-24292F?style=for-the-badge&logo=github&logoColor=white"></a>
 
 ## 它是什么
 
