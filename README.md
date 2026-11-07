@@ -15,13 +15,12 @@
        Edge 那个是 dynamic 的 —— 版本号由微软的公开接口读取，发版后自动跟着变，
        不用改 README。（http:MicrosoftEdge.GetVersion 就是那个接口，
        它返回的 version 字段＝线上生效的版本，不是提交中的。）
-       Firefox 那个暂时写死版本号：AMO 还没过审，等上线后换成 dynamic：
+       Firefox 那个暂时是静态的 IN REVIEW：AMO 还在审核，过审后换成 dynamic：
        https://img.shields.io/amo/v/requesttranslate-请求式划词翻译?style=for-the-badge
        注意 AMO 的 slug 里有中文，URL 里要 percent-encode。 -->
 
 <a href="https://microsoftedge.microsoft.com/addons/detail/kbkgflnmkghalnfhgdjefbalgbljlpod"><img alt="Microsoft Edge" src="https://img.shields.io/badge/dynamic/json?label=Microsoft%20Edge&query=%24.version&url=https%3A%2F%2Fmicrosoftedge.microsoft.com%2Faddons%2Fgetproductdetailsbycrxid%2Fkbkgflnmkghalnfhgdjefbalgbljlpod&style=for-the-badge&logo=microsoftedge&logoColor=white&color=0078D7"></a>
 <img alt="Firefox Add-ons · coming soon" src="https://img.shields.io/badge/Firefox%20Add--ons-in%20review-FF7139?style=for-the-badge&logo=firefoxbrowser&logoColor=white">
-<a href="https://github.com/KniphH/RequestTranslate/releases"><img alt="Download" src="https://img.shields.io/badge/Releases-download-24292F?style=for-the-badge&logo=github&logoColor=white"></a>
 
 ## 它是什么
 
@@ -64,38 +63,6 @@ curl https://api.ant-ling.com/v1/chat/completions \
 
 ---
 
-## 安装
-
-### 一、商店
-
-- **Edge**：[RequestTranslate · 请求式划词翻译](https://microsoftedge.microsoft.com/addons/detail/kbkgflnmkghalnfhgdjefbalgbljlpod)
-
-### 二、手动
-
-1. [Releases](https://github.com/KniphH/RequestTranslate/releases) 下载
-   `request-translate-x.y.z.zip`，解压到**文件夹**
-2. 打开 `edge://extensions/`（Chrome ： `chrome://extensions/`）
-3. 打开 **开发人员模式**
-4. 点 **加载解压缩的扩展**，选择解压路径
-
----
-
-### 三、火狐
-
-Release 里除了 `request-translate-x.y.z.zip`，还有一个 **`request-translate-x.y.z.xpi`**。
-**两者内容逐字节相同**（`manifest.json` 里把两边的键都写了，各浏览器忽略自己不认的那个），只是扩展名按火狐的习惯叫 `.xpi`。
-
-试用（临时载入，浏览器重启后失效）：
-
-1. 按上面「二、手动」把 zip 解压成文件夹
-2. 地址栏输入 `about:debugging#/runtime/this-firefox`
-3. 点 **临时载入附加组件…**，选文件夹里的 `manifest.json`
-
-正式安装需要签名，要上架 [AMO](https://addons.mozilla.org/)（**尚未提交**）。
-
-**要求 Firefox 140 或更高**（清单里那条数据收集声明的最低版本）。
-
----
 ## 首次使用
 
 **开箱即用**
