@@ -27,6 +27,7 @@ import {
   runOcr
 } from './lib/ocr.js';
 import { NO_IMAGE_MESSAGE, CLIPBOARD_UNAVAILABLE_MESSAGE } from './lib/clipboard.js';
+import { readClipboardImage as readClipboardInPage, errText as clipErrText } from './lib/clipboard-read.js';
 // 顶栏那个「目标语言」下拉的候选。页面那边 import 不了模块，只能这样捎过去，
 // 免得在 content.js 里手抄一份 —— 加了语言两处就对不上了。
 import { TARGET_PRESETS } from './lib/template.js';
@@ -184,6 +185,14 @@ chrome.tabs.onZoomChange.addListener((info) => {
 
 const OFFSCREEN_PATH = 'offscreen.html';
 
+/**
+ * 这台浏览器有没有 offscreen API —— 也就是「后台是不是没有 DOM 的 service worker」。
+ * Chromium：有。火狐：没有（它的后台是事件页，自己就有 DOM，不需要 offscreen）。
+ */
+function hasOffscreen() {
+  return !!(chrome.offscreen && chrome.offscreen.createDocument);
+}
+
 /** 同一时刻只允许一次创建 —— createDocument 是异步的，前后脚来两次会撞车 */
 let offscreenPending = null;
 
@@ -236,6 +245,17 @@ async function askOffscreen(msg) {
 let clipboardRead = Promise.resolve();
 function readClipboardImage() {
   const run = async () => {
+    /* 火狐的 MV3 后台是**事件页**（一个隐藏的 HTML 页面），本身就有 DOM，
+       直接读剪切板即可 —— 它没有 chrome.offscreen 这个 API。
+       Chromium 的 service worker 没有 DOM，只能借 offscreen 文档。
+       两边跑的是同一份读取逻辑（lib/clipboard-read.js）。 */
+    if (!hasOffscreen()) {
+      try {
+        return await readClipboardInPage(document);
+      } catch (err) {
+        return { ok: false, reason: 'unavailable', error: clipErrText(err) };
+      }
+    }
     await ensureOffscreen();
     try {
       const r = await askOffscreen({ type: 'read-image' });

@@ -61,6 +61,21 @@ curl https://api.ant-ling.com/v1/chat/completions \
 
 ---
 
+### 三、火狐
+
+**同一个 zip 就能装**，不用另下一份 —— `manifest.json` 里两边的键都写了，各浏览器忽略自己不认的那个。
+
+试用（临时载入，浏览器重启后失效）：
+
+1. 按上面「二、手动」把 zip 解压成文件夹
+2. 地址栏输入 `about:debugging#/runtime/this-firefox`
+3. 点 **临时载入附加组件…**，选文件夹里的 `manifest.json`
+
+正式安装需要签名，要上架 [AMO](https://addons.mozilla.org/)（**尚未提交**）。
+
+**要求 Firefox 140 或更高**（清单里那条数据收集声明的最低版本）。
+
+---
 ## 首次使用
 
 **开箱即用**

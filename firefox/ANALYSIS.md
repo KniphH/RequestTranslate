@@ -286,3 +286,55 @@ firefox/
 
 **这个限制只影响助手**，不影响 kniph：正常桌面会话里登录用户持有完整令牌，
 双击 `启动火狐.vbs` 不会被这一点挡住。
+
+---
+
+## 十、已完成（2026-11-06）
+
+步骤 1 和 2 都落地了，Edge 侧 1641 项全绿。
+
+### ① manifest 加火狐键（**待验 #2 已确认成立**）
+
+```jsonc
+"background": {
+  "service_worker": "background.js",     // Chromium 读这个
+  "scripts": ["background.js"],          // 火狐读这个（它的 MV3 后台是事件页）
+  "type": "module"
+},
+"browser_specific_settings": {
+  "gecko": {
+    "id": "requesttranslate@kniph.github.io",
+    "strict_min_version": "140.0",
+    "data_collection_permissions": { "required": ["websiteContent"] }
+  }
+}
+```
+
+**实测确认**：加了 `background.scripts` 之后 Edge 照常加载 —— service worker 起来了、
+设置页正常、content script 正常注入、e2e 554 项全绿。也就是 Chrome 会**忽略**这个它不认的键，
+所以**一份 manifest 通吃两边成立**，不需要维护两份。
+
+### ② offscreen 降级
+
+把读取逻辑抽成 `lib/clipboard-read.js`，两边共用同一份：
+
+| | 后台形态 | 怎么读剪切板 |
+| --- | --- | --- |
+| Chromium | service worker（**无 DOM**） | 开一个 offscreen 文档，把读取逻辑跑在里面 |
+| 火狐 | 事件页（**有 DOM**） | 后台自己就是「有 DOM 的地方」，直接读 |
+
+判据是 `hasOffscreen()` = `!!(chrome.offscreen && chrome.offscreen.createDocument)`，
+不用去嗅探 UA。`offscreen.js` 从 140 行减到 25 行（只剩转发消息）。
+
+**Chromium 侧实测**：`chrome.offscreen` 存在 → 成功建出 offscreen 文档 →
+`offscreen.js` 正常回应 `{ok:false, reason:"no-image"}`（剪切板没图，符合预期）。
+
+**火狐侧尚未实测** —— 需要真机跑一次「剪切板 OCR」。这一步在本机做不了（见第九节）。
+
+### ③ 还没做的
+
+- **待验 #1**（`chrome.*` 是否返回 Promise）：靠 `firefox/_probe/` 那个探测扩展，需要真人跑一次。
+  若结论是「返回 Promise」（MDN 说 Firefox 在所有异步 API 上都支持），那 23 处 `await` 一行都不用改。
+- **待验 #3**：`web-ext lint` 对 `minimum_chrome_version` / `offscreen` 权限的报法。
+- **待验 #4**：火狐事件页里读剪切板是否真的可用（`navigator.clipboard.read` 需要焦点）。
+- 火狐上的端到端验证（本机跑不了火狐，见第九节）。
