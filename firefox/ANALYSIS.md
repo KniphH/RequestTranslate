@@ -370,3 +370,61 @@ firefox/
 - **剪切板 OCR**（右键「翻译剪切板里的截图」）—— 这是唯一走了平台分支的功能，
   火狐那条路（后台直接读）还没实际跑过一次。
 - 截图翻译 / 框选 / 图片直传等其余功能；用户说「没什么问题」覆盖的是常规划词翻译。
+
+---
+
+## 十二、`web-ext lint` 实测（待验 #3 完成，2026-11-07）
+
+装了 Mozilla 官方的 `web-ext 10.8.0`，对打好的 `.xpi` 跑 lint。
+
+**最初 1 error + 33 warning，现在 0 error + 33 warning（退出码 0）。**
+
+### 那个 error 是 linter 的误报，已绕开
+
+```
+[JS_SYNTAX_ERROR] lib/clipboard.js:15
+  Parsing as module error: Unterminated regular expression at line: 21
+  Parsing as script error: import/export may appear only with sourceType: module
+```
+
+第 21 行是 `return /^image\//i.test(String(type || ''));` —— 转义斜杠的正则。
+linter 的解析器把它当成「未终止的正则」，`export` 那半边自然是解析器退而求其次的次生报错。
+
+**这是误报**：`node --check lib/clipboard.js` 通过，`node -e` 单独跑那个正则行为也正确，
+项目里 20 个 js 文件 `node --check` 全过。而且**扩展在火狐上实测能跑**。
+
+不过它会挡 AMO 上架，所以改成行为完全等价的写法：
+
+```js
+// 原来
+return /^image\//i.test(String(type || ''));
+// 现在
+return String(type || '').toLowerCase().startsWith('image/');
+```
+
+### 33 个 warning 全是预期的，不挡上架
+
+| 条数 | code | 是什么 |
+| --- | --- | --- |
+| 27 | `UNSAFE_VAR_ASSIGNMENT` | 动态 `innerHTML`。面板与列表都用它，内容走 `esc()` 转义 |
+| 3 | `UNSUPPORTED_API` | `offscreen.createDocument` / `closeDocument` —— **正是运行时分支要处理的**，linter 只做静态扫描，看不出我们判了 `hasOffscreen()` |
+| 1 | `MANIFEST_PERMISSIONS` | `offscreen` 权限火狐不认识 |
+| 1 | `BACKGROUND_SERVICE_WORKER_IGNORED` | 火狐忽略 `background.service_worker`，读 `scripts` —— **这正是「一份 manifest 通吃」依赖的行为** |
+| 1 | `KEY_FIREFOX_ANDROID_UNSUPPORTED_BY_MIN_VERSION` | 某个清单键在 Firefox for Android 的最低版本上不支持；**我们不做 Android，无关** |
+
+### 顺带把「`minimum_chrome_version` 会不会被报」也答了
+
+**没报**。分析报告当初把它列进待验，担心会出 error —— 实际 linter 完全没提它。
+
+### 复现命令
+
+```bash
+# 装（一次即可）
+npm i -g web-ext
+
+# 解压 xpi 到**短路径**（火狐那个长路径的坑同样适用于调试目录）
+python -c "import zipfile; zipfile.ZipFile('dist/request-translate-1.3.0.xpi').extractall('C:/rtsrc')"
+
+# lint（直接调 .js，别用 web-ext.cmd —— MSYS 会把它的路径转换坏）
+node "$(npm root -g)/web-ext/bin/web-ext.js" lint --source-dir C:/rtsrc --output json
+```
