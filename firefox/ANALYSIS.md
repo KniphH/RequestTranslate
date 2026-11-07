@@ -428,3 +428,79 @@ python -c "import zipfile; zipfile.ZipFile('dist/request-translate-1.3.0.xpi').e
 # lint（直接调 .js，别用 web-ext.cmd —— MSYS 会把它的路径转换坏）
 node "$(npm root -g)/web-ext/bin/web-ext.js" lint --source-dir C:/rtsrc --output json
 ```
+
+---
+
+## 十三、火狐自动化测试（2026-11-07）
+
+**火狐能跑自动测试了，用的是 WebDriver 而不是 Playwright。**
+
+### 为什么不是 Playwright
+
+Playwright 的 `firefox` 要 Mozilla 之外的**定制二进制**（走 Juggler 协议），
+装不了任意扩展 —— 它只能跑 Playwright 自己认的那条通路。所以火狐侧走 WebDriver：
+
+```
+selenium 4.52 + geckodriver 0.37.1（Selenium Manager 自动获取，不用手装）
+driver.install_addon(<源码目录>, temporary=True)
+```
+
+`install_addon(..., temporary=True)` 正好对应火狐的「临时载入」，
+也是 Release 版唯一能装未签名扩展的路。
+
+### 脚本：`tools/e2e-firefox.py`
+
+```bash
+pip install selenium
+python tools/e2e-firefox.py
+```
+
+实测输出（火狐 159.0.1）：
+
+```
+  ok   扩展装得上（临时载入）  requesttranslate@kniph.github.io
+  ok   content script 注入
+  ok   划词弹出小圆点  {"show": true, "w": 45}
+  ok   点小圆点能开面板  {"h": 248, "show": true}
+  SKIP 扩展页面里验 Promise  WebDriver 不让进 moz-extension://
+
+火狐冒烟：4 项通过，0 项失败
+```
+
+### 踩过的坑
+
+| 坑 | 现象 | 解法 |
+| --- | --- | --- |
+| `-profile` 与 `set_preference` 冲突 | `SessionNotCreatedException: Failed to set preferences` | prefs 全写进 profile 的 `user.js`，别调 `set_preference` |
+| `install_web_extension(temporary=True)` | `TypeError: unexpected keyword argument` | 用旧的 `install_addon`（4.52 的这个新方法不接 `temporary`） |
+| `moz-extension://` 导航 | `Navigation ... is not allowed in this context` | WebDriver 的安全限制，改不了；这条降级为 SKIP |
+| 扩展 UUID 在哪 | `extensions.json` 里没有（临时载入不写那个文件） | 在 `prefs.js` 的 `extensions.webextensions.uuids` 里，值是转义过的 JSON 字符串 |
+| 块里改 `uuid = None` 想跳过后面的代码 | `ReferenceError: chrome is not defined` | **不行** —— Python 不会因为变量变了就中断当前代码块，必须再写一个 `if` |
+
+### 比 SKIP 更有力的证据：面板真的翻译出来了
+
+同一轮截图（`C:\rt-ff-e2e.png`）里，点开小圆点后面板显示的是**真实结果**：
+
+```
+Bing 翻译（免费 · 无需 Key）  |  简体中文
+原文区：选中的两行
+结果区：译文（状态「完成」）
+底栏：HTTP 200 · 1.8s · Bing ttranslatev3
+```
+
+这条链路要跑通必须经过 `await chrome.storage.local.get`（读配置）、
+`await chrome.runtime.connect` / `sendMessage`（连后台）、`await` 请求链。
+**火狐上它跑通了，就是 `chrome.*` 返回 Promise 的直接证据** —— 比在扩展页面里
+单独测一次更实在（那是「能不能」, 这是「实际在用并且成立」）。
+
+### 和 Edge 那套的关系
+
+| | Edge | 火狐 |
+| --- | --- | --- |
+| 驱动 | Playwright（CDP） | Selenium（WebDriver） |
+| 脚本 | `tools/e2e-ui.mjs` | `tools/e2e-firefox.py` |
+| 规模 | **554 项**，覆盖全功能 | **4 项**冒烟，只打火狐专有风险 |
+| 进 `npm test` | 是 | **否**（要火狐和 geckodriver，太重） |
+
+火狐这套定位是**移植验证**，不是回归主力 —— 凡是 Chromium 也能量到的，不在这里重复。
+真要扩，优先补这几条：剪切板 OCR（唯一走平台分支的功能）、截图/框选、图片直传。
