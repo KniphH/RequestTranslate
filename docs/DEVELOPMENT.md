@@ -351,6 +351,10 @@ Bing 网页版翻译是**两步**：先 GET `bing.com/translator`，从 630KB �
 
 ```bash
 npm test              # 全量：静态检查 2 + test-lib 977 + test-engine 89 + test-strip 19 + e2e 554 = 1641 项
+
+# 打包（会先跑一遍全量测试）
+python tools/pack.py          # 出 dist/request-translate-<版本>.zip
+python tools/pack.py --xpi    # 顺便出一个内容完全相同的 .xpi（火狐 / AMO 用）
 npm run check         # 只跑两项静态检查
 npm run test:lib      # 解析器 / 模板 / 提取
 npm run test:engine   # 本地 mock 服务器，验证各类响应格式

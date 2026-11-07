@@ -63,7 +63,8 @@ curl https://api.ant-ling.com/v1/chat/completions \
 
 ### 三、火狐
 
-**同一个 zip 就能装**，不用另下一份 —— `manifest.json` 里两边的键都写了，各浏览器忽略自己不认的那个。
+Release 里除了 `request-translate-x.y.z.zip`，还有一个 **`request-translate-x.y.z.xpi`**。
+**两者内容逐字节相同**（`manifest.json` 里把两边的键都写了，各浏览器忽略自己不认的那个），只是扩展名按火狐的习惯叫 `.xpi`。
 
 试用（临时载入，浏览器重启后失效）：
 

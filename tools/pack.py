@@ -308,6 +308,11 @@ def main():
         action="store_true",
         help="包里的注释不剥（默认是剥掉的 —— 源码保留，只在包里剥）",
     )
+    ap.add_argument(
+        "--xpi",
+        action="store_true",
+        help="顺便出一个 .xpi（火狐 / AMO 用）—— 内容和 zip 完全相同，只是扩展名不同",
+    )
     args = ap.parse_args()
 
     if not args.skip_test:
@@ -325,6 +330,16 @@ def main():
     size = out.stat().st_size
     print(f"版本 {version} → {out}")
     print(f"zip：{len(files)} 个文件，{size:,} 字节（{size / 1024:.1f} KB），魔数 PK ✓")
+
+    # 火狐：内容与 zip 完全一致（一份 manifest 通吃两边），只是扩展名按火狐的习惯叫 .xpi。
+    # 之所以还单独出一个：AMO 提交页和「拖进火狐」的场景都认 .xpi，用 .zip 会被问东问西。
+    if args.xpi:
+        xpi = out.with_suffix(".xpi")
+        shutil.copyfile(out, xpi)
+        xsize = xpi.stat().st_size
+        if xpi.read_bytes()[:2] != b"PK":
+            sys.exit("xpi 魔数不对！")
+        print(f"xpi：{xpi}，{len(files)} 个文件，{xsize:,} 字节（{xsize / 1024:.1f} KB），魔数 PK ✓")
 
     if args.crx:
         crx = make_crx(files, version, out.parent, stripped)
