@@ -13,15 +13,24 @@
 
 [**从 Edge 商店安装**](https://microsoftedge.microsoft.com/addons/detail/kbkgflnmkghalnfhgdjefbalgbljlpod) ・ [下载 zip 手动装](https://github.com/KniphH/RequestTranslate/releases)
 
+## 它是什么
+
+<img src="docs/shots/00-overview.png" width="100%" alt="选词 → 小圆点 → 面板；配置就是一段请求文本">
+
 ## 演示
 
 面板流式出译文（右下角「…」逐项诊断：首字、耗时、分片、响应路径）：
 
 <img src="docs/demo.gif" width="720" alt="划词翻译演示">
 
-设置页：左为配置列表，右为可编辑的 curl：
+选中文字，小圆点贴手边；点开就是结果：
 
-![配置示例](docs/settings.jpg)
+<img src="docs/shots/02-panel.png" width="100%" alt="选词后出现小圆点，点开面板出译文">
+
+设置页：左边是配置列表（可拖动排序），右边那段就是你**原样会发出去的请求** ——
+展开「这次会发出去的请求」能看到方法、地址、请求头、以及替换占位符之后真正的 body：
+
+<img src="docs/shots/03-config.png" width="100%" alt="配置页：左侧配置列表，右侧请求文本与展开后的实际请求">
 
 </div>
 
