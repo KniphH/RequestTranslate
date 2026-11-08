@@ -1,0 +1,51 @@
+## 本版新增
+
+**内置 bilibili Index-Translate 免费翻译（无需 API Key）**
+
+B 站官方开源的翻译模型，作为内置配置提供。文本和图片都能翻 —— 它自带视觉编码器，
+图片翻译不需要先做外置 OCR。选中这条配置即可使用，不用填任何东西。
+
+默认选中的仍是「Bing 翻译」，不主动切换就不会走 bilibili。
+
+**修复：面板被网页的 text-align 带跑**
+
+某些站点把 `text-align: center` 写在 `<html>`/`<body>` 上。它是可继承属性、能穿过
+shadow DOM 继承进面板，导致译文被居中显示。现在在面板根节点显式写回 `text-align: start`。
+
+## 关于新增的 declarativeNetRequest 权限
+
+bilibili 那个接口的风控要求请求同时携带：
+
+```
+User-Agent: Index-Translate-Client/1.0 SnapCut/1.0
+Origin:     https://www.bilibili.com
+```
+
+缺任何一个都会返回 412 风控页。而浏览器的 fetch **不允许扩展修改 User-Agent**
+（它属于禁止修改的请求头，设置了会被静默替换成浏览器真实 UA），所以只能用
+`declarativeNetRequest` 的静态规则集补这两个头。
+
+规则内容（`lib/ua-rules.json`，随包分发）：
+
+```json
+[{
+  "id": 1, "priority": 1,
+  "action": {"type": "modifyHeaders", "requestHeaders": [
+    {"header": "user-agent", "operation": "set", "value": "Index-Translate-Client/1.0 SnapCut/1.0"},
+    {"header": "origin",     "operation": "set", "value": "https://www.bilibili.com"}
+  ]},
+  "condition": {"requestDomains": ["index-translate.bilibili.com"],
+                "resourceTypes": ["xmlhttprequest", "other"]}
+}]
+```
+
+**规则只匹配 `index-translate.bilibili.com` 这一个域名**，发往其他任何站点的请求都不受影响。
+它只改这两个请求头，不读取、不记录、不转发任何响应内容。
+
+这个接口本身是公开的、不要求任何 Key 或令牌（官方仓库 README 的「Option 1: Free Online API」
+就给了可直接跑的 curl），改这两个头只是为了让请求不被风控页拦掉，**不涉及绕过任何身份验证**。
+
+## 其它
+
+- 更新了演示 GIF 与文档截图（仓库内资源，不进包）
+- 零依赖、零构建不变

@@ -1,0 +1,44 @@
+感谢审核。这里补充几条便于核对的信息。
+
+## 关于新增的 declarativeNetRequest 权限（请重点看这一段）
+
+本版内置了一条 B 站官方的免费翻译服务（`index-translate.bilibili.com`，
+官方仓库 https://github.com/bilibili/Index-Translate ，无需 API Key）。
+
+该服务要求请求同时带 `User-Agent` 和 `Origin` 两个头，缺一返回 412 风控页。
+浏览器不允许扩展用 fetch 修改 `User-Agent`，故用 declarativeNetRequest 的静态规则集补。
+
+| 审核关注点 | 事实 |
+| --- | --- |
+| 规则影响范围 | 只匹配 `index-translate.bilibili.com` 一个域名（`requestDomains` 写死） |
+| 它改了什么 | 只改 `user-agent` 和 `origin` 两个请求头；不读取、不记录、不转发响应内容 |
+| 是否绕过鉴权 | 没有。该接口本身公开、不要求 Key 或令牌（官方 README 给了可直接跑的 curl）；改头只为避开风控页 |
+| 用户能否不用 | 能，且是默认状态。默认选中「Bing 翻译」；只有用户主动选中「bilibili Index-Translate」时文字才会发给 B 站；也可以直接删掉那条配置 |
+
+`PRIVACY.md` 里已如实写明：选中该配置时文字（以及开启图片直传时的整张图片）会发送到
+bilibili 的服务器。
+
+**它不是远程代码**：`lib/ua-rules.json` 是随包分发的静态 JSON，扩展不下载、也不执行任何
+远程代码（项目本身零依赖、零构建、无 CDN 引用）。
+
+## 关于 <all_urls>
+
+权限未变。理由仍是：用户可能在任意网页上划词，请求要发往用户自己填写的任意域名。
+**新增的 DNR 规则不会扩大它的影响范围** —— 那条规则写死了只匹配一个域名。
+
+## 关于源码与构建
+
+本扩展零依赖、零构建。唯一的「构建」步骤是把注释剥掉（不删行，行号守恒）。
+源码包内附 `BUILD.md` 有完整重建说明。
+
+**有一个需要说明的差异**：源码根目录的 `manifest.json` 里 `background` 同时写了
+`service_worker` 和 `scripts` —— 那是为了同一份源码在两个浏览器都能本地加载
+（Chromium 只认 service_worker、Firefox 只认 scripts，各自忽略不认识的字段）。
+
+提交的 `.xpi` 是出包时**按目标裁剪**过的火狐形态：`{"scripts": ["background.js"], "type": "module"}`。
+除这一个字段外，其余每个文件的正文与行号都与提交的包逐字一致。
+重建命令：`python tools/pack.py --xpi --skip-test`。
+
+## 关于 27 个 innerHTML 警告
+
+（与上次提交相同的说明，如有需要可参考上版备注。）

@@ -156,8 +156,10 @@ def make_zip(files, out, stripped=None, target="chromium"):
             if bg.get("service_worker") and bg.get("scripts"):
                 if target == "firefox":
                     bg.pop("service_worker", None)
-                    # 火狐的事件页不是 module，type 一起去掉
-                    bg.pop("type", None)
+                    # 只去掉 service_worker。
+                    # **type: module 必须留着** —— background.js 是 ES module
+                    # （8 个 import），删了火狐会按普通脚本解析，import 直接语法错误
+                    # （2026-11-08 踩到：1.3.1 首版把它删了，会白屏）
                 else:
                     bg.pop("scripts", None)
                 m["background"] = bg
