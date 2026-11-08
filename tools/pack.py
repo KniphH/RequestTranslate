@@ -126,7 +126,7 @@ def strip_sources(files):
     return tmp
 
 
-def make_zip(files, out, stripped=None):
+def make_zip(files, out, stripped=None, target="chromium"):
     """写 zip。`stripped` 非空时用剥过注释的版本（那个目录里没有的文件照旧读源码）。"""
 
     def source(name):
@@ -138,7 +138,30 @@ def make_zip(files, out, stripped=None):
 
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for name in files:
-            z.write(source(name), name)
+            if name != "manifest.json":
+                z.write(source(name), name)
+                continue
+            # manifest.json 单独处理：按目标浏览器裁 background 段。
+            #
+            # 仓库里那份同时写了 service_worker（Chromium）和 scripts（Firefox）——
+            # 两个浏览器**运行时**都能加载（各自忽略不认的那个），本地「加载解压文件夹」也正常。
+            # 但**商店校验器不容忍**：Edge 会直接报
+            #   The background.scripts field cannot be used with manifest version 3
+            # 整包被拒（2026-11-08 实测）。所以出包时按 target 裁一次：
+            #   chromium -> 只留 service_worker
+            #   firefox  -> 只留 scripts（Firefox 不支持 service_worker，BCD version_added: false）
+            # 仓库里那份保持双份不动 —— 那是给本地加载和「一份源码两端用」的。
+            m = json.loads(source(name).read_text(encoding="utf-8"))
+            bg = m.get("background") or {}
+            if bg.get("service_worker") and bg.get("scripts"):
+                if target == "firefox":
+                    bg.pop("service_worker", None)
+                    # 火狐的事件页不是 module，type 一起去掉
+                    bg.pop("type", None)
+                else:
+                    bg.pop("scripts", None)
+                m["background"] = bg
+            z.writestr(name, json.dumps(m, ensure_ascii=False, indent=2) + "\n")
     if out.read_bytes()[:2] != b"PK":
         sys.exit("写出来的不是 zip（魔数不对）！")
 
@@ -311,7 +334,13 @@ def main():
     ap.add_argument(
         "--xpi",
         action="store_true",
-        help="顺便出一个 .xpi（火狐 / AMO 用）—— 内容和 zip 完全相同，只是扩展名不同",
+        help="顺便出一个 .xpi（火狐 / AMO 用）。注意：它的 manifest 会裁成火狐形态（只留 background.scripts）",
+    )
+    ap.add_argument(
+        "--target",
+        choices=["chromium", "firefox"],
+        default="chromium",
+        help="zip 给谁用：chromium（Edge/Chrome，默认）或 firefox。会据此裁 manifest 的 background 段",
     )
     args = ap.parse_args()
 
@@ -326,16 +355,19 @@ def main():
 
     files = collect()
     stripped = None if args.no_strip else strip_sources(files)
-    make_zip(files, out, stripped)
+    make_zip(files, out, stripped, args.target)
     size = out.stat().st_size
     print(f"版本 {version} → {out}")
     print(f"zip：{len(files)} 个文件，{size:,} 字节（{size / 1024:.1f} KB），魔数 PK ✓")
 
-    # 火狐：内容与 zip 完全一致（一份 manifest 通吃两边），只是扩展名按火狐的习惯叫 .xpi。
-    # 之所以还单独出一个：AMO 提交页和「拖进火狐」的场景都认 .xpi，用 .zip 会被问东问西。
+    # 火狐包：**不能再直接拷 zip** —— 两者的 manifest 必须不同。
+    #
+    # 仓库里那份 manifest 同时写了 service_worker 和 scripts，那是给「本地加载」和
+    # 「一份源码两端用」的；但商店/AMO 校验不接受多余字段（Edge 实测直接拒整包）。
+    # 所以 zip 和 xpi 各自按自己的 target 出包，manifest 分别裁一次。
     if args.xpi:
         xpi = out.with_suffix(".xpi")
-        shutil.copyfile(out, xpi)
+        make_zip(files, xpi, stripped, "firefox")
         xsize = xpi.stat().st_size
         if xpi.read_bytes()[:2] != b"PK":
             sys.exit("xpi 魔数不对！")

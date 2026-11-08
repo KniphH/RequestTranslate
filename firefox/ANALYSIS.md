@@ -504,3 +504,49 @@ Bing 翻译（免费 · 无需 Key）  |  简体中文
 
 火狐这套定位是**移植验证**，不是回归主力 —— 凡是 Chromium 也能量到的，不在这里重复。
 真要扩，优先补这几条：剪切板 OCR（唯一走平台分支的功能）、截图/框选、图片直传。
+
+## 待验 #2 的结论需要修正（2026-11-08 Edge 商店实测）
+
+上面第 354 行写「#2 一份 manifest 通吃 成立」，依据是「Edge 侧 1641 项全绿、火狐侧实测可用」。
+**那个依据只覆盖了「浏览器能不能加载」，漏了「商店校验器能不能接受」。**
+
+Edge 商店实际提交 `request-translate-1.3.1.zip` 的结果：
+
+```
+Your package failed validation.
+  Package Validation Errors:
+  - The background.scripts field cannot be used with manifest version 3.
+    Use the background.service_worker field instead.
+    Code: background: { "service_worker": "background.js", "scripts": ["background.js"], "type": "module" }
+    Line: 39 Column: 17
+```
+
+**整包被拒，连审核都没进。** 结论要拆成两层：
+
+| 场景 | 双字段 manifest 能不能用 |
+| --- | --- |
+| 本地「加载解压文件夹」（Edge / Chrome / Firefox） | 能 —— 各自忽略不认的字段 |
+| **提交商店 / AMO** | **不能** —— 校验器不容忍多余字段 |
+
+### 修法（已实现）
+
+`tools/pack.py` 出包时按目标裁 `background`，**仓库里的 manifest 保持双字段不动**：
+
+| 命令 | 产出的 background | 用途 |
+| --- | --- | --- |
+| `python tools/pack.py` | `{service_worker, type}` | Edge / Chrome 商店 |
+| `python tools/pack.py --xpi` | `{scripts}` | AMO / 拖进火狐 |
+
+注意 `--xpi` **不再是从 zip 拷一份改名**（那会让两个包 manifest 相同），而是**独立出包**。
+所以现在 `1.3.1.zip` 是 125,505 字节、`1.3.1.xpi` 是 125,485 字节，**大小不同是正常的**。
+
+实测（2026-11-08）：
+
+- zip 在 Chrome 里加载，`background: {service_worker, type}`、DNR `ua-rules` 生效、state 正常初始化
+- xpi 走 `web-ext lint` 得到 **0 错误 / 32 警告**（比之前少了一条 `BACKGROUND_SERVICE_WORKER_IGNORED`，
+  因为 xpi 里已经没有 `service_worker` 了）
+- zip 走 `web-ext lint` 报 `BACKGROUND_SERVICE_WORKER_NOFALLBACK`。**这条是火狐视角的抱怨**
+  （它要求有 `scripts` 兜底），对 Edge 包无所谓，别被它误导
+
+`firefox/ANALYSIS.md:412` 那条「`BACKGROUND_SERVICE_WORKER_IGNORED` 正是通吃依赖的行为」也要按
+这个结论重读：那个警告是**火狐在抱怨**，不是祝福。
