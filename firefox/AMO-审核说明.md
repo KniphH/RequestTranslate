@@ -89,6 +89,73 @@ user configured themselves.
 | `activeTab` | 同上，只作用于用户当前操作的那个标签页 |
 | `clipboardRead` | 「翻译剪切板里的截图」读图。**不读文字** |
 | `offscreen` | Chromium 专用（读剪切板要有 DOM）。火狐上不使用 |
+| `declarativeNetRequest` | **1.3.1 新增**。仅用于给内置的 bilibili 免费翻译补 `User-Agent` / `Origin` 两个请求头（见下方专节）。规则只匹配那一个域名 |
 | `<all_urls>` | 用户可能在任意网页上划词；请求要发往用户自己填的任意域名 |
 
 **没有任何权限用于收集数据。** 数据只发往用户在设置页自己配置的接口。
+
+### 1.3.1 新增：`declarativeNetRequest`（重要，请读这一段）
+
+1.3.1 内置了一条 **B 站官方的免费翻译服务**（`index-translate.bilibili.com`，
+官方仓库 <https://github.com/bilibili/Index-Translate>，无需 API Key）。
+
+该服务的风控要求请求同时携带：
+
+```
+User-Agent: Index-Translate-Client/1.0 SnapCut/1.0
+Origin:     https://www.bilibili.com
+```
+
+而**浏览器的 `fetch` 不允许扩展修改 `User-Agent`**（它属于禁止修改的请求头，
+设置了会被静默丢弃并替换成浏览器真实 UA）。**这不是我们的选择，是浏览器的硬限制** ——
+实测：`headers: {"User-Agent": "X-Test/1.0"}` 发出去，服务端收到的是 `Mozilla/5.0 ... Edg/...`。
+
+所以只能用 `declarativeNetRequest` 的 `modifyHeaders` 来补这两个头。规则是**静态规则集**
+（`manifest.declarative_net_request.rule_resources` → `lib/ua-rules.json`），全文如下：
+
+```json
+[{
+  "id": 1, "priority": 1,
+  "action": {"type": "modifyHeaders", "requestHeaders": [
+    {"header": "user-agent", "operation": "set", "value": "Index-Translate-Client/1.0 SnapCut/1.0"},
+    {"header": "origin",     "operation": "set", "value": "https://www.bilibili.com"}
+  ]},
+  "condition": {
+    "requestDomains": ["index-translate.bilibili.com"],
+    "resourceTypes": ["xmlhttprequest", "other"]
+  }
+}]
+```
+
+**请重点核对这三点：**
+
+| 审核关注点 | 事实 |
+| --- | --- |
+| 规则影响范围 | **只匹配 `index-translate.bilibili.com` 一个域名**（`requestDomains`）。发往其他任何站点的请求都不受影响 |
+| 它改了什么 | 只改 `user-agent` 和 `origin` 两个请求头，**不读取、不记录、不转发任何响应内容** |
+| 有没有绕过鉴权 | **没有**。这个接口本身就是公开的、不要求任何 Key 或令牌（curl 一趟就通，见官方 README「Option 1: Free Online API」）。改这两个头只是为了让请求不被风控页拦掉，不是绕过任何身份验证 |
+
+**用户能不能不用它？** 能，而且这是默认状态：
+
+- 默认选中的配置是 **Bing 翻译**，不走 B 站接口
+- 只有用户**主动**在面板顶栏或设置页选中「bilibili Index-Translate」那条时，文字才会发给 B 站
+- 用户也可以直接把那条配置删掉
+
+`PRIVACY.md` 第 15 行起已如实写明上述全部内容（含「文字会上传到 bilibili 服务器」）。
+
+**它是不是远程代码？** 不是。`lib/ua-rules.json` 是随包一起分发的静态 JSON，
+扩展不下载、也不执行任何远程代码（项目本身零依赖、零构建、无 CDN 引用）。
+
+### `<all_urls>` 的说明补充
+
+1.3.1 起 `host_permissions` 仍是 `<all_urls>`，理由不变：用户可能在任意网页上划词，
+请求要发往用户自己填写的任意域名。**新增的 DNR 规则不会扩大它的影响范围** ——
+那条规则写死了只匹配一个域名。
+
+### 1.3.1 的其它改动（与权限无关，仅供参考）
+
+- 修了一个**继承属性穿透 shadow DOM** 的排版问题：某些网页（如 nhentai）把
+  `text-align: center` 写在 `html`/`body` 上，它会穿过 shadow DOM 继承进面板，
+  导致译文被居中。修法是 `.rt-panel` 里显式写回 `text-align: start`。
+  这是纯 CSS 修复，不涉及任何权限。
+- 文档图片与演示 GIF 更新（仓库内资源，不进包）。
