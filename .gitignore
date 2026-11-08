@@ -19,3 +19,4 @@ tools/MSG*.txt
 tools/*.png
 tools/_*
 tools/addassert.mjs
+%SystemDrive%/
