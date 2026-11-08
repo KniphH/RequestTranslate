@@ -538,7 +538,14 @@ Your package failed validation.
 | `python tools/pack.py --xpi` | `{scripts}` | AMO / 拖进火狐 |
 
 注意 `--xpi` **不再是从 zip 拷一份改名**（那会让两个包 manifest 相同），而是**独立出包**。
-所以现在 `1.3.1.zip` 是 125,505 字节、`1.3.1.xpi` 是 125,485 字节，**大小不同是正常的**。
+所以现在 `1.3.1.zip` 与 `1.3.1.xpi` 的大小**只差 manifest 那几字节**（T1 合并 CSS 后：
+zip 119,534 / xpi 119,528，差 6 字节 —— 就是 `service_worker` 和 `scripts` 两个字段的长度差）。
+
+⚠️ **别拿这一条当「两个包可以不同步」的借口**：它们只允许差 `manifest.json`。
+T1 合并 CSS 之后，zip 重打了、xpi 忘了重打，xpi 里还是旧源码（`panel-core.js` 少 15 KB、
+`content.js` 还带内联 CSS 大块）—— 拿那种 xpi 传 AMO，提交的代码和仓库对不上。
+现在 `tools/verify-pack.py` 会逐文件比对两个包（除 manifest 必须一致），
+**只重打一个包会被它拦住**。
 
 实测（2026-11-08）：
 

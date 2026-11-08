@@ -20,3 +20,6 @@ tools/*.png
 tools/_*
 tools/addassert.mjs
 %SystemDrive%/
+
+# Chrome / Edge 打包与 DNR 编译产物（会反复生成，每次让 git status 变脏）
+_metadata/

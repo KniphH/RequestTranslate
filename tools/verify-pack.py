@@ -114,6 +114,48 @@ def main():
             saved += src.stat().st_size - z.getinfo(n).file_size
     print(f"  体积：剥注释一共省下 {saved:,} 字节（压缩前）")
 
+    # 5. background 形态 —— 这条拿两次真实事故换来：
+    #    · Edge 商店整包拒：「background.scripts 不能和 MV3 一起用」
+    #    · 火狐白屏：裁 background 时把 type: module 也删了，而 background.js 是 ES module
+    #      （8 个 import），删了火狐按普通脚本解析，import 直接语法错误。
+    # 判据：出包时按 target 裁过一次，两种形态各自合法，且 type 必须留。
+    man = json.loads(z.read("manifest.json").decode("utf-8"))
+    bg = man.get("background") or {}
+    has_sw = "service_worker" in bg
+    has_sc = "scripts" in bg
+    if not bg.get("type"):
+        problems.append("background 缺 type: module —— background.js 是 ES module，删了火狐起不来")
+    if has_sw and has_sc:
+        problems.append("background 同时有 service_worker 和 scripts —— 商店校验会整包拒")
+    if not has_sw and not has_sc:
+        problems.append("background 既没 service_worker 也没 scripts —— 后台不会启动")
+    if zpath.suffix == ".xpi" and has_sw:
+        problems.append("xpi 里不该有 service_worker（火狐不认）")
+    if zpath.suffix == ".zip" and has_sc:
+        problems.append("zip 里不该有 scripts（Edge 商店会拒）")
+    # 只在真的合法时才吹「形态正确」—— 检查在打印之前，否则坏包也会印一句「正确」（实测踩到）
+    bad_before = len(problems)
+    if len(problems) == bad_before:
+        form = "scripts" if has_sc else "service_worker"
+        print(f"  background：{form} + type:module（{zpath.suffix} 形态正确）")
+
+    # 6. 同名 zip 与 xpi 必须「除 manifest 外逐文件一致」—— 防「只重打了一个包」。
+    #    真实事故：T1 合并 CSS 后只重打了 zip，xpi 还留旧源码（panel-core 少 15 KB、
+    #    content.js 还带内联 CSS 大块）。拿那种 xpi 传 AMO，提交的代码和仓库对不上。
+    twin = zpath.with_suffix(".xpi" if zpath.suffix == ".zip" else ".zip")
+    if twin.is_file():
+        tz = zipfile.ZipFile(twin)
+        if set(names) != set(tz.namelist()):
+            problems.append("与 " + twin.name + " 的文件列表不同")
+        else:
+            diffs = [n for n in names if n != "manifest.json" and z.read(n) != tz.read(n)]
+            if diffs:
+                problems.append(
+                    "与 " + twin.name + " 有 " + str(len(diffs)) + " 个文件内容不同（只差 manifest 才对）：" + ", ".join(diffs[:3])
+                )
+            else:
+                print(f"  双包一致：与 {twin.name} 除 manifest 外逐字节相同（{len(names)} 个文件）")
+
     if problems:
         print("\n发现问题：")
         for p in problems:
