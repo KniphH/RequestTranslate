@@ -23,7 +23,24 @@
 
 - [ ] **本地 OCR 一期（Tesseract.js）**：引擎 4.7MB + 中英语言包打进包约 5.8MB。
   **和现在 116 KB 的包是两种产品定位**，等明确需求信号再动。二期再议 PP-OCRv4 ONNX。
-- [ ] **火狐移植**：10-06 有可行性清单。双端维护拖慢迭代，不建议现在碰。
+- [x] **火狐移植** → 2026-11-08 完成并提交 AMO（1.3.0 审核中，1.3.1 物料已备）。
+  一份源码两端打包：`python tools/pack.py`（Chromium）/ `--xpi`（Firefox）。
+  关键实现：manifest 加 `background.scripts` + `browser_specific_settings.gecko`；
+  `offscreen` 在火狐上降级为页面内读剪切板（`lib/clipboard-read.js` 两边共用）。
+
+  **⚠️ 「一份 manifest 通吃」只在浏览器运行时成立，商店校验器不接受** ——
+  仓库里的 `manifest.json` 是双字段（`service_worker` 给 Chromium、`scripts` 给 Firefox，
+  各自忽略不认的那个），本地「加载解压文件夹」两个浏览器都正常，所以早期测试全绿；
+  但 Edge 商店提交时**整包被拒**：
+
+  ```
+  The background.scripts field cannot be used with manifest version 3.
+  ```
+
+  所以 `tools/pack.py` 出包时按 target 裁一次：zip 只留 `service_worker`，xpi 只留
+  `scripts` + `type: "module"`（**type 不能删** —— `background.js` 是 ES module，
+  删了火狐会按普通脚本解析，`import` 直接语法错误、扩展起不来）。
+  教训：**仓库测试全绿 ≠ 包里是对的**，打包后必须直接读包内 `manifest.background` 核对。
 
 ## 已否决（别再提）
 

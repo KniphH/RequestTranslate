@@ -2,7 +2,8 @@
  * 设置页逻辑
  */
 
-import { PANEL_CSS } from './lib/panel-styles.js';
+/* 样式表来自 lib/panel-core.js（唯一真相源，它先于 options.js 加载）：
+   const { PANEL_CSS } = window.RTPanelCore; */
 import {
   loadState,
   saveState,
@@ -16,6 +17,11 @@ import {
   PANEL_OWNED_SETTING_KEYS,
   adoptPanelOwned
 } from './lib/store.js';
+
+/* 两个样式表都由 lib/panel-core.js 提供（普通脚本、挂在 window.RTPanelCore 上，
+   options.html 里它在 options.js 之前加载）。以前是 import 两个 module，现在一处。
+   原因见 lib/panel-core.js 头注：content script 不能 import，样式表必须能两边共用。 */
+const { TRIGGER_CSS, PANEL_CSS } = window.RTPanelCore;
 /* 「主请求 + 后备」那套链函数住在 lib/requests.js —— 配置和 OCR 供应商共用
    （store.js 和 ocr.js 都 import 它，谁也不用反过来依赖谁）。 */
 import { uid, allRequests, requestChain, requestTemplateFor } from './lib/requests.js';
@@ -29,14 +35,7 @@ import {
   NO_IMAGE_MESSAGE,
   CLIPBOARD_UNAVAILABLE_MESSAGE
 } from './lib/clipboard.js';
-import {
-  TRIGGER_STYLES,
-  TRIGGER_CSS,
-  TRIGGER_SVG_SAMPLE,
-  getTriggerStyle,
-  clampTriggerSize,
-  parseTriggerSvg
-} from './lib/trigger-styles.js';
+import { TRIGGER_STYLES, TRIGGER_SVG_SAMPLE, getTriggerStyle, clampTriggerSize, parseTriggerSvg } from './lib/trigger-styles.js';
 import {
   OCR_PROVIDERS,
   BUILTIN_OCR_IDS,

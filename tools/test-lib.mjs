@@ -789,7 +789,6 @@ image={{imageUrlEncoded}}`;
 
 const {
   TRIGGER_STYLES,
-  TRIGGER_CSS,
   TRIGGER_SVG_SAMPLE,
   SVG_GUARDS,
   getTriggerStyle,
@@ -798,6 +797,16 @@ const {
   sanitizeTriggerSvg,
   DEFAULT_TRIGGER_STYLE
 } = await import('../lib/trigger-styles.js');
+
+/* 两个样式表的唯一真相源在 lib/panel-core.js（2026-11-09 合并）。
+   它是普通脚本、把 CSS 挂到 window.RTPanelCore 上 —— 这里 import 它只为触发副作用，
+   然后从全局取。为什么不能直接 export：content script 不能 import，样式表必须两边共用。 */
+/* panel-core.js 是给浏览器写的普通脚本（最后一步 window.RTPanelCore = {...}），
+   Node 里没有 window —— 造一个最小的再 import，只为拿到那两个 CSS 常量。
+   这不算「在 Node 里跑浏览器代码」：本文件从不调用它的 DOM 函数，只读字符串。 */
+globalThis.window = globalThis.window || {};
+await import('../lib/panel-core.js');
+const { TRIGGER_CSS, PANEL_CSS } = globalThis.window.RTPanelCore;
 
 section('11. 翻译按钮：样式预设与尺寸');
 {
@@ -895,7 +904,9 @@ section('13. 按钮样式：content.js 里的副本必须和 lib 一致');
   const src = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
   const squash = (s) => s.replace(/\s+/g, '');
 
-  check('按钮样式表逐字一致（忽略空白）', squash(src).includes(squash(TRIGGER_CSS)));
+  check('content.js 不再手抄按钮样式表（改从 RTPanelCore 取）',
+    /window\.RTPanelCore\.TRIGGER_CSS/.test(src) && !squash(src).includes(squash(TRIGGER_CSS).slice(0, 200)),
+    '合并后应只剩一行引用');
 
   for (const s of TRIGGER_STYLES) {
     if (!s.svg) continue;
@@ -2584,7 +2595,7 @@ section('20. 「临时直连」已彻底移除：权限 / 模块 / 调用点都�
      以前正文 17.1:1（刺眼）、diag 标签 2.8:1（远低于 WCAG AA 4.5，看不清）——
      同一个主题里最亮的太亮、最暗的太暗。现在压到 5.1~13.0，每一档都可读又不刺眼。 */
   {
-    const css = readFileSync(new URL('../lib/panel-styles.js', import.meta.url), 'utf8');
+    const css = PANEL_CSS   /* 唯一真相源：lib/panel-core.js（2026-11-09 合并） */;
     const darkBlock = css.slice(css.indexOf('.rt-panel {'), css.indexOf('.rt-panel.light'));
     const lightBlock = css.slice(css.indexOf('.rt-panel.light'), css.indexOf('/* ---- 头部'));
     const grabVars = (b) => {
@@ -2617,28 +2628,36 @@ section('20. 「临时直连」已彻底移除：权限 / 模块 / 调用点都�
         dk('text-dim') >= dk('text-foot') && dk('text-foot') >= dk('placeholder'),
       ['text-out', 'text', 'text-dim', 'text-foot', 'placeholder'].map((k) => dk(k).toFixed(1)).join(' > '));
   }
-  /* 面板 CSS 有**两份**：content.js 内联（content script 不能 import）+ lib/panel-styles.js
-     （设置页预览用）。两份必须一致，否则设置页预览和真面板会悄悄长得不一样 ——
-     这正是「预览和实际对不上」的根源之一（kniph 2026-10-17）。这里只比**非空行**，
-     空行差异不算（两份的排版留白可以不同）。 */
-  const cssInline = (() => {
-    const m = content.match(/style\.textContent = `([\s\S]*?)\n`;/);
-    return m ? m[1] : '';
-  })();
-  const cssShared = (() => {
-    const m = read('../lib/panel-styles.js').match(/export const PANEL_CSS = `([\s\S]*?)\n`;/);
-    return m ? m[1] : '';
-  })();
-  const norm = (t) => t.split('\n').map((l) => l.trimEnd()).filter((l) => l.trim()).join('\n');
-  check('两份面板 CSS 内容一致（content.js 内联 vs lib/panel-styles.js）',
-    !!cssInline && !!cssShared && norm(cssInline) === norm(cssShared),
-    `内联 ${cssInline.split('\n').length} 行 / 共享 ${cssShared.split('\n').length} 行`);
+  /* 面板 CSS 现在是**一份**（2026-11-09 合并）：唯一真相源是 lib/panel-core.js 的
+     window.RTPanelCore.PANEL_CSS，content.js 和 options.js 都从全局取。
+     原来那条「两份内容一致」的逐字比对断言，做完合并后就成了恒真的死测试，已删除。
+     换成下面三条，钉住「确实只有一份、且两边都从它取」这个新事实。 */
+  check('样式表只有一处定义（panel-core.js），旧副本不再各自 export',
+    /const PANEL_CSS = `/.test(read('../lib/panel-core.js')) &&
+      !/export const PANEL_CSS/.test(read('../lib/panel-styles.js')) &&
+      !/export const TRIGGER_CSS/.test(read('../lib/trigger-styles.js')),
+    'panel-core 该有一份、两个旧 lib 该没有');
+  check('content.js 与 options.js 都从 window.RTPanelCore 取样式（不是手抄）',
+    /window\.RTPanelCore\.PANEL_CSS/.test(read('../content.js')) &&
+      /window\.RTPanelCore\.TRIGGER_CSS/.test(read('../content.js')) &&
+      /* options.js 用的是解构写法 const { TRIGGER_CSS, PANEL_CSS } = window.RTPanelCore;
+         所以这里不能找 `.PANEL_CSS` 字面 —— 找解构里同时出现两个名字。 */
+      /\{\s*TRIGGER_CSS\s*,\s*PANEL_CSS\s*\}\s*=\s*window\.RTPanelCore/.test(read('../options.js')),
+    '两边都应走全局对象');
+  check('content.js 里不再有内联的面板 CSS 大块（合并后只剩一行引用）',
+    !/style\.textContent = `/.test(read('../content.js')),
+    '没有就地贴样式表了');
+
 
   /* 滚动条不能把右边距撑大、也不能让左右不一样（kniph 2026-11-01 报的）。
      做法：scrollbar-gutter: stable 让槽位**始终**占着（出现/消失都不跳），
      再从右内边距扣掉这 8px（自绘滚动条宽度）—— 这样 .7em 的左右才真正相等。 */
   {
     /* 带分号的才是真声明（注释里那句没有分号，别被它蒙了） */
+    /* 滚动条相关的断言原本读「content.js 内联那份」，CSS 合并后没有了 ——
+       改成读唯一真相源 PANEL_CSS。断言意图不变：钉住三个可滚动区都留了槽、
+       右内边距扣掉 8px、滚动条宽度仍是 8px。 */
+    const cssInline = PANEL_CSS;
     const gutters = (cssInline.match(/scrollbar-gutter: stable;/g) || []).length;
     check("三个可滚动区都留了滚动条槽（.rt-out / .rt-src / .rt-diag）",
       gutters === 3, gutters + " 处");
@@ -2694,9 +2713,11 @@ section('21. 结果区最大高度：默认值 = 原来写死的那个数，而�
   // content.js 手抄了一份 prefs 初值（content script 不能 import），两边都得有
   const src = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
   check('content.js 那份 prefs 初值里也有它（且同是 46）', /\bpanelMaxHeight:\s*46\b/.test(src));
-  check('上限读的是变量，没写死回去', src.includes('var(--rt-max-h, 46vh)'));
+  /* CSS 部分改读唯一真相源 PANEL_CSS（2026-11-09 合并后 content.js 里没有样式表了）；
+     行为部分（classList.toggle）仍在 content.js。 */
+  check('上限读的是变量，没写死回去', PANEL_CSS.includes('var(--rt-max-h, 46vh)'));
   check('填 0（不限）靠一个类显式关掉，而不是把变量设成 none',
-    src.includes('.rt-panel.no-max-h .rt-out { max-height: none; }') &&
+    PANEL_CSS.includes('.rt-panel.no-max-h .rt-out { max-height: none; }') &&
     src.includes("classList.toggle('no-max-h'"));
 }
 
@@ -3303,11 +3324,11 @@ section('28. 截图那一步失败点 ↻：重发**刚才那张图**，两条�
   check('换回文字原文时会摘掉 has-img（不然那块高度上限一直撑着）',
     /classList\.remove\('has-img'\)/.test(src));
 
-  const css = src;   // 面板 CSS 就在 content.js 里（content script 不能 import）
+  const css = PANEL_CSS;   // 唯一真相源在 lib/panel-core.js（2026-11-09 合并）
   check('贴出来的图有尺寸上限（长截图不该把面板撑破）',
     /\.rt-src \.rt-srcimg \{[\s\S]{0,400}max-height:\s*11em/.test(css));
   check('原文区有图时高度上限抬高（不然 6em 里塞不下图 + 那句话）',
-    src.includes('.rt-src.has-img { max-height: 14em; }'));
+    css.includes('.rt-src.has-img { max-height: 14em; }'));
 }
 
 
@@ -3984,14 +4005,12 @@ section('28. 截图那一步失败点 ↻：重发**刚才那张图**，两条�
    面板里的原文区 / 译文 / 底栏就全被居中，看着像我们排版坏了。
    修法是 .rt-panel 里显式写回 text-align: start。下面两条钉住它。
    kniph 2026-11-08 报的。 */
-const __cssA = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
-const __cssB = readFileSync(new URL('../lib/panel-styles.js', import.meta.url), 'utf8');
+/* 样式表合并后只有一份，所以只查 PANEL_CSS 一处。 */
 check('面板显式声明了 text-align（挡住网页继承进来的居中）',
-  /text-align:\s*start/.test(__cssA) && /text-align:\s*start/.test(__cssB),
-  'content.js / panel-styles.js 任一份缺了就是漏网');
+  /text-align:\s*start/.test(PANEL_CSS), 'PANEL_CSS 里缺了就是漏网');
 check('那条 text-align 写在 .rt-panel 里（不是写在别处白写）',
   (() => {
-    for (const src of [__cssA, __cssB]) {
+    for (const src of [PANEL_CSS]) {
       const i = src.indexOf('.rt-panel {');
       if (i < 0) return false;
       const j = src.indexOf('}', i);
@@ -4002,6 +4021,49 @@ check('那条 text-align 写在 .rt-panel 里（不是写在别处白写）',
   })(),
   '必须写在 .rt-panel 的规则块里');
 
+/* ---- DNR 规则：隐私承诺的守门人（2026-11-09 补，此前断言数为 0）----
+   这条规则决定「扩展会替用户改哪些请求头」。它的边界必须被钉住：
+   一旦有人手滑把 requestDomains 加宽、或多加一个 header，就等于扩大了扩展的
+   能力范围，而 PRIVACY.md 里对用户的承诺会立刻变成假话。 */
+{
+  const rules = JSON.parse(readFileSync(new URL('../lib/ua-rules.json', import.meta.url), 'utf8'));
+  eq('规则只有一条（多一条就要重新审视隐私描述）', rules.length, 1);
+  const r0 = rules[0];
+  eq('只对 bilibili 的 index-translate 那一个域名生效',
+    JSON.stringify(r0.condition.requestDomains), JSON.stringify(['index-translate.bilibili.com']));
+  eq('只改 request 头，不动 response 头', r0.action.type, 'modifyHeaders');
+  const hdrs = r0.action.requestHeaders.map((h) => h.header).sort();
+  eq('只改 user-agent 和 origin 两个头（多一个都算扩权）',
+    JSON.stringify(hdrs), JSON.stringify(['origin', 'user-agent']));
+  check('两个头都是 set（不是 append/remove —— 那会和浏览器默认值打架）',
+    r0.action.requestHeaders.every((h) => h.operation === 'set'));
+  check('资源类型只含 xmlhttprequest / other（不碰主文档导航）',
+    r0.condition.resourceTypes.every((t) => t === 'xmlhttprequest' || t === 'other') &&
+      r0.condition.resourceTypes.length <= 2);
+  check('没有 excludeHeaders / tabIds 之类的额外条件（条件越少越好审）',
+    !('tabIds' in r0.condition) && !('excludedRequestDomains' in r0.condition));
+}
+
+/* ---- clipboard-read：读图的几条分支（此前断言数为 0）----
+   它同时被 offscreen.js（Chromium）和 background.js（Firefox 兜底）用，
+   走错一条分支的后果是「截图翻译静默不工作」，所以关键判断要钉住。 */
+{
+  const { errText } = await import('../lib/clipboard-read.js');
+  eq('errText 取 message', errText(new Error('boom')), 'boom');
+  eq('errText 取字符串', errText('plain'), 'plain');
+  eq('errText 兜底（空值不返回空串）', errText(null).length > 0, true);
+  const src = readFileSync(new URL('../lib/clipboard-read.js', import.meta.url), 'utf8');
+  check('没有 clipboard API 时返回 undefined（让调用方走别的路，不是报错）',
+    /if \(!navigator\.clipboard[\s\S]{0,80}return undefined/.test(src));
+  check('剪贴板里没有图片时返回 no-image（不是抛异常）', src.includes("reason: 'no-image'"));
+  check('读失败时返回 unavailable 并带上 errText', /reason: 'unavailable'/.test(src));
+  /* MIME 判断在 lib/clipboard.js（clipboard-read 只是 import 它），所以查那个文件。
+     用 startsWith 而不是 /^image\//i 是为了躲 addons-linter 的假报警（见那边的注释）。 */
+  const cbSrc = readFileSync(new URL('../lib/clipboard.js', import.meta.url), 'utf8');
+  check('MIME 判断只认 image/ 开头（不把文字剪贴板当图）',
+    /startsWith\('image\/'\)/.test(cbSrc));
+  check('判断前先 toLowerCase（Image/PNG 也要认）', /toLowerCase\(\).*startsWith\('image\/'/.test(cbSrc));
+}
 console.log('\n' + '='.repeat(46));
 console.log(`通过 ${passed} 项，失败 ${failed} 项`);
 console.log('='.repeat(46));
