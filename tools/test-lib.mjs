@@ -3977,7 +3977,33 @@ section('28. 截图那一步失败点 ↻：重发**刚才那张图**，两条�
 }
 
 /* ------------------------------------------------------------------ */
+
+/* ---- 面板不能被网页的 text-align 带跑 ----
+   页面把 text-align 写在 html/body 上时，它会**穿过 shadow DOM** 继承进来
+   （和 scrollbar-color 那个坑同源）：宿主页是居中排版（nhentai 之类），
+   面板里的原文区 / 译文 / 底栏就全被居中，看着像我们排版坏了。
+   修法是 .rt-panel 里显式写回 text-align: start。下面两条钉住它。
+   kniph 2026-11-08 报的。 */
+const __cssA = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
+const __cssB = readFileSync(new URL('../lib/panel-styles.js', import.meta.url), 'utf8');
+check('面板显式声明了 text-align（挡住网页继承进来的居中）',
+  /text-align:\s*start/.test(__cssA) && /text-align:\s*start/.test(__cssB),
+  'content.js / panel-styles.js 任一份缺了就是漏网');
+check('那条 text-align 写在 .rt-panel 里（不是写在别处白写）',
+  (() => {
+    for (const src of [__cssA, __cssB]) {
+      const i = src.indexOf('.rt-panel {');
+      if (i < 0) return false;
+      const j = src.indexOf('}', i);
+      const block = src.slice(i, j + 1);
+      if (!/text-align:\s*start/.test(block)) return false;
+    }
+    return true;
+  })(),
+  '必须写在 .rt-panel 的规则块里');
+
 console.log('\n' + '='.repeat(46));
 console.log(`通过 ${passed} 项，失败 ${failed} 项`);
 console.log('='.repeat(46));
+
 process.exit(failed === 0 ? 0 : 1);

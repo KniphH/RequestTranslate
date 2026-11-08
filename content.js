@@ -270,6 +270,12 @@ ${TRIGGER_CSS}
   overflow: hidden;
   pointer-events: auto;
   user-select: text;
+
+  /* text-align 也是**继承属性**，一样能穿过 shadow DOM —— 和上面 scrollbar-color
+     那个坑同源。宿主页是居中排版（博客正文、漫画站、某些 CMS 的容器）时，
+     面板里的原文区和译文会一起被居中，看起来像我们自己的排版坏了。
+     显式写回 start 把继承掐断：面板自己说了算，永远左对齐。 */
+  text-align: start;
 }
 .rt-panel.show { display: flex; }
 
