@@ -350,7 +350,7 @@ Bing 网页版翻译是**两步**：先 GET `bing.com/translator`，从 630KB �
 | 准备打包 / 发版 | **`npm test` 全量**（四项都跑） |
 
 ```bash
-npm test              # 全量：静态检查 2 + test-lib 977 + test-engine 89 + test-strip 19 + e2e 554 = 1641 项
+npm test              # 全量：静态检查 2 + test-lib 988 + test-engine 89 + test-strip 19 + e2e 555 = 1653 项
 
 # 打包（会先跑一遍全量测试）
 python tools/pack.py          # 出 dist/request-translate-<版本>.zip
@@ -388,7 +388,8 @@ export PYTHONIOENCODING=utf-8
 
 - PowerShell **默认禁止跑 `npm.ps1`**（执行策略 `UnauthorizedAccess`），而 `& npm ...` 解析到的正是 `.ps1`。**显式写 `npm.cmd`**：`& "$nb\npm.cmd" run pack`。报错原文是「无法加载文件 …npm.ps1，因为在此系统上禁止运行脚本」，和「命令不存在」长得不一样。
 - `$env:PATH` 要先补上 node 目录，否则 `pack.py` 内部那次 `npm test` 照样 `FileNotFoundError: [WinError 2]`（和上面第 1 条同源，只是换了个宿主）。`python` 本身在 PATH 里。
-
+
+
 
 3. **子进程输出的解码**（已修，无需手动处理）—— `pack.py` / `verify-pack.py` 里
    `subprocess.run(..., text=True)` 在 Windows 上默认按 ANSI（GBK）解码子进程输出，
@@ -400,7 +401,7 @@ export PYTHONIOENCODING=utf-8
 文件沙箱禁止时表现为 `spawn EPERM`（这是沙箱边界，不是环境缺东西）。
 `danger-full-access` 下正常；`workspace-write` 下 e2e 跑不了，其余四层不受影响。
 
-拆开看是 `test-lib` 942 项、`test-engine` 89 项、`test-strip` 19 项、`e2e-ui` 534 项，另加两项静态检查。各层补的盲区不同：
+拆开看是 `test-lib` 988 项、`test-engine` 89 项、`test-strip` 19 项、`e2e-ui` 555 项，另加两项静态检查。各层补的盲区不同：
 
 - **`check-globals`** — 语法检查看不出 `bindConfigList()` 这种「调用了但没写」，只有运行时才炸。它把注释、字符串、正则字面量剥掉之后逐个比对调用与声明。也可以指定文件：`node tools/check-globals.mjs lib/engine.js`。新增 `lib/*.js` 记得加进目标清单（含 `offscreen.js`）。识别**解构出来的对象参数**（`function f({ a, b })`）要单独一条正则 —— 只写 `\(([^()]*)\)` 的话 `{ a, b }` 整块留下来、拆开后每片都带花括号，一个都认不出来，里面的 `a` / `b` 反倒被报成「没定义」（`moveButton({ … onMove })` 踩过）。
 - **`check-dom`** — 比对 JS 里的 `$('#id')` / `querySelector('.x')` / `closest('.x')`，和「HTML 里写死的**加上** JS 里拼出来的」类名，防的是「选择器指向不存在的元素，启动时炸在 null 上」。正则里的坑：`querySelectorAll?` 那个 `?` 只管最后一个 `l`，**所有 `querySelector('.x')` 从来没被扫到**，得写 `querySelector(?:All)?`。
@@ -443,22 +444,38 @@ export PYTHONIOENCODING=utf-8
 
 ---
 
-## 几条「看着像对、其实不生效」的守卫（2026-10-18 通读补）
-
-这些地方的共同点：**代码在、注释也写了意图，但实际一次都没生效**。加断言时优先钉这类。
-
-- **恒假的守卫 = 死分支**：`parseCurl` 里「组合短选项逐个查」那段原来写 `inlineValue === null && tok.length > 2` —— `tok.length > 2` 时 `inlineValue` 必不为 null，反过来 `inlineValue === null` 时 `tok.length <= 2`，**恒假**。后果不是「少个优化」而是解析错：`curl -sd 'a=1'` 里 `d` 被丢掉、`a=1` 变成了 URL。现在按 curl 语义「有值旗标吃掉余下字符」。**找这类问题用覆盖率扫 `lib/*.js` 的未执行行，比人眼靠谱**。
-- **正则按想象的文案写 = 对真实报错永不命中**：`ocrErrorHint` 的模型名分支原来是 `model.{0,24}(…)`，而真机是 `The model `X` does not exist`（「model」到「does not exist」间隔 32 字符）；百度那条只认 `access_token`，而百度文案是 `Access token`（**空格**）。**写这类判据时拿厂商文档里的原文报错当输入跑一遍**，别自己编一句；放宽窗口时还要防误报（正文回显了 `model` + 无关的 `invalid` 不能算模型名错）。
-- **收好了但没人用的字段**：`parseCurl` 的 `warnings` 原来一次都没 push 过，`engine` 也从没读过它 —— 于是「`-d @file` 会原样发出去」这种事**闷着不吭声**。现在解析期提示会一路带到面板的「…」和设置页预览里（`runRequest` / `previewRequest` / `buildOcrRequest` 三处都要并进去）。
-- **读改写要排队**：`chrome.storage` 的「读→改→写」中间隔着 `await`，并发时后来者读到的是别人还没写回去的那份。两处踩过：`background.js` 写翻译记录（一次对比并发跑 2~4 条 → 只剩 1 条）、`content.js` 的 `mutateState`（连点两下开关）。修法都是**用 promise 串成队列** —— `clipboardRead` / `saveChain` / `historyQueue` 三个是同一套写法。
-- **两个写者 + 整份覆盖 = 互相顶掉**：面板按单键 RMW 写 `showOriginal` / `targetLang` / `ocr.imageConfigId`，而设置页是**整份 state 覆盖写**。设置页保存前要 `adoptPanelOwned()` 把「面板也会写、且页面没动过」的键以存档为准。**面板也会写的键要加进 `PANEL_OWNED_SETTING_KEYS`**。
-- **SSE 的 `\r\n` 会被 TCP 切开**：归一化不能逐块做，也不能「先把上一块的 `\r` 塞回 buffer 再处理本块」—— 塞回去的那 `\r` 不在本块的 replace 范围里，buffer 会留下 `\n\r\n`（本该 `\n\n`），事件切不开、整条流被末尾兜底拼成一段。做法是**把结尾那个 `\r` 扣下来**（`carryCr`），下一块来了拼回去**一起**归一。`test-lib` 里有五种切法（含「每个字节一块」）的断言。
-- **`postMessage` 本身会抛**：端口「存在但已断开」时抛 `Attempting to use a disconnected port object`。`content.js` 的 `postOrFail` 原来是这个文件里唯一漏了 try/catch 的发送点（另两处裸 abort 和后台的 `safePost` 都包了）。
-- **跨文件手抄的那一份要配逐字/逐值断言**：`formatBytes` 两份实现的小数位规则原来不同，同一张图在设置页是「49 KB」、面板是「48.8 KB」。两份面板 CSS 同理（`content.js` 内联 vs `lib/panel-styles.js`）。
-- **加了用户设置就别在别处写死默认值**：`frame-bridge.js` 原来写死 `slice(0, 8000)`，于是「单次最多发送字数」调到 8000 以上的用户，iframe 里的选区被静默砍到 8000。执行点只留一处（`content.js` 的 `translate()`）。
-
----
-
+## 几条「看着像对、其实不生效」的守卫（2026-10-18 通读补）
+
+
+
+这些地方的共同点：**代码在、注释也写了意图，但实际一次都没生效**。加断言时优先钉这类。
+
+
+
+- **恒假的守卫 = 死分支**：`parseCurl` 里「组合短选项逐个查」那段原来写 `inlineValue === null && tok.length > 2` —— `tok.length > 2` 时 `inlineValue` 必不为 null，反过来 `inlineValue === null` 时 `tok.length <= 2`，**恒假**。后果不是「少个优化」而是解析错：`curl -sd 'a=1'` 里 `d` 被丢掉、`a=1` 变成了 URL。现在按 curl 语义「有值旗标吃掉余下字符」。**找这类问题用覆盖率扫 `lib/*.js` 的未执行行，比人眼靠谱**。
+
+- **正则按想象的文案写 = 对真实报错永不命中**：`ocrErrorHint` 的模型名分支原来是 `model.{0,24}(…)`，而真机是 `The model `X` does not exist`（「model」到「does not exist」间隔 32 字符）；百度那条只认 `access_token`，而百度文案是 `Access token`（**空格**）。**写这类判据时拿厂商文档里的原文报错当输入跑一遍**，别自己编一句；放宽窗口时还要防误报（正文回显了 `model` + 无关的 `invalid` 不能算模型名错）。
+
+- **收好了但没人用的字段**：`parseCurl` 的 `warnings` 原来一次都没 push 过，`engine` 也从没读过它 —— 于是「`-d @file` 会原样发出去」这种事**闷着不吭声**。现在解析期提示会一路带到面板的「…」和设置页预览里（`runRequest` / `previewRequest` / `buildOcrRequest` 三处都要并进去）。
+
+- **读改写要排队**：`chrome.storage` 的「读→改→写」中间隔着 `await`，并发时后来者读到的是别人还没写回去的那份。两处踩过：`background.js` 写翻译记录（一次对比并发跑 2~4 条 → 只剩 1 条）、`content.js` 的 `mutateState`（连点两下开关）。修法都是**用 promise 串成队列** —— `clipboardRead` / `saveChain` / `historyQueue` 三个是同一套写法。
+
+- **两个写者 + 整份覆盖 = 互相顶掉**：面板按单键 RMW 写 `showOriginal` / `targetLang` / `ocr.imageConfigId`，而设置页是**整份 state 覆盖写**。设置页保存前要 `adoptPanelOwned()` 把「面板也会写、且页面没动过」的键以存档为准。**面板也会写的键要加进 `PANEL_OWNED_SETTING_KEYS`**。
+
+- **SSE 的 `\r\n` 会被 TCP 切开**：归一化不能逐块做，也不能「先把上一块的 `\r` 塞回 buffer 再处理本块」—— 塞回去的那 `\r` 不在本块的 replace 范围里，buffer 会留下 `\n\r\n`（本该 `\n\n`），事件切不开、整条流被末尾兜底拼成一段。做法是**把结尾那个 `\r` 扣下来**（`carryCr`），下一块来了拼回去**一起**归一。`test-lib` 里有五种切法（含「每个字节一块」）的断言。
+
+- **`postMessage` 本身会抛**：端口「存在但已断开」时抛 `Attempting to use a disconnected port object`。`content.js` 的 `postOrFail` 原来是这个文件里唯一漏了 try/catch 的发送点（另两处裸 abort 和后台的 `safePost` 都包了）。
+
+- **跨文件手抄的那一份要配逐字/逐值断言**：`formatBytes` 两份实现的小数位规则原来不同，同一张图在设置页是「49 KB」、面板是「48.8 KB」。两份面板 CSS 同理（`content.js` 内联 vs `lib/panel-styles.js`）。
+
+- **加了用户设置就别在别处写死默认值**：`frame-bridge.js` 原来写死 `slice(0, 8000)`，于是「单次最多发送字数」调到 8000 以上的用户，iframe 里的选区被静默砍到 8000。执行点只留一处（`content.js` 的 `translate()`）。
+
+
+
+---
+
+
+
 ## 自定义面板样式（2026-10-18）
 
 设置页「面板」分组里有一个 CSS 文本框，内容会**追加注入到面板 shadow root 的末尾**。

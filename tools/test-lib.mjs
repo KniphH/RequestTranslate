@@ -1669,8 +1669,22 @@ section('15c. 一条配置两段模板：文本一段、图片一段');
   eq('图片那次：data URL 原样带过去', j2.content[0].image_url.url, img);
 
   /* ---- 字段补齐：老存档走 normalize，全新存档走 freshConfigs ---- */
-  check('全新的内置配置都带 imageRequest',
-    freshConfigs().every((c) => c.imageRequest === ''), freshConfigs().map((c) => c.name));
+  /* imageRequest 原来断言「全是空串」—— 那时所有内置配置都不带图片模板。
+     2026-11-08 起 bilibili 那条**故意**带了图片模板（它内置视觉编码器，
+     图片翻译不需要 OCR），所以判据改成：每条配置都得有 imageRequest 这个字段
+     （类型是字符串），且**至少有一条**带模板（否则图片直传等于死功能）。 */
+  const fresh = freshConfigs();
+  check('全新的内置配置都带 imageRequest 字段（类型是字符串）',
+    fresh.every((c) => typeof c.imageRequest === 'string'), fresh.map((c) => c.name));
+  check('至少有一条内置配置带图片模板（bilibili 那条）',
+    fresh.some((c) => c.imageRequest && c.imageRequest.trim()),
+    fresh.filter((c) => c.imageRequest).map((c) => c.name));
+  check('bilibili 那条的图片模板能真的翻图（canTranslateImage 为真）',
+    fresh.some((c) => c.id === 'builtin-bilibili' && canTranslateImage(c)));
+  /* 其余配置仍然保持空串 —— 这条钉住「别顺手给别人也塞模板」 */
+  check('除 bilibili 外，其它内置配置的 imageRequest 都是空串',
+    fresh.filter((c) => c.id !== 'builtin-bilibili').every((c) => c.imageRequest === ''),
+    fresh.filter((c) => c.id !== 'builtin-bilibili' && c.imageRequest).map((c) => c.name));
   check('freshConfigs 每次都给新对象（改一条不会污染 DEFAULT_CONFIGS）', (() => {
     const a = freshConfigs();
     a[0].request = '被我改过了';
@@ -1885,7 +1899,7 @@ section('15e. 后备请求：一个配置里挂几条请求，主请求挂了往
     bgSrc.includes('adapter: item.adapter') && bgSrc.includes('path: item.path') &&
     bgSrc.includes('responseMode: item.responseMode'));
   check('这条请求拿到译文就跳出外层（不再试后面的后备）',
-    /for \(let i = 0; i < attempts\.length[\s\S]{0,1600}?if \(result && result\.text\) break;\s*\}\s*\n\s*\/\/[^\n]*\n\s*if \(result && result\.text\) break;/.test(bgSrc),
+    /for \(let i = 0; i < attempts\.length[\s\S]{0,4000}?if \(result && result\.text\) break;\s*\}\s*\n\s*\/\/[^\n]*\n\s*if \(result && result\.text\) break;/.test(bgSrc),
     '外层那个 break 或者它的注释没了');
   check('状态行只在后备那几条上带名字（主请求还是老样子「请求中…（model）」）',
     bgSrc.includes("const label = item.main ? '' : (item.name || '');") &&

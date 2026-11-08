@@ -3748,8 +3748,12 @@ try {
     const { state } = await chrome.storage.local.get('state');
     return state.configs.filter((c) => String(c.imageRequest || '').trim()).map((c) => c.id);
   });
-  check('收尾：临时那条图片模板清掉了（回到原来那一条）',
-    afterCleanup.length === 1, afterCleanup.join(',') || '(一条都没有)');
+  /* 内置项 builtin-bilibili 天生就带图片模板（2026-11-08 加的多模态配置），
+     所以「只剩一条」这个判据过时了。改成：**临时的 e2e 那几条**都清干净了，
+     只剩下内置的（id 以 builtin- 开头）。 */
+  check('收尾：临时的图片模板都清掉了（只剩内置那条）',
+    afterCleanup.every((id) => id.startsWith('builtin-')),
+    afterCleanup.join(',') || '(一条都没有)');
 
   /* ---- 真跑一次「测试图片配置」：本地图片 → 假接口 → 译文摆出来 ---- */
   /* 先给选中的那条图片配置写一段能解析的模板（配置栏那条原本只是个 JSON 片段，
@@ -4311,6 +4315,11 @@ try {
             }
           ];
           state.activeConfigId = 'e2e-local';
+          /* 图片模式那次走哪条由 imageConfigId 决定（content.js 用
+             `imageConfigId || activeConfigId`）。2026-11-08 起内置项 builtin-bilibili
+             也带图片模板了，图片模式下拉里多出它一条 —— 不显式钉住的话，
+             默认值会把这次测试导到 bilibili 那条去（实测：整段图片断言全跑偏）。 */
+          state.ocr.imageConfigId = 'e2e-local';
           state.ocr.disabled = true; // ← 设置页里那个「禁用外置 OCR」
           await chrome.storage.local.set({ state });
 
@@ -4685,13 +4694,25 @@ try {
         });
 
       const imgSel = await readCfgSelect();
+      /* imageRequest 非空的内置项现在有 builtin-bilibili（它内置视觉编码器、
+         图片翻译不需要 OCR）；其余内置项仍然是纯文字，不进这个下拉。
+         所以判据改成「列出来的每一条都真的能翻图」+「纯文字的内置项不在里面」。 */
+      /* 判据直接从**页面里的存档**读（这个作用域没有 state 变量，别引用它）；
+         「能翻图」= imageRequest 非空，和 lib/store.js 的 canTranslateImage 同一口径。 */
+      const imgCfgStore = await csw.evaluate(async () => {
+        const st = (await chrome.storage.local.get('state')).state;
+        return (st.configs || []).map((c) => ({ id: c.id, img: String(c.imageRequest || '').trim() !== '' }));
+      });
       check(
-        '图片那一屏：顶栏下拉只列能翻图的配置（带图片模板的那几条）',
-        imgSel.opts.length === 3 && imgSel.opts.join(',') === 'e2e-local,e2e-img,e2e-img2',
+        '图片那一屏：顶栏下拉列出来的每一条都真能翻图（带图片模板）',
+        imgSel.opts.every((id) => imgCfgStore.some((c) => c.id === id && c.img)),
         JSON.stringify(imgSel.opts)
       );
-      check('图片那一屏：纯文字的内置配置一条都不在里面',
-        !imgSel.opts.some((id) => id.startsWith('builtin-')), JSON.stringify(imgSel.opts));
+      check('图片那一屏：内置的纯文字配置一条都不在里面（bing/openai/deepseek…）',
+        !imgSel.opts.some((id) => id.startsWith('builtin-') && id !== 'builtin-bilibili'),
+        JSON.stringify(imgSel.opts));
+      check('图片那一屏：内置的多模态配置在列表里（bilibili 那条）',
+        imgSel.opts.includes('builtin-bilibili'), JSON.stringify(imgSel.opts));
       check('图片那一屏：下拉停在存档里的 imageConfigId 上（不是顶栏那条）',
         imgSel.value === 'e2e-img', `${imgSel.value}｜顶栏 activeConfigId 是 e2e-local`);
       check('图片那一屏：tooltip 说的是「图片接口」', /^图片接口：/.test(imgSel.title), imgSel.title);
