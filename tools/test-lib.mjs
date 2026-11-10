@@ -2788,7 +2788,9 @@ section('22. 按钮：贴鼠标 + 自动消失');
   // 绑定与回填都得真的从这个表跑，而不是各自手写一遍 id 清单
   check('renderSettings / bindSettings 都遍历 SETTING_MAP',
     /function renderSettings\(\)[\s\S]{0,200}for \(const row of SETTING_MAP\)/.test(optSrc) &&
-    /function bindSettings\(\)[\s\S]{0,2000}for \(const row of SETTING_MAP\)/.test(optSrc));
+    /* 2000 → 4500：bindSettings 开头现在还有快捷键那一段（NAMES + render），
+       把循环挤远了。判据是「它在 bindSettings 里」而不是「离函数头多近」。 */
+    /function bindSettings\(\)[\s\S]{0,4500}for \(const row of SETTING_MAP\)/.test(optSrc));
 }
 
 section('23. 框选截图：覆盖层不铺位图，滚动条只在裁的那一刻切掉');

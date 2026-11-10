@@ -3217,16 +3217,18 @@ function bindSettings() {
      重载扩展不算重新安装，manifest 里新加的 commands 不会自动绑（Alt+T 空绑的根因）——
      全新安装才会带上，否则去浏览器设置页手动设一次。 */
   if (chrome.commands && chrome.commands.getAll) {
+    /* 这三条和 manifest 的 commands 描述是同一批文案（cmdTranslateSelection 等），
+       共用 key —— 否则设置页和快捷键设置页会显示两种语言的同一个功能。 */
     const NAMES = {
-      'translate-selection': '翻译选中文字',
-      'shot-translate': '框选截图翻译',
-      'ocr-clipboard': '翻译剪切板中的截图'
+      'translate-selection': T('cmdTranslateSelection', '翻译选中的文字'),
+      'shot-translate': T('cmdShotTranslate', '框选截图翻译'),
+      'ocr-clipboard': T('cmdOcrClipboard', '翻译剪切板中的截图')
     };
     const render = () => {
       chrome.commands.getAll((list) => {
         const rows = Object.entries(NAMES).map(([name, label]) => {
           const cur = (list.find((c) => c.name === name) || {}).shortcut;
-          return `${label}：${cur || '未设置'}`;
+          return label + ' ' + (cur || T('opt_hotkey_unset', '未设置'));
         });
         $('#hotkey-list').textContent = rows.join('　｜　');
       });
@@ -3538,9 +3540,18 @@ async function bindUiLang() {
     status.classList.toggle('is-err', !!isErr);
   };
 
-  /* 当前已经装了哪种，下拉先停在哪个 */
+  /* 当前已经装了哪种，下拉先停在哪个。
+     如果装的是下载来的语言包，光设 value 没用 —— 那个 <option> 要先有。
+     所以这里**补一个选项**（不联网）：否则用户重载设置页会看到下拉停在
+     「中文（内置）」，而界面明明是英文。 */
   const cur = api.currentPack && api.currentPack();
-  sel.value = cur && cur.lang ? cur.lang : '';
+  if (cur && cur.lang) {
+    const o = document.createElement('option');
+    o.value = cur.lang;
+    o.textContent = cur.lang;
+    sel.appendChild(o);
+    sel.value = cur.lang;
+  }
 
   /* 清单**不在这里拉**。原来页面一加载就去连 GitHub，没网时每次打开设置页
      都往控制台甩一串 ERR_CONNECTION_RESET（e2e 的「不许报错」断言当场抓到）。
@@ -3553,6 +3564,7 @@ async function bindUiLang() {
      点了必然失败的选项。所以列出来之前先 HEAD 探一遍，探不到的静默剔除。 */
   const loadIndexOnce = async () => {
     if (indexLoaded) return true;
+    const firstFill = !indexLoaded;
     try {
       say(T('opt_ui_lang_checking', '正在核实可用的语言包…'));
       const index = await api.fetchIndex();
@@ -3565,6 +3577,13 @@ async function bindUiLang() {
         const pct = typeof meta.progress === 'number' ? Math.round(meta.progress * 100) : 100;
         opt.textContent = (meta.name || item.code) + (pct < 100 ? ' (' + pct + '%)' : '');
         sel.appendChild(opt);
+      }
+      /* 填完选项后把选中项停到**当前生效的语言**；没有生效的就停在第一个可用项。
+         **只在第一次填充时做** —— 第二次点击是「用户已经选好了，去下载」，
+         这时再改 sel.value 会把用户的选择冲掉，那次点击就变成「又取一次清单」。 */
+      if (firstFill) {
+        const now = api.currentPack && api.currentPack();
+        sel.value = now && now.lang ? now.lang : usable[0].code;
       }
       indexLoaded = true;
       say(usable.length ? T('opt_ui_lang_count_pre', '核实到') + ' ' + usable.length + ' ' + T('opt_ui_lang_count_post', '种可用语言，选一种再点一次。')

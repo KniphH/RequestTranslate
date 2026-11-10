@@ -81,6 +81,10 @@
     "message": "」的记录。",
     "description": "设置页：搜索无结果（后半句）"
   },
+  "opt_hotkey_unset": {
+    "message": "未设置",
+    "description": "设置页：快捷键还没绑定时显示"
+  },
   "opt_img_badge": {
     "message": "这条填了「图片请求模板」，截图翻译时会走它（图片直传模式）",
     "description": "设置页 JS 动态文案"
@@ -100,6 +104,10 @@
   "opt_label_path": {
     "message": "响应提取路径（留空自动识别）",
     "description": "设置页 JS 动态文案"
+  },
+  "opt_lang_samehint": {
+    "message": "划词面板顶栏也有一个，两边是同一个值，想临时换一门语言不用特意回这儿。",
+    "description": "设置页：目标语言下方的说明"
   },
   "opt_misc_001": {
     "message": "RequestTranslate · 设置",
@@ -660,10 +668,6 @@
   "opt_ui_lang_go": {
     "message": "下载并使用",
     "description": "界面语言：下载按钮"
-  },
-  "opt_ui_lang_listed": {
-    "message": "核实到这些可用语言，选一种再点一次：",
-    "description": "界面语言：核实完成（数量另行拼接，不用占位符）"
   },
   "opt_ui_lang_none": {
     "message": "清单里没有可用的语言包（文件都取不到）。",

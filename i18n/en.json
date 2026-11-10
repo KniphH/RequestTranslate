@@ -214,6 +214,8 @@
     "cmdOcrClipboard": "Translate the screenshot in the clipboard",
     "menuTranslate": "Translate selection with RequestTranslate",
     "menuOcrClipboard": "Translate the screenshot in the clipboard",
-    "menuShotTranslate": "Translate a screen region"
+    "menuShotTranslate": "Translate a screen region",
+    "opt_hotkey_unset": "not set",
+    "opt_lang_samehint": "The panel's top bar has the same dropdown and the same value, so you can switch language on the fly without coming back here."
   }
 }
