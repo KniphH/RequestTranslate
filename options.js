@@ -178,6 +178,7 @@ async function init() {
   bindVars();
   bindSettings();
   bindImportExport();
+  bindUiLang();
 
   renderConfigList();
   renderEditor();
@@ -873,7 +874,7 @@ function adapterLabel(id) {
 
 /** 块头右边那句「这条打到哪儿」—— 折叠起来之后全靠它认人 */
 function blockSummary(item, kind) {
-  if (kind === 'adapter') return '内置适配器：' + adapterLabel(item.adapter);
+  if (kind === 'adapter') return T('opt_adapter_prefix', '内置适配器：') + adapterLabel(item.adapter);
   return summarizeUrl(item.request, '（还没写请求模板）');
 }
 
@@ -1351,7 +1352,7 @@ function previewBlock(b, vars, ivars) {
   if (b.kind === 'adapter') {
     const a = ADAPTERS[b.adapter];
     return a
-      ? `内置适配器：${a.label}\n\n${a.hint}\n\n这条请求不走请求模板，翻译流程由扩展内置的代码完成。`
+      ? T('opt_adapter_prefix', '内置适配器：') + a.label + '\n\n' + a.hint + '\n\n' + T('opt_adapter_note', '这条请求不走请求模板，翻译流程由扩展内置的代码完成。')
       : '(没有可用的内置适配器)';
   }
   if (!b.request.trim()) return '(请求模板为空)';
@@ -3517,6 +3518,91 @@ function downloadJson(text) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/* ---- 界面语言（即时下载，不打包）----
+ *
+ * 为什么不打包语言：一个语言约 10~40 KB，打包 n 种就多 n 份 —— 而绝大多数用户只用一种。
+ * 现取的好处是零体积、加语言不用发版；代价是要联网一次（约 1 秒）且依赖仓库可用，
+ * 所以失败时必须**保持当前语言**，不能把界面切成空白。
+ */
+async function bindUiLang() {
+  const sel = $('#s-ui-lang');
+  const btn = $('#btn-ui-lang');
+  const status = $('#ui-lang-status');
+  if (!sel || !btn) return;
+  const api = window.RTI18n;
+  if (!api || !api.fetchIndex) return;
+
+  const say = (text, isErr) => {
+    if (!status) return;
+    status.textContent = text;
+    status.classList.toggle('is-err', !!isErr);
+  };
+
+  /* 当前已经装了哪种，下拉先停在哪个 */
+  const cur = api.currentPack && api.currentPack();
+  sel.value = cur && cur.lang ? cur.lang : '';
+
+  /* 清单**不在这里拉**。原来页面一加载就去连 GitHub，没网时每次打开设置页
+     都往控制台甩一串 ERR_CONNECTION_RESET（e2e 的「不许报错」断言当场抓到）。
+     语言清单只在用户点「下载并使用」时才去取 —— 没网就只影响那一次操作，
+     报错也只出现在状态栏那一行，不进控制台。
+     这也符合「不做隐式行为」：不该在打开设置页时就偷偷联网。 */
+  let indexLoaded = false;
+  const loadIndexOnce = async () => {
+    if (indexLoaded) return true;
+    try {
+      const index = await api.fetchIndex();
+      for (const [code, meta] of Object.entries(index)) {
+        if (!meta || !meta.file) continue;
+        const opt = document.createElement('option');
+        opt.value = code;
+        const pct = typeof meta.progress === 'number' ? Math.round(meta.progress * 100) : 100;
+        opt.textContent = (meta.name || code) + (pct < 100 ? ' (' + pct + '%)' : '');
+        sel.appendChild(opt);
+      }
+      indexLoaded = true;
+      return true;
+    } catch {
+      say(T('opt_ui_lang_offline', '取不到语言清单（离线或被挡），先用内置中文。'), true);
+      return false;
+    }
+  };
+
+  btn.addEventListener('click', async () => {
+    /* 第一次点击才去取清单：下拉里如果还只有内置那一项，先补上可选项，
+       让用户能选完再点一次；取不到就只报一行状态。 */
+    if (!indexLoaded) {
+      btn.disabled = true;
+      say(T('opt_ui_lang_dl', '正在下载…'));
+      const got = await loadIndexOnce();
+      btn.disabled = false;
+      if (!got) return;
+      if (Object.keys(sel.options).length > 1) {
+        say(T('opt_ui_lang_pick', '清单已取到，选一种语言再点一次。'));
+        return;
+      }
+    }
+    const code = sel.value;
+    if (!code) {
+      await api.clearPack();
+      say(T('opt_ui_lang_reset', '已切回内置中文，正在重载…'));
+      setTimeout(() => location.reload(), 600);
+      return;
+    }
+    btn.disabled = true;
+    say(T('opt_ui_lang_dl', '正在下载…'));
+    const r = await api.downloadPack(code);
+    btn.disabled = false;
+    if (r.ok) {
+      /* 计数用字符串拼接，不用占位符 —— 这里是给用户看的一句话，不是 messages 里的模板 */
+      say(T('opt_ui_lang_ok_pre', '已装好') + ' ' + r.count + ' ' + T('opt_ui_lang_ok_post', '条，正在重载…'));
+      setTimeout(() => location.reload(), 600);
+    } else {
+      /* 失败不动现有包 —— 界面保持原样，只报错 */
+      say(T('opt_ui_lang_fail', '下载失败：') + r.why, true);
+    }
+  });
+}
 function bindImportExport() {
   $('#btn-export').addEventListener('click', async () => {
     // 正在编辑器里改的那条先收进 state，免得导出的还是上一版

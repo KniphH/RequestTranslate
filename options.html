@@ -407,6 +407,20 @@
           <input id="s-font" type="number" min="11" max="48" step="1">
         </div>
 
+        <!-- 界面语言：不打包任何语言包，用时才从仓库即时下载（保持包极简） -->
+        <div class="setting">
+          <label data-i18n="opt_ui_lang">界面语言</label>
+          <div class="stack">
+            <div class="ui-lang-row">
+              <select id="s-ui-lang">
+                <option value="" data-i18n="opt_ui_lang_builtin">中文（内置）</option>
+              </select>
+              <button type="button" id="btn-ui-lang" class="ghost" data-i18n="opt_ui_lang_go">下载并使用</button>
+            </div>
+            <div id="ui-lang-status" class="hint"></div>
+            <p class="hint" data-hint="s-uilang">只影响界面文字，不改翻译的目标语言。语言包约 10~40 KB，从 GitHub 现取，不占扩展体积；下载失败会保持当前语言。</p>
+          </div>
+        </div>
         <div class="setting">
           <label for="s-theme" data-i18n="opt_set_090">主题</label>
           <select id="s-theme">

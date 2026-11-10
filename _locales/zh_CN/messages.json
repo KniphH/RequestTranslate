@@ -1,9 +1,17 @@
 {
+  "extDesc": {
+    "message": "划词翻译，但配置是你自己的 HTTP 请求。直接写 curl 或原始请求报文，可保存多个命名配置。"
+  },
   "extName": {
     "message": "RequestTranslate · 请求式划词翻译"
   },
-  "extDesc": {
-    "message": "划词翻译，但配置是你自己的 HTTP 请求。直接写 curl 或原始请求报文，可保存多个命名配置。"
+  "opt_adapter_note": {
+    "message": "这条请求不走请求模板，翻译流程由扩展内置的代码完成。",
+    "description": "内置适配器条目的补充说明"
+  },
+  "opt_adapter_prefix": {
+    "message": "内置适配器：",
+    "description": "内置适配器条目的前缀"
   },
   "opt_cfg_004": {
     "message": "配置",
@@ -596,6 +604,46 @@
   "opt_title_208": {
     "message": "清空全部翻译记录，不可恢复",
     "description": "设置页 title 区域"
+  },
+  "opt_ui_lang": {
+    "message": "界面语言",
+    "description": "设置页：界面语言那一行的标签"
+  },
+  "opt_ui_lang_builtin": {
+    "message": "中文（内置）",
+    "description": "界面语言下拉：内置中文选项"
+  },
+  "opt_ui_lang_dl": {
+    "message": "正在下载…",
+    "description": "界面语言：下载中"
+  },
+  "opt_ui_lang_fail": {
+    "message": "下载失败：",
+    "description": "界面语言：失败提示"
+  },
+  "opt_ui_lang_go": {
+    "message": "下载并使用",
+    "description": "界面语言：下载按钮"
+  },
+  "opt_ui_lang_offline": {
+    "message": "取不到语言清单（离线或被挡），先用内置中文。",
+    "description": "界面语言：拉清单失败"
+  },
+  "opt_ui_lang_ok_post": {
+    "message": "条，正在重载…",
+    "description": "界面语言：成功提示后半"
+  },
+  "opt_ui_lang_ok_pre": {
+    "message": "已装好",
+    "description": "界面语言：成功提示前半"
+  },
+  "opt_ui_lang_pick": {
+    "message": "清单已取到，选一种语言再点一次。",
+    "description": "界面语言：首次点击取回清单后的提示"
+  },
+  "opt_ui_lang_reset": {
+    "message": "已切回内置中文，正在重载…",
+    "description": "界面语言：切回内置"
   },
   "opt_up": {
     "message": "上移（越靠前越先试）",

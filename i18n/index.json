@@ -1,0 +1,9 @@
+{
+  "$schema": "语言清单：加一种语言 = 这里加一条 + 放一个 <code>.json",
+  "en": {
+    "name": "English",
+    "file": "en.json",
+    "progress": 1,
+    "minVersion": "1.3.1"
+  }
+}

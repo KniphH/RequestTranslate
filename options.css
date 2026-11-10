@@ -1362,3 +1362,8 @@ button.block { width: 100%; }
 .history-item .h-dst { color: var(--fg); }
 
 #hotkey-now.is-err { color: var(--danger); }
+
+/* ---- 界面语言（即时下载，不打包）---- */
+.ui-lang-row { display: flex; gap: 8px; align-items: center; }
+.ui-lang-row select { flex: 1; min-width: 0; }
+.ui-lang-row button { flex: none; white-space: nowrap; }
