@@ -220,19 +220,6 @@
     panel.dataset.rtTheme = light ? 'light' : 'dark';
     // 按钮不在面板里（是 shadow 的另一个子节点），主题得单独同步一次
     trigger.classList.toggle('light', light);
-    applyAccentColor();
-  }
-
-  /**
-   * 主题色（紫/蓝）。写在 shadow host 上 —— 面板、按钮、遮罩都是它的后代，一次覆盖三处。
-   *
-   * 为什么不像 theme 那样只切 class：accent 有 6 个色值要一起换，写成 6 条 CSS 规则
-   * 会在「暗/亮 × 紫/蓝」四个组合上翻倍；写变量只要 accent.js 里那份表。
-   */
-  function applyAccentColor() {
-    const api = window.RTAccent;
-    if (!api) return;   // accent.js 没加载（理论上不会：manifest 里它排最前）
-    api.applyAccent(host, prefs.accent);
   }
 
   function applyFontSize() {
@@ -1722,8 +1709,7 @@
   .sel {
     position: fixed; display: none;
     box-shadow: 0 0 0 100000px rgba(0, 0, 0, .45);
-    /* 兜底紫色；accent.js 会把 --rt-accent 写到 <html>，遮罩作为页面里的元素能继承到 */
-    border: 1px solid var(--rt-accent, #a855f7);
+    border: 1px solid #a855f7;
     pointer-events: none;
   }
   .tip {

@@ -7,10 +7,8 @@
   --fg: #e8e8ea;
   --fg-dim: #8a8a95;
   --fg-faint: #5f5f6a;
-  --accent: var(--rt-accent-dark, #7c6cf5);
-  --accent-soft: rgba(var(--rt-accent-rgb, 124, 108, 245), .14);
-  /* 主题色由 lib/accent.js 写到 <html>；这里的值是兜底（紫色）。
-     换色时 accent.js 覆盖 --rt-accent-* / --rt-accent-rgb，下面所有引用自动跟着变。 */
+  --accent: #7c6cf5;
+  --accent-soft: rgba(124, 108, 245, .14);
   --danger: #ef4444;
   --warn: #fbbf24;
   --ok: #34d399;
@@ -41,8 +39,8 @@
   --fg: #1a1a22;
   --fg-dim: #55555f;
   --fg-faint: #82828f;
-  --accent: var(--rt-accent-light, #6d5cf0);
-  --accent-soft: rgba(var(--rt-accent-rgb, 109, 92, 240), .1);
+  --accent: #6d5cf0;
+  --accent-soft: rgba(109, 92, 240, .1);
 
   --hover: #eeeef4;
   --hover-2: #e7e7ef;
@@ -101,7 +99,7 @@ header {
   width: 34px; height: 34px;
   display: flex; align-items: center; justify-content: center;
   border-radius: 10px;
-  background: linear-gradient(135deg, var(--rt-grad-from, #6d5cf0), var(--rt-grad-to, #a855f7));
+  background: linear-gradient(135deg, #6d5cf0, #a855f7);
   color: #fff;
   font-weight: 700;
   font-size: 16px;
@@ -128,7 +126,7 @@ header {
 .tab.is-active {
   color: var(--fg);
   background: var(--accent-soft);
-  border-color: rgba(var(--rt-accent-rgb, 124, 108, 245), .38);
+  border-color: rgba(124, 108, 245, .38);
 }
 
 
@@ -293,7 +291,7 @@ main { flex: 1; min-height: 0; position: relative; }
 .cfg-item:hover { background: var(--hover); color: var(--fg); }
 .cfg-item.is-active {
   background: var(--accent-soft);
-  border-color: rgba(var(--rt-accent-rgb, 124, 108, 245), .38);
+  border-color: rgba(124, 108, 245, .38);
   color: var(--fg);
 }
 .cfg-item .name {
@@ -307,14 +305,14 @@ main { flex: 1; min-height: 0; position: relative; }
    这样两种状态同时出现时仍然分得清谁是编辑、谁在对比。
    底色用 rgba 直接写（--accent-soft 已经带 alpha，再叠一层会算不出来）。 */
 .cfg-item.in-compare {
-  border-color: rgba(var(--rt-accent-rgb, 124, 108, 245), .34);
-  background: rgba(var(--rt-accent-rgb, 124, 108, 245), .07);
+  border-color: rgba(124, 108, 245, .34);
+  background: rgba(124, 108, 245, .07);
 }
 .cfg-item.in-compare .name { color: var(--accent); }
 /* 既是编辑又在对比：加深一档（两种标记叠加，不冲突） */
 .cfg-item.in-compare.is-active {
   background: var(--accent-soft);
-  border-color: rgba(var(--rt-accent-rgb, 124, 108, 245), .5);
+  border-color: rgba(124, 108, 245, .5);
 }
 .cfg-item.in-compare.is-active .name { color: var(--fg); }
 .cfg-item.is-active .name::before {
@@ -376,8 +374,8 @@ input[type="text"], input[type="number"], select, textarea {
   width: 100%;
 }
 input:focus, select:focus, textarea:focus {
-  border-color: rgba(var(--rt-accent-rgb, 124, 108, 245), .65);
-  box-shadow: 0 0 0 3px rgba(var(--rt-accent-rgb, 124, 108, 245), .13);
+  border-color: rgba(124, 108, 245, .65);
+  box-shadow: 0 0 0 3px rgba(124, 108, 245, .13);
 }
 select { cursor: pointer; }
 select option { background: var(--panel-2); }
@@ -558,7 +556,7 @@ select option { background: var(--panel-2); }
   cursor: pointer;
   transition: .13s;
 }
-.chip:hover { background: var(--accent-soft); border-color: rgba(var(--rt-accent-rgb, 124, 108, 245), .5); color: var(--fg); }
+.chip:hover { background: var(--accent-soft); border-color: rgba(124, 108, 245, .5); color: var(--fg); }
 
 .preview {
   border: 1px solid var(--line);
@@ -750,7 +748,7 @@ button:hover { background: var(--hover-2); border-color: var(--line-strong); }
 button:disabled { opacity: .5; cursor: default; }
 
 button.primary {
-  background: linear-gradient(135deg, var(--rt-grad-from, #6d5cf0), var(--rt-grad-to, #8b5cf6));
+  background: linear-gradient(135deg, #6d5cf0, #8b5cf6);
   border-color: transparent;
   color: #fff;
   font-weight: 550;
@@ -1137,7 +1135,7 @@ button.block { width: 100%; }
 .trig-prev.round {
   border-radius: 10px;
   border-color: transparent;
-  background: linear-gradient(135deg, var(--rt-grad-from, #6d5cf0), var(--rt-grad-to, #a855f7));
+  background: linear-gradient(135deg, #6d5cf0, #a855f7);
   color: #fff;
   font-weight: 600;
   font-size: 16px;

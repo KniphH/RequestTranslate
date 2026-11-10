@@ -2589,13 +2589,7 @@ const SETTING_MAP = [
     load: (v) => v, save: (el) => el.value,
     after: () => applyTheme()
   },
-  {
-    /* 主题色。选项不写死在这儿 —— 由 fillAccentOptions() 按 accent.js 的 ACCENTS 填，
-       这样加一种颜色只改 lib/accent.js 一处。 */
-    sel: '#s-accent', key: 'accent', kind: 'value',
-    load: (v) => v, save: (el) => el.value,
-    after: () => applyTheme()
-  },
+
   {
     sel: '#s-showsrc', key: 'showOriginal', kind: 'checked',
     load: (v) => !!v, save: (el) => el.checked
@@ -3186,28 +3180,14 @@ function applyTheme() {
     dark = q ? !q.matches : true;
   }
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-  /* 主题色：accent.js 会把 6 个色值写到 <html> 的内联 style 上，
-     设置页所有 `var(--rt-accent*)` 立刻跟着变，不用重渲染。 */
-  if (window.RTAccent) {
-    window.RTAccent.applyAccent(document.documentElement, (state.settings && state.settings.accent) || undefined);
-  }
+
   renderPreview(); // 预览里的按钮底色也跟着主题变
 }
 
-/** 主题色下拉的选项 —— 从 accent.js 的 ACCENTS 填，加颜色不用改这里 */
-function fillAccentOptions() {
-  const sel = $('#s-accent');
-  if (!sel || !window.RTAccent) return;
-  const api = window.RTAccent;
-  sel.innerHTML = api.IDS.map(
-    (id) => `<option value="${escapeHtml(id)}">${escapeHtml(api.ACCENTS[id].name || id)}</option>`
-  ).join('');
-}
 
 function bindSettings() {
   // 选项要先填好，renderSettings 才摆得对（它靠 select.value 回填）
   fillTargetLangOptions();
-  fillAccentOptions();
   bindTargetLang();
 
   /* 快捷键：Chromium 不给扩展改快捷键的 API（只有 getAll / onCommand —— e2e 实证

@@ -842,7 +842,7 @@ section('11. 翻译按钮：样式预设与尺寸');
   eq('四舍五入', clampTriggerSize(44.6), 45);
 
   eq('默认设置里的样式', DEFAULT_SETTINGS.triggerStyle, 'badge');
-  eq('默认设置里的大小', DEFAULT_SETTINGS.triggerSize, 45);
+  eq('默认设置里的大小', DEFAULT_SETTINGS.triggerSize, 28);
   eq('默认没有自定义图标', DEFAULT_SETTINGS.triggerSvg, '');
 
   check('预设规则用 :where() 压低了优先级',
@@ -2743,8 +2743,8 @@ section('22. 按钮：贴鼠标 + 自动消失');
     /if \(!b \|\| \(b\.width === 0 && b\.height === 0\)\) return null;/.test(src));
 
   /* 两个设置项：默认值 + content.js 那份同形 + 设置页真的接上了 */
-  eq('默认 5 秒鼠标不动就消失', DEFAULT_SETTINGS.triggerIdleSec, 5);
-  eq('默认鼠标移开 0.5 秒就消失', DEFAULT_SETTINGS.triggerLeaveSec, 0.5);
+  eq('默认 2 秒鼠标不动就消失', DEFAULT_SETTINGS.triggerIdleSec, 2);
+  eq('默认鼠标移开 0.4 秒就消失', DEFAULT_SETTINGS.triggerLeaveSec, 0.4);
   check('content.js 那份 prefs 初值里也有它俩（且同值）',
     /\btriggerIdleSec:\s*5\b/.test(src) && /\btriggerLeaveSec:\s*0\.5\b/.test(src));
   check('两个时间都真的读的是设置', src.includes('prefs.triggerIdleSec') && src.includes('prefs.triggerLeaveSec'));
@@ -4064,51 +4064,6 @@ check('那条 text-align 写在 .rt-panel 里（不是写在别处白写）',
     /startsWith\('image\/'\)/.test(cbSrc));
   check('判断前先 toLowerCase（Image/PNG 也要认）', /toLowerCase\(\).*startsWith\('image\/'/.test(cbSrc));
 }
-/* ---- 主题色（accent）----
-   accent 的色值只允许出现在 lib/accent.js 一处，别的地方一律 var(--rt-accent*)。
-   这条是「加第二种颜色」时最容易破的规矩：随手在 CSS 里补个 #3b82f6，
-   换色时它就不跟着变了（而且很难发现，因为默认紫是对的）。 */
-{
-  const accentSrc = readFileSync(new URL('../lib/accent.js', import.meta.url), 'utf8');
-  const storeSrc = readFileSync(new URL('../lib/store.js', import.meta.url), 'utf8');
-
-  check('accent.js 是普通脚本（挂 window.RTAccent），不是 ES module',
-    !/^export /m.test(accentSrc) && /window\.RTAccent\s*=/.test(accentSrc));
-
-  /* store.js 是 module、accent.js 是普通脚本，两边不能互相 import，所以白名单写了两份。
-     这条钉住它们**不许分叉**（加了颜色只改一处的话，这里会红）。 */
-  check('store.js 的 accent 白名单和 accent.js 的 ACCENTS 一致',
-    (() => {
-      const inStore = (storeSrc.match(/settings\.accent = \[([^\]]*)\]/) || [])[1] || '';
-      const storeIds = [...inStore.matchAll(/'([a-z]+)'/g)].map((m) => m[1]).sort();
-      /* accent.js 的 IDS 是 Object.keys(ACCENTS) 算的，所以直接从 ACCENTS 的键抓。
-         小技巧：ACCENTS 里的每个键后面紧跟一个 `: {`，用它定位，不会误抓值里的字符串。 */
-      const body = accentSrc.slice(accentSrc.indexOf('const ACCENTS'));
-      /* 缩进是 4 空格（不是 2）—— 用 \s* 兜住，改缩进也不会误报 */
-      const accentIds = [...body.matchAll(/^\s{2,6}([a-z]+): \{$/gm)].map((m) => m[1]).sort();
-      return storeIds.length > 0 && accentIds.length > 0 &&
-        JSON.stringify(storeIds) === JSON.stringify(accentIds);
-    })(),
-    '加了颜色要把两份白名单一起改');
-
-  check('默认主题色是 purple（老用户升级后观感不变）',
-    /DEFAULT_SETTINGS[\s\S]{0,4000}accent:\s*'purple'/.test(storeSrc));
-
-  /* 面板和设置页的紫色必须都退化成 var() 的兜底位，不能裸写颜色值 ——
-     裸写的地方换色时不会跟着变。判据：出现紫色 hex 的行必须同时有 var( */
-  const cssFiles = ['../lib/panel-core.js', '../options.css', '../popup.html'];
-  const naked = [];
-  for (const f of cssFiles) {
-    const src = readFileSync(new URL(f, import.meta.url), 'utf8');
-    for (const [i, line] of src.split('\n').entries()) {
-      if (/#(a855f7|c084fc|7c3aed|6d28d9|f0e8ff|241b38|6d5cf0)\b/.test(line) && !line.includes('var(')) {
-        naked.push(f + ':' + (i + 1));
-      }
-    }
-  }
-  check('紫色 hex 只出现在 var() 的兜底位（没有裸写的地方）',
-    naked.length === 0, naked.slice(0, 5).join(', '));
-}
 /* ---- F1 翻译记录增强 / F2 导入勾选 ----
    这两条断言钉的是「功能还在」，不是逐字文案。原来的 confirm 式整体替换是**明确的坏体验**
    （收到别人的 8 条配置只能全要），所以这里禁止它回退。 */
@@ -4135,6 +4090,42 @@ check('那条 text-align 写在 .rt-panel 里（不是写在别处白写）',
   check('导入弹层的勾选行用 grid 两列（flex 会把文字挤出弹层）',
     /\.imp-all,\s*\n\.imp-mode \{[\s\S]{0,200}display: grid/.test(optCss));
 }
+/* ---- v9 → v10：外观默认值从大改小（2026-11-10）----
+   这条钉的是「迁移不许冲掉用户自己调过的值」。做法是真的跑一遍 loadState：
+   塞一个 v9 存档进去，一个全老默认、一个改过两项，看结果。
+   为什么值得单独测：迁移写错是**静默**的 —— 用户不会报「我的字号被改了」，
+   他只会觉得「怎么突然变小了」。 */
+await (async () => {
+  const { loadState, STORAGE_VERSION } = await import('../lib/store.js');
+  const original = globalThis.chrome.storage.local.get;
+  const originalSet = globalThis.chrome.storage.local.set;
+  let box = {};
+  globalThis.chrome.storage.local.get = async () => ({ state: box });
+  globalThis.chrome.storage.local.set = async (o) => { box = o.state || box; };
+
+  const OLD = { triggerSize: 45, triggerIdleSec: 5, triggerLeaveSec: 0.5, panelWidth: 460, fontSize: 20 };
+  const NEW = { triggerSize: 28, triggerIdleSec: 2, triggerLeaveSec: 0.4, panelWidth: 280, fontSize: 16 };
+
+  box = { version: 9, configs: [], vars: [], settings: { ...OLD }, ocr: {} };
+  const a = await loadState();
+  eq('v9 存档里全是老默认值 → 五项一起换成新值',
+    JSON.stringify({ triggerSize: a.settings.triggerSize, triggerIdleSec: a.settings.triggerIdleSec,
+      triggerLeaveSec: a.settings.triggerLeaveSec, panelWidth: a.settings.panelWidth, fontSize: a.settings.fontSize }),
+    JSON.stringify(NEW));
+  eq('迁完版本号是 10', a.version, 10);
+
+  /* 用户调过的必须留着 —— 这是这条迁移唯一真正危险的地方 */
+  box = { version: 9, configs: [], vars: [], settings: { ...OLD, triggerSize: 60, fontSize: 24 }, ocr: {} };
+  const b = await loadState();
+  eq('用户调过的按钮大小(60)不会被冲掉', b.settings.triggerSize, 60);
+  eq('用户调过的字号(24)不会被冲掉', b.settings.fontSize, 24);
+  eq('没调过的那三项照样跟着换',
+    JSON.stringify([b.settings.triggerIdleSec, b.settings.triggerLeaveSec, b.settings.panelWidth]),
+    JSON.stringify([2, 0.4, 280]));
+
+  globalThis.chrome.storage.local.get = original;
+  globalThis.chrome.storage.local.set = originalSet;
+})();
 console.log('\n' + '='.repeat(46));
 console.log(`通过 ${passed} 项，失败 ${failed} 项`);
 console.log('='.repeat(46));

@@ -634,7 +634,7 @@ try {
   const m1 = await measure();
 
   check('小圆点出现了', !!(m1.trigger && m1.trigger.display !== 'none'), `display=${m1.trigger && m1.trigger.display}`);
-  near('小圆点尺寸固定 45px', m1.trigger && m1.trigger.w, 45, 1, 'px');
+  near('小圆点尺寸固定 28px（默认设置）', m1.trigger && m1.trigger.w, 28, 1, 'px');
 
   if (m1.trigger) {
     // 贴鼠标这一版：按钮就落在松手点右下方 14px 处（MOUSE_GAP，见 content.js）
@@ -841,7 +841,7 @@ try {
   check('面板显示了', m2.panelShown);
 
   if (m2.panelShown) {
-    near('面板宽度 = 设置值 460', m2.panel.w, 460, 2, 'px');
+    near('面板宽度 = 设置值 280', m2.panel.w, 280, 2, 'px');
     between('顶栏高度（原 ~65px）', m2.head && m2.head.h, 28, 50, 'px');
     between('底栏高度（原 ~45px）', m2.foot && m2.foot.h, 20, 38, 'px');
     check(
@@ -918,7 +918,7 @@ try {
 
   check('缩放后小圆点能正常出现', !!(m3b.trigger && m3b.trigger.display !== 'none'));
   if (m3b.trigger && m3b.trigger.display !== 'none') {
-    near('缩放后小圆点物理尺寸仍是 45', phys(m3b.trigger.w, 1.5), 45, 1.5, 'px');
+    near('缩放后小圆点物理尺寸仍是 28', phys(m3b.trigger.w, 1.5), 28, 1.5, 'px');
     // 物理上还是离指针 14px（CSS 里那 14px 也跟着 1/zoom 缩了）
     const dxPhys = (m3b.trigger.x - sel3.mouseX) * 1.5;
     near('缩放后仍然贴鼠标（物理 14px）', dxPhys, 14, 3, 'px');
@@ -935,7 +935,7 @@ try {
     '缩回 100% 时小圆点没被缩放事件弄丢',
     !!(mLive.trigger && mLive.trigger.display !== 'none')
   );
-  near('缩回后小圆点物理尺寸仍是 45', mLive.trigger ? mLive.trigger.w : NaN, 45, 1.5, 'px');
+  near('缩回后小圆点物理尺寸仍是 28', mLive.trigger ? mLive.trigger.w : NaN, 28, 1.5, 'px');
 
   const sel4 = await selectText();
   await page.waitForTimeout(300);
@@ -962,7 +962,7 @@ try {
   await page.click('.rt-trigger', { force: true });
   await settle();
 
-  await setFontSize(14);
+  await setFontSize(11);
   await page.waitForTimeout(500);
   const mSmall = await measure();
 
@@ -970,21 +970,22 @@ try {
   await page.waitForTimeout(500);
   const mBig = await measure();
 
-  // 判据是「跟不跟字号走」，不是某个绝对值：14/20 ≈ 0.7，32/20 = 1.6
+  // 判据是「跟不跟字号走」，不是某个绝对值：14/16 ≈ 0.875，32/16 = 2.0
+  // （默认字号 2026-11-10 从 20 改成 16，所以基准是 m2b 那一刻的 16）
   check(
-    '字号 14 时顶栏跟着缩（≤ 默认的 80%）',
+    '字号 11 时顶栏跟着缩（≤ 默认的 80%）',
     mSmall.head.h < m2b.head.h * 0.8,
-    `14→${fmt(mSmall.head.h)}px，20→${fmt(m2b.head.h)}px`
+    `11→${fmt(mSmall.head.h)}px，16→${fmt(m2b.head.h)}px`
   );
   check(
-    '字号 14 时底栏跟着缩',
+    '字号 11 时底栏跟着缩',
     mSmall.foot.h < m2b.foot.h * 0.8,
-    `14→${fmt(mSmall.foot.h)}px，20→${fmt(m2b.foot.h)}px`
+    `11→${fmt(mSmall.foot.h)}px，16→${fmt(m2b.foot.h)}px`
   );
   check(
     '字号 32 时顶栏跟着涨（≥ 默认的 145%）',
     mBig.head.h > m2b.head.h * 1.45,
-    `32→${fmt(mBig.head.h)}px`
+    `32→${fmt(mBig.head.h)}px（基准 16）`
   );
   check(
     '字号 32 时底栏跟着涨',
