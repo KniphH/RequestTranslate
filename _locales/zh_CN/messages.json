@@ -1,9 +1,9 @@
 {
-  "extDesc": {
-    "message": "划词翻译，但配置是你自己的 HTTP 请求。直接写 curl 或原始请求报文，可保存多个命名配置。"
-  },
   "extName": {
     "message": "RequestTranslate · 请求式划词翻译"
+  },
+  "extDesc": {
+    "message": "划词翻译，但配置是你自己的 HTTP 请求。直接写 curl 或原始请求报文，可保存多个命名配置。"
   },
   "cmdOcrClipboard": {
     "message": "翻译剪切板中的截图",
@@ -105,6 +105,18 @@
     "message": "页面地址",
     "description": "占位符/响应格式标签的说明"
   },
+  "opt_compare_cleared": {
+    "message": "对比已清空",
+    "description": "设置页：列表/变量/拖动"
+  },
+  "opt_compare_n": {
+    "message": "对比 ",
+    "description": "设置页：列表/变量/拖动"
+  },
+  "opt_compare_unit": {
+    "message": " 条",
+    "description": "设置页：列表/变量/拖动"
+  },
   "opt_copy_suffix": {
     "message": "副本",
     "description": "设置页：测试面板/诊断/配置操作"
@@ -124,6 +136,14 @@
   "opt_down": {
     "message": "下移",
     "description": "设置页 JS 动态文案"
+  },
+  "opt_drag_hint": {
+    "message": "按住拖动，调整顺序",
+    "description": "设置页：列表/变量/拖动"
+  },
+  "opt_empty": {
+    "message": "(空)",
+    "description": "设置页：列表/变量/拖动"
   },
   "opt_err_boot": {
     "message": "设置页初始化失败：",
@@ -256,6 +276,14 @@
   "opt_model_rotate2": {
     "message": "「测试」和真翻译都会从它开始逐个试",
     "description": "设置页：测试/轮换/配置操作"
+  },
+  "opt_move_down_word": {
+    "message": "下移",
+    "description": "设置页：列表/变量/拖动"
+  },
+  "opt_move_up_word": {
+    "message": "上移",
+    "description": "设置页：列表/变量/拖动"
   },
   "opt_need_one_cfg": {
     "message": "至少要留一条配置。",
@@ -961,6 +989,10 @@
     "message": "（未知适配器）",
     "description": "设置页：测试面板/诊断/配置操作"
   },
+  "opt_unnamed": {
+    "message": "(未命名)",
+    "description": "设置页：列表/变量/拖动"
+  },
   "opt_untitled": {
     "message": "未命名",
     "description": "设置页：测试/轮换/配置操作"
@@ -976,6 +1008,14 @@
   "opt_var_005": {
     "message": "变量",
     "description": "设置页：var 区域"
+  },
+  "opt_var_click_edit": {
+    "message": "点开编辑",
+    "description": "设置页：列表/变量/拖动"
+  },
+  "opt_var_empty": {
+    "message": "空",
+    "description": "设置页：列表/变量/拖动"
   },
   "panel_cfg_only": {
     "message": "翻译接口",

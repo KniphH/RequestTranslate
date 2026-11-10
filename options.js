@@ -358,7 +358,7 @@ function renderConfigList() {
     els.cfgList.appendChild(sortableRow({
       id: cfg.id,
       name: cfg.name,
-      sub: summarizeUrl(cfg.request, '(空)'),
+      sub: summarizeUrl(cfg.request, T('opt_empty', '(空)')),
       active: cfg.id === editingId,
       inCompare: slotConfigIds().includes(cfg.id),
       index: idx,
@@ -445,7 +445,7 @@ function toggleSlotConfig(id, opts) {
   // 左键那条路紧随其后会 selectConfig() 重画（传 redraw:false 就不在这里画，避免闪）
   if (redraw) renderConfigList();
   persist(false);
-  setSaveStatus(next.length ? `对比 ${next.length} 条` : '对比已清空');
+  setSaveStatus(next.length ? T('opt_compare_n', '对比 ') + next.length + T('opt_compare_unit', ' 条') : T('opt_compare_cleared', '对比已清空'));
 }
 
 /** 把一组配置 id 按**设置页列表的当前顺序**排好（面板默认顺序靠它和设置一致） */
@@ -481,7 +481,7 @@ function sortableRow({ id, name, sub, active, inCompare, index, total, listEl, o
   const grip = document.createElement('span');
   grip.className = 'cfg-grip';
   grip.innerHTML = GRIP_SVG;
-  grip.title = '按住拖动，调整顺序';
+  grip.title = T('opt_drag_hint', '按住拖动，调整顺序');
   grip.setAttribute('aria-hidden', 'true'); // 键盘走右边的 ↑ ↓
 
   const btn = document.createElement('button');
@@ -491,7 +491,7 @@ function sortableRow({ id, name, sub, active, inCompare, index, total, listEl, o
 
   const nameEl = document.createElement('div');
   nameEl.className = 'name';
-  nameEl.textContent = name || '(未命名)';
+  nameEl.textContent = name || T('opt_unnamed', '(未命名)');
 
   const subEl = document.createElement('div');
   subEl.className = 'sub';
@@ -539,7 +539,7 @@ function moveButton({ listEl, id, name, index, delta, total, onMove }) {
   b.dataset.mv = String(delta);
   b.textContent = delta < 0 ? '↑' : '↓';
   b.disabled = delta < 0 ? index === 0 : index === total - 1;
-  const label = delta < 0 ? '上移' : '下移';
+  const label = delta < 0 ? T('opt_move_up_word', '上移') : T('opt_move_down_word', '下移');
   b.title = label;
   b.setAttribute('aria-label', `${label}「${name || '未命名'}」`);
 
@@ -1749,20 +1749,20 @@ function renderVars() {
       const grip = document.createElement('span');
       grip.className = 'var-grip';
       grip.innerHTML = GRIP_SVG;
-      grip.title = '按住拖动，调整顺序';
+      grip.title = T('opt_drag_hint', '按住拖动，调整顺序');
       grip.setAttribute('aria-hidden', 'true'); // 键盘暂时没有排序路径，别假装支持
       row.appendChild(grip);
 
       const nameEl = document.createElement('span');
       nameEl.className = 'var-name';
-      nameEl.textContent = v.name || '(未命名)';
+      nameEl.textContent = v.name || T('opt_unnamed', '(未命名)');
       if (isSecretVar(v.name)) nameEl.classList.add('is-key');
 
       const subEl = document.createElement('span');
       subEl.className = 'var-sub';
       subEl.textContent = varValueSummary(v) || '空';
       // 值可能很长（多行 model 列表、长 key）—— 完整内容挂 title，鼠标停上去看全文
-      row.title = `${v.name || '(未命名)'}\n${varValueSummary(v) || '空'}\n\n点开编辑`;
+      row.title = (v.name || T('opt_unnamed', '(未命名)')) + '\n' + (varValueSummary(v) || T('opt_var_empty', '空')) + '\n\n' + T('opt_var_click_edit', '点开编辑');
 
       /* 名字和值竖排在左边一块，操作按钮在右边 —— 卡片宽度只有 230px 起，
          三个子项横排的话值只剩几十像素，一行都显示不全 */
@@ -2026,7 +2026,7 @@ function renderImageConfigList() {
     els.imgcfgList.appendChild(sortableRow({
       id: c.id,
       name: c.name,
-      sub: it ? summarizeUrl(it.imageRequest, '(空)') : '(空)',
+      sub: it ? summarizeUrl(it.imageRequest, T('opt_empty', '(空)')) : T('opt_empty', '(空)'),
       active: c.id === state.ocr.imageConfigId,
       inCompare: imgSlotConfigIds().includes(c.id),
       index: i,
@@ -3408,7 +3408,7 @@ function pickImportConfigs(parsed, exportedAt) {
       const host = String((c.request || '').split('\n')[0] || '').trim().slice(0, 60);
       return ('<label class="imp-row">' +
         `<input type="checkbox" data-ci="${i}" checked>` +
-        `<span><span class="imp-name">${escapeHtml(c.name || '(未命名)')}</span>` +
+        `<span><span class="imp-name">${escapeHtml(c.name || T('opt_unnamed', '(未命名)'))}</span>` +
         (host ? '<span class="imp-sub">' + escapeHtml(host) + '</span>' : '') +
         dup +
         '</span>' +
