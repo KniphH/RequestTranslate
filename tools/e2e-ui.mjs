@@ -5674,9 +5674,11 @@ try {
   const beforeImport = await stateNow();
 
   // —— 先点取消：一个字都不该动
-  dialogAction = 'dismiss';
+  // （F2 之后不再走 confirm，改成页面里的勾选弹层，取消是点 #import-cancel）
   await opt2.setInputFiles('#file-import', incomingFile);
-  await opt2.waitForTimeout(700);
+  await opt2.waitForTimeout(800);
+  await opt2.evaluate(() => document.getElementById('import-cancel')?.click());
+  await opt2.waitForTimeout(300);
   const afterCancel = await stateNow();
   check(
     '导入框里点了取消 → 什么都没动',
@@ -5685,9 +5687,13 @@ try {
     JSON.stringify(afterCancel)
   );
 
-  // —— 正经导入
-  dialogAction = 'accept';
+  // —— 正经导入（「保留现有配置」不勾 = 整体替换，与本用例原语义一致）
   await opt2.setInputFiles('#file-import', incomingFile);
+  await opt2.waitForTimeout(900);
+  const dialogRows = await opt2.evaluate(
+    () => document.querySelectorAll('#import-dialog .imp-row').length
+  );
+  await opt2.evaluate(() => document.getElementById('import-ok')?.click());
   await opt2.waitForTimeout(1500);
   const afterImport = await stateNow();
   check(
@@ -5698,11 +5704,12 @@ try {
   check('设置也一起搬过来了（字号 31）', afterImport.fontSize === 31, String(afterImport.fontSize));
   check('状态栏报了声「导入完成」', /导入完成/.test(afterImport.status), afterImport.status);
 
-  const confirmMsg = dialogs.map((d) => d.message).join(' ｜ ');
+  /* 原来测 confirm 的文案。F2 改成页面内勾选弹层后，弹层直接列出文件里的每一条，
+     信息量比一句「会替换掉 2 条」大 —— 改成钉「确实逐条列出来了」。 */
   check(
-    '确认框说了会替换掉几条（不是干巴巴一句「确定吗」）',
-    /替换/.test(confirmMsg) && /2\s*条/.test(confirmMsg),
-    confirmMsg.slice(0, 120)
+    '导入弹层逐条列出了文件里的配置（F2 的核心）',
+    dialogRows >= 1,
+    String(dialogRows)
   );
 
   // —— 列表 / 编辑器也得跟着重画，不能只有存档变了
@@ -5790,13 +5797,16 @@ try {
   await opt2.waitForSelector('#pass-dialog:not([hidden])', { timeout: 5000 });
   await opt2.fill('#pass-input', '测试口令abc');
   await opt2.click('#pass-ok');
+  /* 口令解开后还会弹 F2 的勾选弹层（两条路在「确认导入」这里汇合），点它 */
+  await opt2.waitForSelector('#import-dialog:not([hidden])', { timeout: 5000 });
+  await opt2.click('#import-ok');
   await opt2.waitForTimeout(1500);
   const afterEnc = await stateNow();
   check('对上口令后正常导入（导出那一刻的状态回来了）',
     afterEnc.count === 2 && afterEnc.firstName === '从别的设备搬来的' && afterEnc.fontSize === 31,
     JSON.stringify(afterEnc));
 
-  // 导入口令框点取消 → 什么都不发生（连确认框都不该弹）
+  // 导入口令框点取消 → 什么都不发生（连勾选弹层都不该弹）
   dialogs.length = 0;
   await opt2.setInputFiles('#file-import', encPath);
   await opt2.waitForSelector('#pass-dialog:not([hidden])', { timeout: 5000 });

@@ -4064,6 +4064,77 @@ check('那条 text-align 写在 .rt-panel 里（不是写在别处白写）',
     /startsWith\('image\/'\)/.test(cbSrc));
   check('判断前先 toLowerCase（Image/PNG 也要认）', /toLowerCase\(\).*startsWith\('image\/'/.test(cbSrc));
 }
+/* ---- 主题色（accent）----
+   accent 的色值只允许出现在 lib/accent.js 一处，别的地方一律 var(--rt-accent*)。
+   这条是「加第二种颜色」时最容易破的规矩：随手在 CSS 里补个 #3b82f6，
+   换色时它就不跟着变了（而且很难发现，因为默认紫是对的）。 */
+{
+  const accentSrc = readFileSync(new URL('../lib/accent.js', import.meta.url), 'utf8');
+  const storeSrc = readFileSync(new URL('../lib/store.js', import.meta.url), 'utf8');
+
+  check('accent.js 是普通脚本（挂 window.RTAccent），不是 ES module',
+    !/^export /m.test(accentSrc) && /window\.RTAccent\s*=/.test(accentSrc));
+
+  /* store.js 是 module、accent.js 是普通脚本，两边不能互相 import，所以白名单写了两份。
+     这条钉住它们**不许分叉**（加了颜色只改一处的话，这里会红）。 */
+  check('store.js 的 accent 白名单和 accent.js 的 ACCENTS 一致',
+    (() => {
+      const inStore = (storeSrc.match(/settings\.accent = \[([^\]]*)\]/) || [])[1] || '';
+      const storeIds = [...inStore.matchAll(/'([a-z]+)'/g)].map((m) => m[1]).sort();
+      /* accent.js 的 IDS 是 Object.keys(ACCENTS) 算的，所以直接从 ACCENTS 的键抓。
+         小技巧：ACCENTS 里的每个键后面紧跟一个 `: {`，用它定位，不会误抓值里的字符串。 */
+      const body = accentSrc.slice(accentSrc.indexOf('const ACCENTS'));
+      /* 缩进是 4 空格（不是 2）—— 用 \s* 兜住，改缩进也不会误报 */
+      const accentIds = [...body.matchAll(/^\s{2,6}([a-z]+): \{$/gm)].map((m) => m[1]).sort();
+      return storeIds.length > 0 && accentIds.length > 0 &&
+        JSON.stringify(storeIds) === JSON.stringify(accentIds);
+    })(),
+    '加了颜色要把两份白名单一起改');
+
+  check('默认主题色是 purple（老用户升级后观感不变）',
+    /DEFAULT_SETTINGS[\s\S]{0,4000}accent:\s*'purple'/.test(storeSrc));
+
+  /* 面板和设置页的紫色必须都退化成 var() 的兜底位，不能裸写颜色值 ——
+     裸写的地方换色时不会跟着变。判据：出现紫色 hex 的行必须同时有 var( */
+  const cssFiles = ['../lib/panel-core.js', '../options.css', '../popup.html'];
+  const naked = [];
+  for (const f of cssFiles) {
+    const src = readFileSync(new URL(f, import.meta.url), 'utf8');
+    for (const [i, line] of src.split('\n').entries()) {
+      if (/#(a855f7|c084fc|7c3aed|6d28d9|f0e8ff|241b38|6d5cf0)\b/.test(line) && !line.includes('var(')) {
+        naked.push(f + ':' + (i + 1));
+      }
+    }
+  }
+  check('紫色 hex 只出现在 var() 的兜底位（没有裸写的地方）',
+    naked.length === 0, naked.slice(0, 5).join(', '));
+}
+/* ---- F1 翻译记录增强 / F2 导入勾选 ----
+   这两条断言钉的是「功能还在」，不是逐字文案。原来的 confirm 式整体替换是**明确的坏体验**
+   （收到别人的 8 条配置只能全要），所以这里禁止它回退。 */
+{
+  const optSrc = readFileSync(new URL('../options.js', import.meta.url), 'utf8');
+  const optHtml = readFileSync(new URL('../options.html', import.meta.url), 'utf8');
+  const optCss = readFileSync(new URL('../options.css', import.meta.url), 'utf8');
+
+  check('翻译记录：搜索框 + 每条两个动作都在 HTML 里',
+    /id="history-search"/.test(optHtml) && /data-act="copy"/.test(optSrc) && /data-act="redo"/.test(optSrc));
+  check('翻译记录：过滤按原文/译文/配置名/语言四处匹配',
+    /\[h\.src, h\.dst, h\.configName, h\.lang\]/.test(optSrc));
+  check('翻译记录：重翻走 runRequest 并写回这条记录',
+    /await runRequest\(/.test(optSrc) && /h\.dst = String\(r\.text\)/.test(optSrc));
+
+  check('导入：不再用 confirm 做整体替换',
+    !/confirm\(\s*$/.test(optSrc) && !/会被替换掉/.test(optSrc));
+  check('导入：有勾选弹层（列表 + 全选 + 合并开关）',
+    /id="import-list"/.test(optHtml) && /id="import-all"/.test(optHtml) && /id="import-merge"/.test(optHtml));
+  check('导入：合并按 name 判重（分享版的 id 两边都不同，用 id 合不上）',
+    /byName = new Map\(state\.configs\.map\(\(c\) => \[c\.name/.test(optSrc));
+  /* 弹层布局：.imp-box 是 .pass-box 的 grid 子项，用 flex 会把说明文字挤出容器（实测过）。
+     这条钉住它保持 grid 两列。 */
+  check('导入弹层的勾选行用 grid 两列（flex 会把文字挤出弹层）',
+    /\.imp-all,\s*\n\.imp-mode \{[\s\S]{0,200}display: grid/.test(optCss));
+}
 console.log('\n' + '='.repeat(46));
 console.log(`通过 ${passed} 项，失败 ${failed} 项`);
 console.log('='.repeat(46));

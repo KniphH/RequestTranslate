@@ -33,7 +33,7 @@
     --fg: #1a1a22;
     --fg-dim: #55555f;
     --fg-faint: #82828f;
-    --accent: #6d5cf0;
+    --accent: var(--rt-accent-dark, #6d5cf0);
 
     --hover: #eeeef4;
     --hover-2: #e7e7ef;
@@ -64,7 +64,7 @@
     width: 24px; height: 24px;
     display: flex; align-items: center; justify-content: center;
     border-radius: 7px;
-    background: linear-gradient(135deg, #6d5cf0, #a855f7);
+    background: linear-gradient(135deg, var(--rt-grad-from, #6d5cf0), var(--rt-grad-to, #a855f7));
     color: #fff;
     font-weight: 700;
     font-size: 12px;
@@ -83,7 +83,7 @@
     outline: none;
     cursor: pointer;
   }
-  select:focus { border-color: rgba(124,108,245,.65); }
+  select:focus { border-color: rgba(var(--rt-accent-rgb, 124, 108, 245), .65); }
   select option { background: var(--panel-2); }
 
   .icon-btn {
@@ -115,7 +115,7 @@
     font-size: 13px;
     outline: none;
   }
-  textarea:focus { border-color: rgba(124,108,245,.65); box-shadow: 0 0 0 3px rgba(124,108,245,.13); }
+  textarea:focus { border-color: rgba(var(--rt-accent-rgb, 124, 108, 245), .65); box-shadow: 0 0 0 3px rgba(var(--rt-accent-rgb, 124, 108, 245), .13); }
 
   .row { display: flex; gap: 8px; margin-top: 9px; }
 
@@ -134,7 +134,7 @@
   button:disabled { opacity: .5; cursor: default; }
   button.primary {
     flex: 1;
-    background: linear-gradient(135deg, #6d5cf0, #8b5cf6);
+    background: linear-gradient(135deg, var(--rt-grad-from, #6d5cf0), var(--rt-grad-to, #8b5cf6));
     border-color: transparent;
     color: #fff;
     font-weight: 550;

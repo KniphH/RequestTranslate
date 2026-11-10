@@ -417,6 +417,14 @@
         </div>
 
         <div class="setting">
+          <label for="s-accent">主题色</label>
+          <select id="s-accent">
+            <!-- 选项由 options.js 按 lib/accent.js 的 ACCENTS 填，别在这里硬编码 -->
+          </select>
+          <p class="hint" data-hint="s-accent">面板、设置页、弹窗的强调色。只换「高亮 / 按钮 / 焦点框」那一族，暗色和亮色主题各有一组，对比度都过了 WCAG AA。</p>
+        </div>
+
+        <div class="setting">
           <label class="switch">
             <input type="checkbox" id="s-showsrc">
             <span>在面板里显示原文</span>
@@ -491,6 +499,7 @@
         <div class="setting">
           <label>最近的记录</label>
           <div class="stack">
+            <input id="history-search" type="search" placeholder="搜索原文、译文或配置名…" autocomplete="off">
             <div id="history-list" class="history-list"></div>
             <button id="btn-clear-history" class="ghost" title="清空全部翻译记录，不可恢复">清空翻译记录</button>
           </div>
@@ -507,8 +516,30 @@
   </main>
 </div>
 
+<script src="lib/accent.js"></script>
 <script src="lib/panel-core.js"></script>
   <script type="module" src="options.js"></script>
+  <!-- 导入时挑配置（F2）：列出文件里的每条，勾选的才进来 -->
+  <div id="import-dialog" hidden>
+    <div class="pass-box imp-box">
+      <p class="pass-title" id="import-title">选择要导入的配置</p>
+      <p class="imp-note" id="import-note"></p>
+      <div class="imp-list" id="import-list"></div>
+      <label class="imp-all">
+        <input type="checkbox" id="import-all" checked>
+        <span>全选 / 全不选</span>
+      </label>
+      <label class="imp-mode">
+        <input type="checkbox" id="import-merge">
+        <span>保留现有配置（勾上的追加进来，同名的覆盖）；不勾 = 整体替换</span>
+      </label>
+      <p class="pass-note" id="import-err"></p>
+      <div class="pass-actions">
+        <button type="button" class="ghost" id="import-cancel">取消</button>
+        <button type="button" id="import-ok">导入选中的</button>
+      </div>
+    </div>
+  </div>
   <div id="pass-dialog" hidden>
     <div class="pass-box">
       <p class="pass-title" id="pass-title">设置口令</p>

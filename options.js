@@ -15,7 +15,8 @@ import {
   dropIndex,
   canTranslateImage,
   PANEL_OWNED_SETTING_KEYS,
-  adoptPanelOwned
+  adoptPanelOwned,
+  getConfig
 } from './lib/store.js';
 
 /* 两个样式表都由 lib/panel-core.js 提供（普通脚本、挂在 window.RTPanelCore 上，
@@ -2589,6 +2590,13 @@ const SETTING_MAP = [
     after: () => applyTheme()
   },
   {
+    /* 主题色。选项不写死在这儿 —— 由 fillAccentOptions() 按 accent.js 的 ACCENTS 填，
+       这样加一种颜色只改 lib/accent.js 一处。 */
+    sel: '#s-accent', key: 'accent', kind: 'value',
+    load: (v) => v, save: (el) => el.value,
+    after: () => applyTheme()
+  },
+  {
     sel: '#s-showsrc', key: 'showOriginal', kind: 'checked',
     load: (v) => !!v, save: (el) => el.checked
   },
@@ -2950,33 +2958,137 @@ function renderSettings() {
   applyTheme();
 }
 
-/** 设置页底部那份「翻译记录」—— 只读展示 + 清空，条数上限在「翻译记录条数」里调 */
+/**
+ * 设置页底部那份「翻译记录」。
+ *
+ * 三条能力：复制译文 / 重翻这条原文 / 按关键词过滤。条数上限在「翻译记录条数」里调。
+ *
+ * 为什么重翻要走 runRequest 而不是「再翻一次网页选区」：记录里存的是**当时那段原文**，
+ * 用户想用**当前配置**重试它 —— 和网页上选没选中文字无关。
+ */
 function renderHistory() {
   const list = $('#history-list');
   if (!list) return;
   const max = Math.max(0, Number(state.settings.historyMax) || 0);
-  const items = (Array.isArray(state.history) ? state.history : []).slice(0, max);
-  if (!items.length) {
+  const all = (Array.isArray(state.history) ? state.history : []).slice(0, max);
+
+  /* 过滤：原文 / 译文 / 配置名 / 语言，任一处命中就算。大小写不敏感。 */
+  const q = String($('#history-search')?.value || '').trim().toLowerCase();
+  const items = q
+    ? all.filter((h) =>
+        [h.src, h.dst, h.configName, h.lang]
+          .some((v) => String(v || '').toLowerCase().includes(q))
+      )
+    : all;
+
+  if (!all.length) {
     list.innerHTML = '<p class="hint">还没有记录（或上面把条数设成了 0）。</p>';
     return;
   }
+  if (!items.length) {
+    list.innerHTML = '<p class="hint">没有匹配「' + escapeHtml(q) + '」的记录。</p>';
+    return;
+  }
+
   const fmt = (ts) => {
     const d = new Date(ts);
     const p = (n) => String(n).padStart(2, '0');
     return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
   };
+
+  /* 「重翻」用当前选中的配置重发这条记录里的原文（不是当时那条配置 ——
+     用户的意图是「换了我现在的配置再试一次」）。 */
+  const redoHint = (h) => {
+    const now = getConfig(state, state.activeConfigId);
+    const was = h.configName || '';
+    return now && was && now.name !== was
+      ? `用「${now.name}」重翻这条（当时用的是「${was}」）`
+      : '用当前配置重翻这条原文';
+  };
+
   list.innerHTML = items
-    .map(
-      (h) =>
-        '<div class="history-item">' +
+    .map((h, i) => {
+      const idx = all.indexOf(h);
+      return (
+        '<div class="history-item" data-hi="' + idx + '">' +
         `<div class="h-meta">${escapeHtml(fmt(h.ts))} · ${escapeHtml(h.configName || '')} · ${escapeHtml(h.lang || '')}</div>` +
         `<div class="h-src">${escapeHtml(h.src)}</div>` +
         `<div class="h-dst">${escapeHtml(h.dst)}</div>` +
+        `<div class="h-acts">` +
+        `<button type="button" class="ghost h-act" data-act="copy" title="复制这条译文">复制译文</button>` +
+        `<button type="button" class="ghost h-act" data-act="redo" title="${escapeHtml(redoHint(h))}">重翻</button>` +
+        `</div>` +
         '</div>'
-    )
+      );
+    })
     .join('');
 }
 
+/**
+ * 临时把按钮文字换成提示，过一会儿换回来。
+ * 为什么不用 toast：设置页里这些动作都是「就地反馈」性质（复制成功、翻译失败），
+ * 弹一个浮层反而打断视线，改按钮自己的字最直观。
+ */
+function flashButton(btn, text, restore, ms = 1400) {
+  const old = restore == null ? btn.textContent : restore;
+  btn.textContent = text;
+  setTimeout(() => {
+    btn.textContent = old;
+  }, ms);
+}
+/** 历史记录里的动作：复制译文 / 重翻。用事件委托，避免每次重渲染都绑定一遍 */
+async function onHistoryAction(e) {
+  const btn = e.target.closest('.h-act');
+  if (!btn) return;
+  const item = btn.closest('.history-item');
+  if (!item) return;
+  const idx = Number(item.dataset.hi);
+  const h = (state.history || [])[idx];
+  if (!h) return;
+
+  if (btn.dataset.act === 'copy') {
+    try {
+      await navigator.clipboard.writeText(String(h.dst || ''));
+      flashButton(btn, '已复制', '复制译文');
+    } catch {
+      flashButton(btn, '复制失败', '复制译文');
+    }
+    return;
+  }
+
+  if (btn.dataset.act === 'redo') {
+    const cfg = getConfig(state, state.activeConfigId);
+    if (!cfg) return;
+    const oldText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '翻译中…';
+    try {
+      const vars = buildVars(state, String(h.src || ''), {});
+      const r = await runRequest({
+        requestText: requestTemplateFor(cfg, {}),
+        adapter: cfg.adapter,
+        vars,
+        path: cfg.path,
+        responseMode: cfg.responseMode,
+      });
+      if (r && r.text) {
+        /* 把新结果写回这条记录，并记下这次用的是哪条配置 */
+        h.dst = String(r.text).slice(0, 5000);
+        h.configName = cfg.name;
+        h.ts = Date.now();
+        await saveState(state);
+        renderHistory();
+        return;
+      }
+      flashButton(btn, '失败：' + String((r && r.error) || '没有译文').slice(0, 24), oldText, 2600);
+    } catch (err) {
+      flashButton(btn, '失败：' + String(err && err.message || err).slice(0, 24), oldText, 2600);
+    } finally {
+      btn.disabled = false;
+      if (btn.textContent !== oldText) btn.textContent = oldText;
+    }
+  }
+}
 /* ---- 翻译按钮 ---- */
 
 function renderTriggerStyles() {
@@ -3074,12 +3186,28 @@ function applyTheme() {
     dark = q ? !q.matches : true;
   }
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  /* 主题色：accent.js 会把 6 个色值写到 <html> 的内联 style 上，
+     设置页所有 `var(--rt-accent*)` 立刻跟着变，不用重渲染。 */
+  if (window.RTAccent) {
+    window.RTAccent.applyAccent(document.documentElement, (state.settings && state.settings.accent) || undefined);
+  }
   renderPreview(); // 预览里的按钮底色也跟着主题变
+}
+
+/** 主题色下拉的选项 —— 从 accent.js 的 ACCENTS 填，加颜色不用改这里 */
+function fillAccentOptions() {
+  const sel = $('#s-accent');
+  if (!sel || !window.RTAccent) return;
+  const api = window.RTAccent;
+  sel.innerHTML = api.IDS.map(
+    (id) => `<option value="${escapeHtml(id)}">${escapeHtml(api.ACCENTS[id].name || id)}</option>`
+  ).join('');
 }
 
 function bindSettings() {
   // 选项要先填好，renderSettings 才摆得对（它靠 select.value 回填）
   fillTargetLangOptions();
+  fillAccentOptions();
   bindTargetLang();
 
   /* 快捷键：Chromium 不给扩展改快捷键的 API（只有 getAll / onCommand —— e2e 实证
@@ -3122,6 +3250,12 @@ function bindSettings() {
     });
   }
 
+  /* 翻译记录：两个按钮用事件委托（记录会重渲染，逐个绑会漏） */
+  const histList = $('#history-list');
+  if (histList) histList.addEventListener('click', onHistoryAction);
+  /* 搜索框：输入即过滤。不防抖 —— 记录最多 200 条，同步过滤足够快 */
+  const histSearch = $('#history-search');
+  if (histSearch) histSearch.addEventListener('input', () => renderHistory());
   // 绑定也走同一张表 —— 加设置只改 SETTING_MAP 一行
   for (const row of SETTING_MAP) {
     const el = $(row.sel);
@@ -3232,6 +3366,89 @@ function bindSettings() {
 
 /* ---- 导入导出 ---- */
 
+/**
+ * 导入时挑配置（F2）。
+ *
+ * 为什么不再用 confirm：`confirm` 只能问「全要还是全不要」，而导入的真实场景是
+ * 「别人发我一份 8 条配置，我只要其中 2 条」。原来只能整体替换，等于强迫用户先备份再挑。
+ *
+ * 返回 null = 用户取消；否则 { configs, merge }。
+ * merge 的判据是 name（分享版里的 id 两边都不同，用 id 判断会一条都合并不上）。
+ */
+function pickImportConfigs(parsed, exportedAt) {
+  return new Promise((resolve) => {
+    const dlg = $('#import-dialog');
+    const list = $('#import-list');
+    const allBox = $('#import-all');
+    const mergeBox = $('#import-merge');
+    const errEl = $('#import-err');
+    const noteEl = $('#import-note');
+    if (!dlg || !list) { resolve(null); return; }
+
+    const mine = new Set(state.configs.map((c) => c.name));
+    const when = exportedAt ? `导出于 ${exportedAt.slice(0, 16).replace('T', ' ')}` : '';
+    noteEl.textContent = `文件里有 ${parsed.configs.length} 条配置${when ? '，' + when : ''}。勾选要导入的：`;
+    errEl.textContent = '';
+    errEl.classList.remove('is-err');
+    mergeBox.checked = false;
+
+    /* 默认全勾（原行为是「全都要」，不能因为加了勾选就让老用户多点一次）。
+       已存在的同名配置在副标题里标一下，用户能看出「这条会覆盖」 */
+    list.innerHTML = parsed.configs.map((c, i) => {
+      const dup = mine.has(c.name) ? '<span class="imp-sub">同名，导入后会覆盖现有的这条</span>' : '';
+      const host = String((c.request || '').split('\n')[0] || '').trim().slice(0, 60);
+      return ('<label class="imp-row">' +
+        `<input type="checkbox" data-ci="${i}" checked>` +
+        `<span><span class="imp-name">${escapeHtml(c.name || '(未命名)')}</span>` +
+        (host ? '<span class="imp-sub">' + escapeHtml(host) + '</span>' : '') +
+        dup +
+        '</span>' +
+        '</label>');
+    }).join('');
+    allBox.checked = true;
+
+    const boxes = () => [...list.querySelectorAll('input[data-ci]')];
+    const checkedCount = () => boxes().filter((b) => b.checked).length;
+
+    const onAll = () => {
+      const want = allBox.checked;
+      for (const b of boxes()) b.checked = want;
+    };
+    const onOne = () => {
+      /* 全选框跟随逐条勾选：全勾 → 勾上，否则不勾（不搞「半选」那个中间态，
+         原生 indeterminate 要手动设，值得不偿失） */
+      allBox.checked = checkedCount() === boxes().length;
+    };
+    allBox.addEventListener('change', onAll);
+    list.addEventListener('change', onOne);
+
+    const done = (ok) => {
+      allBox.removeEventListener('change', onAll);
+      list.removeEventListener('change', onOne);
+      $('#import-ok').removeEventListener('click', okYes);
+      $('#import-cancel').removeEventListener('click', okNo);
+      dlg.hidden = true;
+      resolve(ok);
+    };
+
+    function okYes() {
+      const picked = boxes()
+        .map((b, i) => (b.checked ? parsed.configs[Number(b.dataset.ci)] : null))
+        .filter(Boolean);
+      if (!picked.length) {
+        errEl.textContent = '至少勾一条';
+        errEl.classList.add('is-err');
+        return;
+      }
+      done({ configs: picked, merge: mergeBox.checked });
+    }
+    function okNo() { done(null); }
+
+    $('#import-ok').addEventListener('click', okYes);
+    $('#import-cancel').addEventListener('click', okNo);
+    dlg.hidden = false;
+  });
+}
 /* 口令小模态。`twice` = 设置口令（输两遍防手误）；取消返回 null。
    用页面内 DOM 而不是 window.prompt：密码框不回显明文，且一次能收两个输入。 */
 function askPassphrase({ title, note, twice }) {
@@ -3370,15 +3587,36 @@ function bindImportExport() {
         }
       }
 
-      // exportedAt 只用来写确认框 —— 别让它跟着进 state（否则下次导出会顶着旧日期）
+      // exportedAt 只用来写提示 —— 别让它跟着进 state（否则下次导出会顶着旧日期）
       const { exportedAt, ...parsed } = importState(plainText);
-      const when = exportedAt ? `（导出于 ${exportedAt.slice(0, 16).replace('T', ' ')}）` : '';
-      if (!confirm(
-        `导入 ${parsed.configs.length} 条配置${when}？\n` +
-        `当前的 ${state.configs.length} 条配置、变量、设置和 OCR 都会被替换掉。`
-      )) return;
+      if (!parsed.configs.length) {
+        alert('导入失败：文件里没有配置');
+        return;
+      }
 
-      state = { ...state, ...parsed };
+      /* 先让用户挑要哪几条（F2）。原来这里是 confirm 一句「会全部替换」，
+         收到别人分享的配置就只能把自己的一起搭进去。 */
+      const picked = await pickImportConfigs(parsed, exportedAt);
+      if (!picked) return;   // 取消
+
+      if (picked.merge) {
+        /* 合并：勾上的追加 / 同名覆盖，其余（变量、设置、OCR）保持不动。
+           同名判据用 name —— 用户认识的是名字，不是 id（分享版里的 id 两边都不同）。 */
+        const byName = new Map(state.configs.map((c) => [c.name, c]));
+        for (const c of picked.configs) byName.set(c.name, c);
+        state.configs = [...byName.values()];
+        // 配置数变多时槽位也要有个底，否则新进来的那些「有但没显示」
+        if (Array.isArray(state.slotConfigs)) {
+          for (const c of picked.configs) {
+            if (!state.slotConfigs.includes(c.id) && state.slotConfigs.length < 4) {
+              state.slotConfigs.push(c.id);
+            }
+          }
+        }
+      } else {
+        state = { ...state, ...parsed, configs: picked.configs };
+      }
+
       editingId = state.activeConfigId = state.configs[0].id;
       editingOcrId = state.ocr.activeId;
       // 先按新 state 重画，再落盘 —— persist() 会把编辑器里的值收回去，

@@ -32,6 +32,7 @@ const DEFAULT_TARGETS = [
   /* 2026-11-09 补：这几个一直没被静态检查覆盖。panel-core 是普通脚本（挂 window.RTPanelCore，
      样式表也搬进去了），panel-styles 已退役成空壳但仍留在此处做「不该再有 export」的对照，
      crypto / clipboard-read 是 lib 里唯二没被扫过的，frame-bridge 是独立 IIFE（实测不误报）。 */
+  'lib/accent.js',
   'lib/panel-core.js',
   'lib/panel-styles.js',
   'lib/crypto.js',

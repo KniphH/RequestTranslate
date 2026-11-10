@@ -7,8 +7,10 @@
   --fg: #e8e8ea;
   --fg-dim: #8a8a95;
   --fg-faint: #5f5f6a;
-  --accent: #7c6cf5;
-  --accent-soft: rgba(124, 108, 245, .14);
+  --accent: var(--rt-accent-dark, #7c6cf5);
+  --accent-soft: rgba(var(--rt-accent-rgb, 124, 108, 245), .14);
+  /* 主题色由 lib/accent.js 写到 <html>；这里的值是兜底（紫色）。
+     换色时 accent.js 覆盖 --rt-accent-* / --rt-accent-rgb，下面所有引用自动跟着变。 */
   --danger: #ef4444;
   --warn: #fbbf24;
   --ok: #34d399;
@@ -39,8 +41,8 @@
   --fg: #1a1a22;
   --fg-dim: #55555f;
   --fg-faint: #82828f;
-  --accent: #6d5cf0;
-  --accent-soft: rgba(109, 92, 240, .1);
+  --accent: var(--rt-accent-light, #6d5cf0);
+  --accent-soft: rgba(var(--rt-accent-rgb, 109, 92, 240), .1);
 
   --hover: #eeeef4;
   --hover-2: #e7e7ef;
@@ -99,7 +101,7 @@ header {
   width: 34px; height: 34px;
   display: flex; align-items: center; justify-content: center;
   border-radius: 10px;
-  background: linear-gradient(135deg, #6d5cf0, #a855f7);
+  background: linear-gradient(135deg, var(--rt-grad-from, #6d5cf0), var(--rt-grad-to, #a855f7));
   color: #fff;
   font-weight: 700;
   font-size: 16px;
@@ -126,7 +128,7 @@ header {
 .tab.is-active {
   color: var(--fg);
   background: var(--accent-soft);
-  border-color: rgba(124, 108, 245, .38);
+  border-color: rgba(var(--rt-accent-rgb, 124, 108, 245), .38);
 }
 
 
@@ -291,7 +293,7 @@ main { flex: 1; min-height: 0; position: relative; }
 .cfg-item:hover { background: var(--hover); color: var(--fg); }
 .cfg-item.is-active {
   background: var(--accent-soft);
-  border-color: rgba(124, 108, 245, .38);
+  border-color: rgba(var(--rt-accent-rgb, 124, 108, 245), .38);
   color: var(--fg);
 }
 .cfg-item .name {
@@ -305,14 +307,14 @@ main { flex: 1; min-height: 0; position: relative; }
    这样两种状态同时出现时仍然分得清谁是编辑、谁在对比。
    底色用 rgba 直接写（--accent-soft 已经带 alpha，再叠一层会算不出来）。 */
 .cfg-item.in-compare {
-  border-color: rgba(124, 108, 245, .34);
-  background: rgba(124, 108, 245, .07);
+  border-color: rgba(var(--rt-accent-rgb, 124, 108, 245), .34);
+  background: rgba(var(--rt-accent-rgb, 124, 108, 245), .07);
 }
 .cfg-item.in-compare .name { color: var(--accent); }
 /* 既是编辑又在对比：加深一档（两种标记叠加，不冲突） */
 .cfg-item.in-compare.is-active {
   background: var(--accent-soft);
-  border-color: rgba(124, 108, 245, .5);
+  border-color: rgba(var(--rt-accent-rgb, 124, 108, 245), .5);
 }
 .cfg-item.in-compare.is-active .name { color: var(--fg); }
 .cfg-item.is-active .name::before {
@@ -374,8 +376,8 @@ input[type="text"], input[type="number"], select, textarea {
   width: 100%;
 }
 input:focus, select:focus, textarea:focus {
-  border-color: rgba(124, 108, 245, .65);
-  box-shadow: 0 0 0 3px rgba(124, 108, 245, .13);
+  border-color: rgba(var(--rt-accent-rgb, 124, 108, 245), .65);
+  box-shadow: 0 0 0 3px rgba(var(--rt-accent-rgb, 124, 108, 245), .13);
 }
 select { cursor: pointer; }
 select option { background: var(--panel-2); }
@@ -556,7 +558,7 @@ select option { background: var(--panel-2); }
   cursor: pointer;
   transition: .13s;
 }
-.chip:hover { background: var(--accent-soft); border-color: rgba(124, 108, 245, .5); color: var(--fg); }
+.chip:hover { background: var(--accent-soft); border-color: rgba(var(--rt-accent-rgb, 124, 108, 245), .5); color: var(--fg); }
 
 .preview {
   border: 1px solid var(--line);
@@ -748,7 +750,7 @@ button:hover { background: var(--hover-2); border-color: var(--line-strong); }
 button:disabled { opacity: .5; cursor: default; }
 
 button.primary {
-  background: linear-gradient(135deg, #6d5cf0, #8b5cf6);
+  background: linear-gradient(135deg, var(--rt-grad-from, #6d5cf0), var(--rt-grad-to, #8b5cf6));
   border-color: transparent;
   color: #fff;
   font-weight: 550;
@@ -1135,7 +1137,7 @@ button.block { width: 100%; }
 .trig-prev.round {
   border-radius: 10px;
   border-color: transparent;
-  background: linear-gradient(135deg, #6d5cf0, #a855f7);
+  background: linear-gradient(135deg, var(--rt-grad-from, #6d5cf0), var(--rt-grad-to, #a855f7));
   color: #fff;
   font-weight: 600;
   font-size: 16px;
@@ -1268,6 +1270,73 @@ button.block { width: 100%; }
 }
 .pass-note.is-err { color: var(--danger, #c0392b); }
 .pass-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* ---- 导入时挑配置（#import-dialog）----
+   和口令框共用 #pass-dialog 那套外观，这里只补「列表 + 两个勾选」这一层。
+   列表给最大高度并自己滚：文件里可能有几十条配置，弹层不能被撑出屏幕。 */
+#import-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, .35);
+}
+#import-dialog[hidden] { display: none; }
+.imp-box { width: 420px; max-height: 80vh; }
+.imp-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg-dim);
+}
+.imp-list {
+  max-height: 40vh;
+  overflow-y: auto;
+  display: grid;
+  gap: 4px;
+  padding: 2px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: var(--input-bg);
+}
+.imp-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: start;
+  padding: 7px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.imp-row:hover { background: var(--hover); }
+.imp-row input { margin-top: 2px; }
+/* 名称和请求首行必须各占一行 —— 它们是 span，不给 display:block 就会挤成一行 */
+.imp-name { display: block; font-size: 13px; color: var(--fg); line-height: 1.4; }
+.imp-sub { display: block; font-size: 11px; color: var(--fg-faint); line-height: 1.4; }
+/* 用 grid 两列而不是 flex：.pass-box 是 display:grid，flex 子项在里面的
+   宽度计算会把文字顶到容器外面（实测会把说明文字挤出弹层）。
+   第一列固定放勾选框，第二列吃剩余宽度并自己换行。 */
+.imp-all,
+.imp-mode {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 7px;
+  align-items: start;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg-dim);
+  cursor: pointer;
+  /* 关键：允许第二列比内容窄，文字才能正常折行 */
+  min-width: 0;
+}
+.imp-all span,
+.imp-mode span { min-width: 0; word-break: break-word; }
+.imp-all input,
+.imp-mode input { margin-top: 2px; }
+.imp-all input,
+.imp-mode input { margin-top: 2px; }
 
 /* ---- 导入 / 导出（设置页签底部，kniph 2026-10-15：别占顶部那排空间）----
    行结构复用 .setting（label 210px 在左 + 控件在右），这里只有导出备份那一行的横排小组件 */
