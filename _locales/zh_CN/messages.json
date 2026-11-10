@@ -65,6 +65,10 @@
     "message": "折叠 / 展开（点这一行也行）",
     "description": "设置页 JS 动态文案"
   },
+  "opt_grp_lang": {
+    "message": "语言",
+    "description": "设置页：语言那一组的标题（组标题短一点，行标签才是「界面语言」）"
+  },
   "opt_hint_dismiss": {
     "message": "不再显示",
     "description": "设置页 JS 动态文案"

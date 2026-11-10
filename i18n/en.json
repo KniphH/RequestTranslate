@@ -231,6 +231,7 @@
     "opt_imgtpl_ph": "Leave empty to reuse the template above for images too",
     "opt_imgtpl_hint": "<b>Once this is filled in (on the main request or any fallback), the config shows up in the OCR tab's image config list.</b> It handles images; the template above keeps handling text. Leave it empty to fall back to the one above.<br>Write it the multimodal way, for example: <code>{\"role\":\"user\",\"content\":[{\"type\":\"image_url\",\"image_url\":{\"url\":\"{{image}}\"}},{\"type\":\"text\",\"text\":\"Translate the text in the image into {{target}}, output only the translation\"}]}</code><br>Inside this template <code>{{text}}</code> is the empty string: with direct image passing the image itself is the source.",
     "opt_path_hint_text": "Dots plus indexes, e.g. <code>data.translations[0].translatedText</code>. When empty, common response shapes are tried in turn.",
-    "opt_path_hint_ocr": "Dots plus indexes, e.g. Baidu's <code>words_result</code> (one object per line, joined into one paragraph). When empty, common response shapes are tried in turn."
+    "opt_path_hint_ocr": "Dots plus indexes, e.g. Baidu's <code>words_result</code> (one object per line, joined into one paragraph). When empty, common response shapes are tried in turn.",
+    "opt_grp_lang": "Language"
   }
 }
