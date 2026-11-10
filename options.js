@@ -3548,20 +3548,28 @@ async function bindUiLang() {
      报错也只出现在状态栏那一行，不进控制台。
      这也符合「不做隐式行为」：不该在打开设置页时就偷偷联网。 */
   let indexLoaded = false;
+  /* 取清单 → 逐个核实文件真的存在 → 才填进下拉。
+     清单是手写的：写错文件名、或者某次只提交了清单没提交文件，用户就会看到一个
+     点了必然失败的选项。所以列出来之前先 HEAD 探一遍，探不到的静默剔除。 */
   const loadIndexOnce = async () => {
     if (indexLoaded) return true;
     try {
+      say(T('opt_ui_lang_checking', '正在核实可用的语言包…'));
       const index = await api.fetchIndex();
-      for (const [code, meta] of Object.entries(index)) {
-        if (!meta || !meta.file) continue;
+      const usable = api.verifyIndex ? await api.verifyIndex(index) : [];
+      usable.sort((a, b) => String(a.meta.name || a.code).localeCompare(String(b.meta.name || b.code)));
+      for (const item of usable) {
         const opt = document.createElement('option');
-        opt.value = code;
+        opt.value = item.code;
+        const meta = item.meta;
         const pct = typeof meta.progress === 'number' ? Math.round(meta.progress * 100) : 100;
-        opt.textContent = (meta.name || code) + (pct < 100 ? ' (' + pct + '%)' : '');
+        opt.textContent = (meta.name || item.code) + (pct < 100 ? ' (' + pct + '%)' : '');
         sel.appendChild(opt);
       }
       indexLoaded = true;
-      return true;
+      say(usable.length ? T('opt_ui_lang_count_pre', '核实到') + ' ' + usable.length + ' ' + T('opt_ui_lang_count_post', '种可用语言，选一种再点一次。')
+        : T('opt_ui_lang_none', '清单里没有可用的语言包（文件都取不到）。'), !usable.length);
+      return usable.length > 0;
     } catch {
       say(T('opt_ui_lang_offline', '取不到语言清单（离线或被挡），先用内置中文。'), true);
       return false;
@@ -3577,10 +3585,8 @@ async function bindUiLang() {
       const got = await loadIndexOnce();
       btn.disabled = false;
       if (!got) return;
-      if (Object.keys(sel.options).length > 1) {
-        say(T('opt_ui_lang_pick', '清单已取到，选一种语言再点一次。'));
-        return;
-      }
+      // 清单已填进下拉（loadIndexOnce 内部提示过了），第一次点击只负责取列表
+      if (Object.keys(sel.options).length > 1) return;
     }
     const code = sel.value;
     if (!code) {

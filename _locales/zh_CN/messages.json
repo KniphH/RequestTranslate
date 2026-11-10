@@ -1,9 +1,9 @@
 {
-  "extDesc": {
-    "message": "划词翻译，但配置是你自己的 HTTP 请求。直接写 curl 或原始请求报文，可保存多个命名配置。"
-  },
   "extName": {
     "message": "RequestTranslate · 请求式划词翻译"
+  },
+  "extDesc": {
+    "message": "划词翻译，但配置是你自己的 HTTP 请求。直接写 curl 或原始请求报文，可保存多个命名配置。"
   },
   "opt_adapter_note": {
     "message": "这条请求不走请求模板，翻译流程由扩展内置的代码完成。",
@@ -613,6 +613,18 @@
     "message": "中文（内置）",
     "description": "界面语言下拉：内置中文选项"
   },
+  "opt_ui_lang_checking": {
+    "message": "正在核实可用的语言包…",
+    "description": "界面语言：清单取回后逐个探测文件"
+  },
+  "opt_ui_lang_count_post": {
+    "message": "种可用语言，选一种再点一次。",
+    "description": "界面语言：核实完成，数量后面那段"
+  },
+  "opt_ui_lang_count_pre": {
+    "message": "核实到",
+    "description": "界面语言：核实完成，数量前面那段"
+  },
   "opt_ui_lang_dl": {
     "message": "正在下载…",
     "description": "界面语言：下载中"
@@ -624,6 +636,14 @@
   "opt_ui_lang_go": {
     "message": "下载并使用",
     "description": "界面语言：下载按钮"
+  },
+  "opt_ui_lang_listed": {
+    "message": "核实到这些可用语言，选一种再点一次：",
+    "description": "界面语言：核实完成（数量另行拼接，不用占位符）"
+  },
+  "opt_ui_lang_none": {
+    "message": "清单里没有可用的语言包（文件都取不到）。",
+    "description": "界面语言：核实后一个都没有"
   },
   "opt_ui_lang_offline": {
     "message": "取不到语言清单（离线或被挡），先用内置中文。",

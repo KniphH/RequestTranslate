@@ -197,6 +197,10 @@
     "opt_ui_lang_fail": "Download failed: ",
     "opt_adapter_prefix": "Built-in adapter: ",
     "opt_adapter_note": "This request does not use a request template; the translation flow is handled by code inside the extension.",
-    "opt_ui_lang_pick": "Language list loaded, pick one and click again."
+    "opt_ui_lang_pick": "Language list loaded, pick one and click again.",
+    "opt_ui_lang_checking": "Checking which language packs are available…",
+    "opt_ui_lang_none": "No usable language packs in the list (none of the files could be fetched).",
+    "opt_ui_lang_count_pre": "Found",
+    "opt_ui_lang_count_post": "languages available, pick one and click again."
   }
 }

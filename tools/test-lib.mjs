@@ -4168,6 +4168,32 @@ await (async () => {
 
   /* 生成语言包时**绝不能**把含 ${} 的模板丢给机翻 —— 会变成 $ {mkey} 把功能搞坏。
      zh_CN 是 base 语言，它的 value 里不许出现 ${。 */
+  /* Chrome 的硬规矩：message 里出现的 $X$ 必须配 placeholders 声明，否则**整个**
+     messages.json 加载失败 → 扩展加载失败（不是「那一条显示不出来」，是整个扩展装不上）。
+     2026-11-10 栽过：opt_ui_lang_listed 写了 $N$（N 不是数字），扩展直接起不来，
+     e2e 报「service worker 没起来」，查了半小时才发现是 locale 文件。 */
+  check('messages.json 里没有非数字的 $X$ 占位符（Chrome 会拒绝整个文件）',
+    (() => {
+      const bad = [];
+      for (const [k, v] of Object.entries(zh)) {
+        for (const m of String(v.message || '').matchAll(/\$([^$]+)\$/g)) {
+          if (!/^\d+$/.test(m[1])) bad.push(k + ':' + m[1]);
+        }
+      }
+      return bad.length === 0;
+    })(),
+    '占位符必须是 $1$ $2$ 这种数字形式');
+
+  /* 数字占位符也必须配 placeholders —— 声明数少于用到的是同一个坑 */
+  check('每个用到 $N$ 的 message 都声明了等量 placeholders',
+    (() => {
+      for (const [k, v] of Object.entries(zh)) {
+        const used = new Set([...String(v.message || '').matchAll(/\$(\d+)\$/g)].map((m) => m[1]));
+        const declared = v.placeholders ? Object.keys(v.placeholders).length : 0;
+        if (used.size !== declared) return false;
+      }
+      return true;
+    })());
   check('messages.json 的 value 里没有 ${ 模板语法（机翻会把它拆坏）',
     Object.values(zh).every((v) => !String(v.message).includes('${')));
 
