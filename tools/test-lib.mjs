@@ -1990,7 +1990,7 @@ section('15f. 设置页的「图片配置」那条线也认后备');
 
   /* 测试结果的徽章：原来的「按顺序试 2 条」会被读成「2 条都会发」，而实际拿到译文就停。 */
   check('徽章说「链上共 N 条请求」，不再写「按顺序试 N 条」',
-    opt.includes('链上共 ${chain.length} 条请求') && !opt.includes('按顺序试 ${chain.length} 条'));
+    /T\('opt_chain_a'/.test(opt) && opt.includes('${chain.length}') && !/按顺序试 \$\{/.test(opt));
   check('成功徽章报清「第几条成的 / 后面几条没跑」',
     opt.includes('第 ${i + 1} 条拿到译文') && opt.includes('，后面 ${left} 条没跑'));
   check('一条都没成时也给个交代（不是只留一排失败块）', opt.includes('条都没拿到译文'));
@@ -3009,13 +3009,14 @@ section('25. 管模型的变量填多行 = 换 model 重试（每个一行）');
   check('不轮换时徽章文案一字没改（「第 i 条拿到译文，后面 N 条没跑」）',
     optSrc.includes('`，后面 ${left} 条没跑`') && optSrc.includes('第 ${i + 1} 条拿到译文'));
   check('轮换时明说「最多发几次」+「第几个 model 成的」',
-    optSrc.includes('model 逐个试，最多发 ${total} 次') &&
+    /T\('opt_tryall_a'/.test(optSrc) && optSrc.includes('${total}') &&
       optSrc.includes('第 ${j + 1} 个 model 拿到译文'));
   check('轮换时每块自带 model 徽章（好几块长得一样，得分得清哪块是哪个）',
     optSrc.includes('function testItemHtml(item, r, opts = {})') &&
       optSrc.includes('if (opts.model) badges.unshift'));
   check('配置预览的备注交代「只摊第一个、真跑会逐个试」',
-    /model 轮换：\$\{mkey\} 填了 \$\{models\.length\} 个候选/.test(optSrc));
+    /T\('opt_model_rotate_a'/.test(optSrc) && /T\('opt_model_rotate2'/.test(optSrc) && +
+      optSrc.includes('+ models.length +') && optSrc.includes('+ models[0] +'));
 
   /* ---- 图片直传只试填了图片模板的条目（kniph 2026-10-14 提出）----
      `requestTemplateFor` 对没填图片模板的条目会**回退到普通那段**（老配置靠这个保行为）。

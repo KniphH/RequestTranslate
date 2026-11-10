@@ -938,7 +938,7 @@ function blockHtml(item, idx, lastIdx, opts = {}) {
         <label class="rb-on" title="${T('opt_no_rotate', '不勾就不参与轮换（测试也不跑它）')}">
           <input type="checkbox" class="rb-enable"${item.enabled ? ' checked' : ''}>
         </label>
-        <span class="rb-tag">${escapeHtml(isMain ? '主请求' : item.name)}</span>
+        <span class="rb-tag">${escapeHtml(isMain ? T('opt_main_req', '主请求') : item.name)}</span>
         <span class="rb-sub">${escapeHtml(blockSummary(item, kind))}</span>
         ${item.imageRequest && item.imageRequest.trim() ? `<span class="rb-badge" title="${T('opt_img_badge', '这条填了「图片请求模板」，截图翻译时会走它（图片直传模式）')}">图</span>` : ''}
         <span class="spacer"></span>
@@ -1269,7 +1269,7 @@ $('#btn-duplicate').addEventListener('click', () => {
       alert(T('opt_need_one_cfg', '至少要留一条配置。'));
       return;
     }
-    if (!confirm(`确定删除「${cfg.name || '未命名'}」？此操作不可撤销。`)) return;
+    if (!confirm(T('opt_del_confirm_a', '确定删除「') + (cfg.name || T('opt_untitled', '未命名')) + T('opt_del_confirm_b', '」？此操作不可撤销。'))) return;
 
     const idx = state.configs.findIndex((c) => c.id === cfg.id);
     state.configs.splice(idx, 1);
@@ -1363,19 +1363,19 @@ function previewBlock(b, vars, ivars) {
   if (!b.request.trim()) return T('opt_t_notpl', '(请求模板为空)');
 
   const info = previewRequest(b.request, vars, b.path);
-  const notes = [`写法：${info.request.style === 'raw' ? '原始 HTTP 报文' : 'curl'}（自动识别）`];
+  const notes = [T('opt_style_prefix', '写法：') + (info.request.style === 'raw' ? T('opt_style_raw', '原始 HTTP 报文') : 'curl') + T('opt_style_auto', '（自动识别）')];
   /* 预览一次只摊一个 model（一次请求就是一个 model）—— 填了多行时在这儿交代一句，
      免得看到地址里只有第一个就以为扩展不认后面几行（kniph 报过这个疑惑）。 */
   const mkey = modelVarFor(b.request, vars);
   const models = modelCandidates(b.request, vars);
   if (models.length > 1) {
     notes.push(
-      `model 轮换：${mkey} 填了 ${models.length} 个候选，上面摊的是第一个（${models[0]}）；` +
-      '「测试」和真翻译都会从它开始逐个试'
+      T('opt_model_rotate_a', 'model 轮换：') + mkey + T('opt_model_rotate_b', ' 填了 ') + models.length + T('opt_model_rotate_c', ' 个候选，上面摊的是第一个（') + models[0] + T('opt_model_rotate_d', '）；') +
+      T('opt_model_rotate2', '「测试」和真翻译都会从它开始逐个试')
     );
   }
   if (info.missing.length) {
-    notes.push('未定义的变量（按空串替换）：' + info.missing.map((m) => '{{' + m + '}}').join(' '));
+    notes.push(T('opt_t_undef', '未定义的变量（按空串替换）：') + info.missing.map((m) => '{{' + m + '}}').join(' '));
   }
   for (const p of info.problems) notes.push(T('opt_t_problem', '问题：') + p);
   for (const w of info.warnings || []) notes.push(T('opt_t_hintlbl', '提示：') + w);
@@ -1389,19 +1389,19 @@ function previewBlock(b, vars, ivars) {
     const iinfo = previewRequest(imgTpl, ivars, b.path);
     const inotes = [];
     if (iinfo.missing.length) {
-      inotes.push('未定义的变量（按空串替换）：' + iinfo.missing.map((m) => '{{' + m + '}}').join(' '));
+      inotes.push(T('opt_t_undef', '未定义的变量（按空串替换）：') + iinfo.missing.map((m) => '{{' + m + '}}').join(' '));
     }
     for (const p of iinfo.problems) inotes.push(T('opt_t_problem', '问题：') + p);
     for (const w of iinfo.warnings || []) inotes.push(T('opt_t_hintlbl', '提示：') + w);
     for (const n of iinfo.notes) inotes.push(T('opt_t_fix', '修正：') + n);
-    out += '\n\n══════ 图片请求模板（截图直传那一次用它）══════\n\n' + formatPreview(iinfo.request, inotes);
+    out += '\n\n' + T('opt_imgtpl_sep', '══════ 图片请求模板（截图直传那一次用它）══════') + '\n\n' + formatPreview(iinfo.request, inotes);
   }
   return out;
 }
 
 /** 预览 / 测试结果里的块标题。后备的名字就是它的位置 —— 和 `allRequests` 现算的那个一致 */
 function blockTitle(i) {
-  return i === 0 ? '主请求' : `后备 ${i}`;
+  return i === 0 ? T('opt_main_req', '主请求') : T('opt_fallback_n', '后备 ') + i;
 }
 
 function updatePreview() {
@@ -1419,11 +1419,11 @@ function updatePreview() {
     try {
       vars = buildVars(state, 'Hello, world! 这是一段示例文本。', {
         url: 'https://example.com/page',
-        title: '示例页面'
+        title: T('opt_sample_page', '示例页面')
       });
       ivars = buildVars(state, '', {
         url: 'https://example.com/page',
-        title: '示例页面',
+        title: T('opt_sample_page', '示例页面'),
         image: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=='
       });
     } catch {
@@ -1434,7 +1434,7 @@ function updatePreview() {
     const parts = [];
     nodes.forEach((node, i) => {
       const b = readBlock(node);
-      parts.push(`━━━━━━ ${blockTitle(i)}${b.enabled ? '' : '（已勾掉，不参与轮换）'} ━━━━━━`);
+      parts.push(`━━━━━━ ${blockTitle(i)}${b.enabled ? '' : T('opt_block_off', '（已勾掉，不参与轮换）')} ━━━━━━`);
       parts.push(previewBlock(b, vars, ivars));
     });
     els.preview.textContent = parts.join('\n\n');
@@ -1473,7 +1473,7 @@ async function runTest() {
 
   let vars;
   try {
-    vars = buildVars(state, text, { url: location.href, title: 'RequestTranslate 测试' });
+    vars = buildVars(state, text, { url: location.href, title: T('opt_test_page', 'RequestTranslate 测试') });
   } catch {
     vars = { text };
   }
@@ -1496,8 +1496,8 @@ async function runTest() {
   /* 这枚徽章只交代「这条链上一共有几条」—— 不是「要试几条」。
      写成「按顺序试 2 条」会被读成「两条都会发」，可实际拿到译文就停（kniph 报过这个歧义）。 */
   head.innerHTML =
-    `<span class="badge">链上共 ${chain.length} 条请求</span>` +
-    (rotating ? `<span class="badge">model 逐个试，最多发 ${total} 次</span>` : '');
+    `<span class="badge">${T('opt_chain_a', '链上共 ')}${chain.length}${T('opt_chain_b', ' 条请求')}</span>` +
+    (rotating ? `<span class="badge">${T('opt_tryall_a', 'model 逐个试，最多发 ')}${total}${T('opt_tryall_b', ' 次')}</span>` : '');
   els.testResult.appendChild(head);
 
   let got = false;
@@ -1642,7 +1642,7 @@ function testItemHtml(item, r, opts = {}) {
     );
   }
 
-  const title = item.main ? '主请求' : escapeHtml(item.name);
+  const title = item.main ? T('opt_main_req', '主请求') : escapeHtml(item.name);
   return `<div class="result test-item">${resultBlockHtml({
     head: `<span class="badge">${title}</span>${badges.join('')}`,
     body: rows.join(''),
@@ -2195,11 +2195,11 @@ function renderOcrPreview() {
   const parts = chain.map((item) => {
     const req = previewOcrRequest(item, OCR_SAMPLE_IMAGE, vars);
     const notes = [...(req.warnings || [])];
-    if (req.style) notes.unshift(`写法：${req.style === 'raw' ? '原始 HTTP 报文' : 'curl'}（自动识别）`);
+    if (req.style) notes.unshift(T('opt_style_prefix', '写法：') + (req.style === 'raw' ? T('opt_style_raw', '原始 HTTP 报文') : 'curl') + T('opt_style_auto', '（自动识别）'));
     if (/{{image(Base64|UrlEncoded)?}}/.test(String(item.request || ''))) {
       notes.push('上面 {{image}} 的位置是一张假的示例图，真截图是一整段 data URL；「测试」跑完后的「实际请求」里是那一份真的');
     }
-    const head = chain.length > 1 ? `—— ${item.main ? '主请求' : (item.name || '后备')} ——` : '';
+    const head = chain.length > 1 ? '—— ' + (item.main ? T('opt_main_req', '主请求') : (item.name || T('opt_fallback_word', '后备'))) + ' ——' : '';
     return head ? head + '\n' + formatPreview(req, notes) : formatPreview(req, notes);
   });
 

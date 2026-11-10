@@ -1,9 +1,9 @@
 {
-  "extName": {
-    "message": "RequestTranslate · 请求式划词翻译"
-  },
   "extDesc": {
     "message": "划词翻译，但配置是你自己的 HTTP 请求。直接写 curl 或原始请求报文，可保存多个命名配置。"
+  },
+  "extName": {
+    "message": "RequestTranslate · 请求式划词翻译"
   },
   "cmdOcrClipboard": {
     "message": "翻译剪切板中的截图",
@@ -37,6 +37,10 @@
     "message": "内置适配器：",
     "description": "内置适配器条目的前缀"
   },
+  "opt_block_off": {
+    "message": "（已勾掉，不参与轮换）",
+    "description": "设置页：测试/轮换/配置操作"
+  },
   "opt_cfg_004": {
     "message": "配置",
     "description": "设置页：cfg 区域"
@@ -48,6 +52,14 @@
   "opt_cfg_requests": {
     "message": "一条配置能挂好几条请求：<b>主请求</b>先发，它挂了就按顺序试勾上的<b>后备请求</b>。",
     "description": "设置页 JS 动态文案"
+  },
+  "opt_chain_a": {
+    "message": "链上共 ",
+    "description": "设置页：测试/轮换/配置操作"
+  },
+  "opt_chain_b": {
+    "message": " 条请求",
+    "description": "设置页：测试/轮换/配置操作"
   },
   "opt_chip_apikey": {
     "message": "「变量」页签里的 apiKey，和翻译配置共用",
@@ -97,6 +109,14 @@
     "message": "副本",
     "description": "设置页：测试面板/诊断/配置操作"
   },
+  "opt_del_confirm_a": {
+    "message": "确定删除「",
+    "description": "设置页：测试/轮换/配置操作"
+  },
+  "opt_del_confirm_b": {
+    "message": "」？此操作不可撤销。",
+    "description": "设置页：测试/轮换/配置操作"
+  },
   "opt_del_fallback": {
     "message": "删掉这条后备请求",
     "description": "设置页 JS 动态文案"
@@ -108,6 +128,14 @@
   "opt_err_boot": {
     "message": "设置页初始化失败：",
     "description": "设置页 JS 动态文案"
+  },
+  "opt_fallback_n": {
+    "message": "后备 ",
+    "description": "设置页：测试/轮换/配置操作"
+  },
+  "opt_fallback_word": {
+    "message": "后备",
+    "description": "设置页：测试/轮换/配置操作"
   },
   "opt_fold": {
     "message": "折叠 / 展开（点这一行也行）",
@@ -149,6 +177,10 @@
     "message": "留空 = 图片那次也用上面那段模板",
     "description": "图片请求模板输入框占位"
   },
+  "opt_imgtpl_sep": {
+    "message": "══════ 图片请求模板（截图直传那一次用它）══════",
+    "description": "设置页：测试/轮换/配置操作"
+  },
   "opt_imgtpl_title": {
     "message": "图片请求模板（可选 · 点开填）",
     "description": "配置编辑器：图片请求模板折叠块的标题"
@@ -172,6 +204,10 @@
   "opt_lang_samehint": {
     "message": "划词面板顶栏也有一个，两边是同一个值，想临时换一门语言不用特意回这儿。",
     "description": "设置页：目标语言下方的说明"
+  },
+  "opt_main_req": {
+    "message": "主请求",
+    "description": "设置页：测试/轮换/配置操作"
   },
   "opt_misc_001": {
     "message": "RequestTranslate · 设置",
@@ -200,6 +236,26 @@
   "opt_mode_text": {
     "message": "纯文本",
     "description": "占位符/响应格式标签的说明"
+  },
+  "opt_model_rotate_a": {
+    "message": "model 轮换：",
+    "description": "设置页：测试/轮换/配置操作"
+  },
+  "opt_model_rotate_b": {
+    "message": " 填了 ",
+    "description": "设置页：测试/轮换/配置操作"
+  },
+  "opt_model_rotate_c": {
+    "message": " 个候选，上面摊的是第一个（",
+    "description": "设置页：测试/轮换/配置操作"
+  },
+  "opt_model_rotate_d": {
+    "message": "）；",
+    "description": "设置页：测试/轮换/配置操作"
+  },
+  "opt_model_rotate2": {
+    "message": "「测试」和真翻译都会从它开始逐个试",
+    "description": "设置页：测试/轮换/配置操作"
   },
   "opt_need_one_cfg": {
     "message": "至少要留一条配置。",
@@ -272,6 +328,10 @@
   "opt_row_text": {
     "message": "提取到的译文",
     "description": "设置页 JS 动态文案"
+  },
+  "opt_sample_page": {
+    "message": "示例页面",
+    "description": "设置页：测试/轮换/配置操作"
   },
   "opt_send": {
     "message": "发送",
@@ -713,6 +773,18 @@
     "message": "确定",
     "description": "设置页：set 区域"
   },
+  "opt_style_auto": {
+    "message": "（自动识别）",
+    "description": "设置页：测试/轮换/配置操作"
+  },
+  "opt_style_prefix": {
+    "message": "写法：",
+    "description": "设置页：测试/轮换/配置操作"
+  },
+  "opt_style_raw": {
+    "message": "原始 HTTP 报文",
+    "description": "设置页：测试/轮换/配置操作"
+  },
   "opt_t_body": {
     "message": "—— 实际会发出的请求体 ——",
     "description": "设置页：测试面板/诊断/配置操作"
@@ -761,9 +833,17 @@
     "message": "问题：",
     "description": "设置页：测试面板/诊断/配置操作"
   },
+  "opt_t_undef": {
+    "message": "未定义的变量（按空串替换）：",
+    "description": "设置页：测试/轮换/配置操作"
+  },
   "opt_t_url": {
     "message": "地址：",
     "description": "设置页：测试面板/诊断/配置操作"
+  },
+  "opt_test_page": {
+    "message": "RequestTranslate 测试",
+    "description": "设置页：测试/轮换/配置操作"
   },
   "opt_title_201": {
     "message": "按住左侧的手柄上下拖动，或者点右侧的 ↑ ↓",
@@ -812,6 +892,14 @@
   "opt_tpl_title": {
     "message": "请求模板",
     "description": "配置编辑器：请求模板折叠块的标题"
+  },
+  "opt_tryall_a": {
+    "message": "model 逐个试，最多发 ",
+    "description": "设置页：测试/轮换/配置操作"
+  },
+  "opt_tryall_b": {
+    "message": " 次",
+    "description": "设置页：测试/轮换/配置操作"
   },
   "opt_ui_lang": {
     "message": "界面语言",
@@ -872,6 +960,10 @@
   "opt_unknown_adapter": {
     "message": "（未知适配器）",
     "description": "设置页：测试面板/诊断/配置操作"
+  },
+  "opt_untitled": {
+    "message": "未命名",
+    "description": "设置页：测试/轮换/配置操作"
   },
   "opt_untitled_cfg": {
     "message": "未命名配置",
