@@ -350,7 +350,7 @@ Bing 网页版翻译是**两步**：先 GET `bing.com/translator`，从 630KB �
 | 准备打包 / 发版 | **`npm test` 全量**（四项都跑） |
 
 ```bash
-npm test              # 全量：静态检查 2 + test-lib 1025 + test-engine 89 + test-strip 19 + e2e 555 = 1690 项
+npm test              # 全量：静态检查 2 + test-lib 1029 + test-engine 89 + test-strip 19 + e2e 555 = 1694 项
 
 # 打包（会先跑一遍全量测试）
 python tools/pack.py          # 出 dist/request-translate-<版本>.zip
@@ -401,7 +401,7 @@ export PYTHONIOENCODING=utf-8
 文件沙箱禁止时表现为 `spawn EPERM`（这是沙箱边界，不是环境缺东西）。
 `danger-full-access` 下正常；`workspace-write` 下 e2e 跑不了，其余四层不受影响。
 
-拆开看是 `test-lib` 1025 项、`test-engine` 89 项、`test-strip` 19 项、`e2e-ui` 555 项，另加两项静态检查。各层补的盲区不同：
+拆开看是 `test-lib` 1029 项、`test-engine` 89 项、`test-strip` 19 项、`e2e-ui` 555 项，另加两项静态检查。各层补的盲区不同：
 
 - **`check-globals`** — 语法检查看不出 `bindConfigList()` 这种「调用了但没写」，只有运行时才炸。它把注释、字符串、正则字面量剥掉之后逐个比对调用与声明。也可以指定文件：`node tools/check-globals.mjs lib/engine.js`。新增 `lib/*.js` 记得加进目标清单（含 `offscreen.js`）。识别**解构出来的对象参数**（`function f({ a, b })`）要单独一条正则 —— 只写 `\(([^()]*)\)` 的话 `{ a, b }` 整块留下来、拆开后每片都带花括号，一个都认不出来，里面的 `a` / `b` 反倒被报成「没定义」（`moveButton({ … onMove })` 踩过）。
 - **`check-dom`** — 比对 JS 里的 `$('#id')` / `querySelector('.x')` / `closest('.x')`，和「HTML 里写死的**加上** JS 里拼出来的」类名，防的是「选择器指向不存在的元素，启动时炸在 null 上」。正则里的坑：`querySelectorAll?` 那个 `?` 只管最后一个 `l`，**所有 `querySelector('.x')` 从来没被扫到**，得写 `querySelector(?:All)?`。

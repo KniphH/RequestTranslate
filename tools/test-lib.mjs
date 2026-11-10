@@ -2134,14 +2134,17 @@ section('15f. 设置页的「图片配置」那条线也认后备');
       !/ocrListTip/.test(opt));
   /* 名称那一行也是同一个模板出来的（`for="${nameId}"`）—— 两栏只有 id 不同。
      原来在 HTML 里各写一份，改一处漏一处就是「两个栏长得不一样」的开端。 */
+  /* 抽 key 之后 label 里是 ${T('opt_label_name', '名称')}，判据跟着改成「两栏都用同一个
+     模板出来的 label，且模板里走的是查表」—— 断言意图不变（不许手抄两份）。 */
   check('两栏的「名称」label 是同一个模板出来的（只有 id 不同）',
-    /<label for="\$\{nameId\}">名称<\/label>/.test(opt) &&
+    /<label for="\$\{nameId\}">\$\{T\('opt_label_name'/.test(opt) &&
       !stripComments(optHtml).includes('<label for="f-name">'));
   /* 「供应商」这个说法只在 OCR 栏有，配置栏叫「配置」 —— 同一个东西两个名字
      （kniph 2026-10-14：「『供应商』也改成『配置』」）。判据：HTML 里再没有这个词。 */
   check('OCR 栏不再说「供应商」，统一叫「配置」',
     !stripComments(optHtml).includes('供应商') &&
-      /id="ocr-list-title">OCR 配置</.test(optHtml) &&
+      // 抽 key 后标签上多了 data-i18n，判据放宽成「标签文字还是「配置」那一族」
+      /id="ocr-list-title"[^>]*>OCR 配置</.test(optHtml) &&
       /id="btn-ocr-new"[^>]*>＋ 新建配置</.test(optHtml) &&
       /id="btn-ocr-delete"[^>]*>删除配置</.test(optHtml) &&
       opt.includes("'OCR 配置'"));
@@ -2157,7 +2160,7 @@ section('15f. 设置页的「图片配置」那条线也认后备');
     hintIds.length >= 15 && new Set(hintIds).size === hintIds.length, `${hintIds.length} 条`);
   check('按钮由 applyHintHides 统一补（HTML 里不再手写「不再显示」按钮）',
     !optHtml.includes('id="o-hint-hide"') && /function applyHintHides\(\)/.test(opt) &&
-      opt.includes("b.textContent = '不再显示'"));
+      opt.includes("b.textContent = T('opt_hint_dismiss', '不再显示')"));
   check('收起用 .hint-off 类，不用 hidden 属性（有几条的 hidden 归模式逻辑管，一个属性不能两个主人）',
     /\.hint-off \{ display: none !important; \}/.test(css) &&
       /classList\.toggle\('hint-off'/.test(opt) && /classList\.add\('hint-off'\)/.test(opt));
@@ -4175,6 +4178,44 @@ await (async () => {
       const usedNums = new Set([...String(v.message).matchAll(/\$(\d+)\$/g)].map((m) => Number(m[1])));
       return declared === usedNums.size;
     }));
+}
+/* ---- i18n 第二阶段（设置页）----
+   HTML 用 data-i18n 标记、JS 用 T() 查表。这两条钉住「以后新写界面别忘了标记」：
+   漏标记的后果不是报错，是那一处永远停在中文，而且很难发现（只有切了语言才看得见）。 */
+{
+  const optHtml2 = readFileSync(new URL('../options.html', import.meta.url), 'utf8');
+  const optJs2 = readFileSync(new URL('../options.js', import.meta.url), 'utf8');
+
+  const nAttr = (optHtml2.match(/data-i18n="/g) || []).length;
+  const nTitle = (optHtml2.match(/data-i18n-title="/g) || []).length;
+  const nPh = (optHtml2.match(/data-i18n-ph="/g) || []).length;
+  check('设置页 HTML 有大量 data-i18n 标记（文案不是硬编码）',
+    nAttr > 100,
+    `data-i18n=${nAttr} title=${nTitle} ph=${nPh}`);
+
+  /* 每个 data-i18n 的 key 都得在 messages.json 里 —— 漏了那一处会显示成 key 本身 */
+  check('设置页 HTML 里每个 data-i18n key 都在 messages.json 里有值',
+    (() => {
+      const keys = new Set();
+      for (const m of optHtml2.matchAll(/data-i18n(?:-title|-ph)?="([a-z0-9_]+)"/g)) keys.add(m[1]);
+      const zh2 = JSON.parse(readFileSync(new URL('../_locales/zh_CN/messages.json', import.meta.url), 'utf8'));
+      const missing = [...keys].filter((k) => !zh2[k]);
+      return keys.size > 0 && missing.length === 0;
+    })(),
+    '缺的 key 会原样显示在界面上');
+
+  /* options.js 里的 T() 也必须都有定义 */
+  check('options.js 里每个 T(key) 在 messages.json 里都有值',
+    (() => {
+      const zh3 = JSON.parse(readFileSync(new URL('../_locales/zh_CN/messages.json', import.meta.url), 'utf8'));
+      const keys = new Set([...optJs2.matchAll(/\bT\(\s*'([a-z0-9_]+)'/g)].map((m) => m[1]));
+      const missing = [...keys].filter((k) => !zh3[k]);
+      return keys.size > 0 && missing.length === 0;
+    })(),
+    '漏一条那一处就永远是中文');
+
+  check('设置页启动时载入语言包并调用 applyI18n',
+    /loadPack/.test(optJs2) && /applyI18n\(document\)/.test(optJs2));
 }
 console.log('\n' + '='.repeat(46));
 console.log(`通过 ${passed} 项，失败 ${failed} 项`);

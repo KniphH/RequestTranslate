@@ -23,6 +23,17 @@ import {
    options.html 里它在 options.js 之前加载）。以前是 import 两个 module，现在一处。
    原因见 lib/panel-core.js 头注：content script 不能 import，样式表必须能两边共用。 */
 const { TRIGGER_CSS, PANEL_CSS } = window.RTPanelCore;
+
+/* 文案查表。lib/i18n.js 是普通脚本、在 options.html 里排在 options.js 之前；
+   万一没加载，回落成中文原文 —— 设置页不能因为少一个文件就显示成 key。 */
+function T(key, fallback) {
+  const api = window.RTI18n;
+  if (api && typeof api.t === "function") {
+    const got = api.t(key);
+    if (got && got !== key) return got;
+  }
+  return fallback;
+}
 /* 「主请求 + 后备」那套链函数住在 lib/requests.js —— 配置和 OCR 供应商共用
    （store.js 和 ocr.js 都 import 它，谁也不用反过来依赖谁）。 */
 import { uid, allRequests, requestChain, requestTemplateFor } from './lib/requests.js';
@@ -138,11 +149,21 @@ function escapeHtml(s) {
 
 init().catch((err) => {
   document.body.innerHTML =
-    '<pre style="padding:24px;color:#f87171">设置页初始化失败：' + escapeHtml(err && err.message) + '</pre>';
+    '<pre style="padding:24px;color:#f87171">' + T('opt_err_boot', '设置页初始化失败：') + escapeHtml(err && err.message) + '</pre>';
 });
 
 async function init() {
-  state = await loadState();
+  /* 语言包要在**读存档之前**载入 —— 顺序反了的话每个 renderXxx 都会先按中文画一遍，
+     语言包到位后再改一遍，用户看得见文字闪。两个读取并发，几乎不增加启动延迟。 */
+  const i18nApi = window.RTI18n;
+  const loadPack = i18nApi && i18nApi.loadPack ? i18nApi.loadPack() : Promise.resolve(null);
+  const [state0] = await Promise.all([loadState(), loadPack]);
+  state = state0;
+
+  /* HTML 里带 data-i18n / data-i18n-title / data-i18n-ph 的节点在这里统一填。
+     只做一次：那些文案是静态的，后续重渲染不会碰它们。 */
+  if (i18nApi && i18nApi.applyI18n) i18nApi.applyI18n(document);
+
   editingId = state.activeConfigId;
   editingOcrId = state.ocr.activeId;
 
@@ -189,7 +210,7 @@ function editorHeadHtml({ nameId, placeholder, top, bottom }) {
     <div class="hint-slot">${top.map(hint).join('')}</div>
     <div class="editor-head">
       <div class="field grow">
-        <label for="${nameId}">名称</label>
+        <label for="${nameId}">${T('opt_label_name', '名称')}</label>
         <input id="${nameId}" type="text" placeholder="${escapeHtml(placeholder)}" autocomplete="off">
       </div>
     </div>
@@ -200,22 +221,22 @@ function editorHeadHtml({ nameId, placeholder, top, bottom }) {
 function renderEditorHeads() {
   els.cfgHead.innerHTML = editorHeadHtml({
     nameId: 'f-name',
-    placeholder: '例如：DeepSeek 翻译 / 本地 Ollama',
+    placeholder: T('opt_ph_cfgname', '例如：DeepSeek 翻译 / 本地 Ollama'),
     top: [
       {
         hint: 'cfg-intro',
-        html: '照着内置那条改：换地址、模型名、提示词，<b>占位符别动</b>。'
+        html: T('opt_cfg_intro', '照着内置那条改：换地址、模型名、提示词，<b>占位符别动</b>。')
       }
     ],
     bottom: {
       hint: 'cfg-requests',
-      html: '一条配置能挂好几条请求：<b>主请求</b>先发，它挂了就按顺序试勾上的<b>后备请求</b>。'
+      html: T('opt_cfg_requests', '一条配置能挂好几条请求：<b>主请求</b>先发，它挂了就按顺序试勾上的<b>后备请求</b>。')
     }
   });
 
   els.ocrHead.innerHTML = editorHeadHtml({
     nameId: 'o-name',
-    placeholder: '例如：硅基流动',
+    placeholder: T('opt_ph_ocrname', '例如：硅基流动'),
     top: [
       {
         id: 'o-hint',
@@ -911,23 +932,23 @@ function blockHtml(item, idx, lastIdx, opts = {}) {
   return `
     <div class="req-block" data-id="${escapeHtml(item.id)}" data-adapter="${escapeHtml(item.adapter || '')}">
       <div class="rb-head">
-        <label class="rb-on" title="不勾就不参与轮换（测试也不跑它）">
+        <label class="rb-on" title="${T('opt_no_rotate', '不勾就不参与轮换（测试也不跑它）')}">
           <input type="checkbox" class="rb-enable"${item.enabled ? ' checked' : ''}>
         </label>
         <span class="rb-tag">${escapeHtml(isMain ? '主请求' : item.name)}</span>
         <span class="rb-sub">${escapeHtml(blockSummary(item, kind))}</span>
-        ${item.imageRequest && item.imageRequest.trim() ? '<span class="rb-badge" title="这条填了「图片请求模板」，截图翻译时会走它（图片直传模式）">图</span>' : ''}
+        ${item.imageRequest && item.imageRequest.trim() ? `<span class="rb-badge" title="${T('opt_img_badge', '这条填了「图片请求模板」，截图翻译时会走它（图片直传模式）')}">图</span>` : ''}
         <span class="spacer"></span>
         ${isMain ? '' : `
-          <button type="button" class="rb-mini rb-up" title="上移（越靠前越先试）"${idx <= 1 ? ' disabled' : ''}>↑</button>
-          <button type="button" class="rb-mini rb-down" title="下移"${idx >= lastIdx ? ' disabled' : ''}>↓</button>
-          <button type="button" class="rb-mini rb-del" title="删掉这条后备请求">×</button>`}
-        <button type="button" class="rb-fold" title="折叠 / 展开（点这一行也行）">▾</button>
+          <button type="button" class="rb-mini rb-up" title="${T('opt_up', '上移（越靠前越先试）')}"${idx <= 1 ? ' disabled' : ''}>↑</button>
+          <button type="button" class="rb-mini rb-down" title="${T('opt_down', '下移')}"${idx >= lastIdx ? ' disabled' : ''}>↓</button>
+          <button type="button" class="rb-mini rb-del" title="${T('opt_del_fallback', '删掉这条后备请求')}">×</button>`}
+        <button type="button" class="rb-fold" title="${T('opt_fold', '折叠 / 展开（点这一行也行）')}">▾</button>
       </div>
       <div class="rb-body">
         ${isAdapter ? `
         <div class="field rb-adapter-field">
-          <label>内置适配器</label>
+          <label>${T('opt_label_adapter', '内置适配器')}</label>
           <p class="rb-adapter-note">${escapeHtml(adapterLabel(item.adapter))}</p>
           <p class="hint">${escapeHtml((ADAPTERS[item.adapter] || {}).hint || '')}</p>
         </div>` : ''}
@@ -968,11 +989,11 @@ function blockHtml(item, idx, lastIdx, opts = {}) {
         })}
         ${/* 两个「响应」字段收尾，见 blockHtml 上面那段字段顺序的注释 */ ''}
         ${ocr ? '' : `<div class="field mode-field rb-only-request"${hideReq}>
-          <label>响应格式</label>
+          <label>${T('opt_label_mode', '响应格式')}</label>
           <select class="rb-mode">${optionsHtml(MODE_OPTIONS, item.responseMode)}</select>
         </div>`}
         <div class="field rb-only-request"${hideReq}>
-          <label>响应提取路径（留空自动识别）</label>
+          <label>${T('opt_label_path', '响应提取路径（留空自动识别）')}</label>
           <input class="rb-path" type="text" spellcheck="false" placeholder="choices[0].message.content" value="${escapeHtml(item.path)}">
           <p class="hint" data-hint="${ocr ? 'ocr-path' : 'cfg-path'}">${ocr
             ? '点号 + 下标，例如百度的 <code>words_result</code>（一行一个对象，会按行拼成一段）。留空时依次尝试各家常见的返回结构。'
@@ -1532,7 +1553,7 @@ function requestBlockHtml(req) {
     `${req.method} ${req.url}\n` +
     Object.entries(req.headers || {}).map(([k, v]) => `${k}: ${v}`).join('\n') +
     (req.body ? '\n\n' + truncateText(req.body, 2000) : '');
-  return `<div class="row"><div class="row-title">实际请求</div><pre>${escapeHtml(text)}</pre></div>`;
+  return `<div class="row"><div class="row-title">${T('opt_row_actual', '实际请求')}</div><pre>${escapeHtml(text)}</pre></div>`;
 }
 
 /**
@@ -1596,13 +1617,13 @@ function testItemHtml(item, r, opts = {}) {
 
   if (r.error) {
     rows.push(
-      `<div class="row"><div class="row-title">错误</div><pre class="err-text">${escapeHtml(r.error)}</pre></div>`
+      `<div class="row"><div class="row-title">${T('opt_row_error', '错误')}</div><pre class="err-text">${escapeHtml(r.error)}</pre></div>`
     );
   }
 
   if (r.text) {
     rows.push(
-      `<div class="row"><div class="row-title">提取到的译文</div><pre class="translated">${escapeHtml(r.text)}</pre></div>`
+      `<div class="row"><div class="row-title">${T('opt_row_text', '提取到的译文')}</div><pre class="translated">${escapeHtml(r.text)}</pre></div>`
     );
   }
 
@@ -1611,7 +1632,7 @@ function testItemHtml(item, r, opts = {}) {
   if (r.raw) {
     const raw = truncateText(r.raw, 8000);
     rows.push(
-      `<div class="row"><div class="row-title">原始响应</div><pre>${escapeHtml(raw)}</pre></div>`
+      `<div class="row"><div class="row-title">${T('opt_row_raw', '原始响应')}</div><pre>${escapeHtml(raw)}</pre></div>`
     );
   }
 
@@ -2471,7 +2492,7 @@ function renderOcrTestResult({ name, srcLabel, r, err, textTitle = '识别到的
   const rows = [];
   if (err) {
     rows.push(
-      `<div class="row"><div class="row-title">错误</div><pre class="err-text">${escapeHtml(
+      `<div class="row"><div class="row-title">${T('opt_row_error', '错误')}</div><pre class="err-text">${escapeHtml(
         (err && err.message) || String(err)
       )}</pre></div>`
     );
@@ -2490,7 +2511,7 @@ function renderOcrTestResult({ name, srcLabel, r, err, textTitle = '识别到的
   const raw = (err && err.raw) || (r && r.raw);
   if (raw) {
     rows.push(
-      `<div class="row"><div class="row-title">原始响应</div><pre>${escapeHtml(
+      `<div class="row"><div class="row-title">${T('opt_row_raw', '原始响应')}</div><pre>${escapeHtml(
         truncateText(raw, 8000)
       )}</pre></div>`
     );
@@ -2976,11 +2997,11 @@ function renderHistory() {
     : all;
 
   if (!all.length) {
-    list.innerHTML = '<p class="hint">还没有记录（或上面把条数设成了 0）。</p>';
+    list.innerHTML = '<p class="hint">' + T('opt_hist_empty', '还没有记录（或上面把条数设成了 0）。') + '</p>';
     return;
   }
   if (!items.length) {
-    list.innerHTML = '<p class="hint">没有匹配「' + escapeHtml(q) + '」的记录。</p>';
+    list.innerHTML = '<p class="hint">' + T('opt_hist_nomatch_a', '没有匹配「') + escapeHtml(q) + T('opt_hist_nomatch_b', '」的记录。') + '</p>';
     return;
   }
 
@@ -3680,7 +3701,7 @@ function applyHintHides() {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'hint-hide';
-      b.textContent = '不再显示';
+      b.textContent = T('opt_hint_dismiss', '不再显示');
       b.addEventListener('click', () => {
         const id = el.dataset.hint;
         state.settings.hiddenHints = [...new Set([...(state.settings.hiddenHints || []), id])];

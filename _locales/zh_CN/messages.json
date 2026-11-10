@@ -5,6 +5,606 @@
   "extDesc": {
     "message": "划词翻译，但配置是你自己的 HTTP 请求。直接写 curl 或原始请求报文，可保存多个命名配置。"
   },
+  "opt_cfg_004": {
+    "message": "配置",
+    "description": "设置页：cfg 区域"
+  },
+  "opt_cfg_intro": {
+    "message": "照着内置那条改：换地址、模型名、提示词，<b>占位符别动</b>。",
+    "description": "设置页 JS 动态文案"
+  },
+  "opt_cfg_requests": {
+    "message": "一条配置能挂好几条请求：<b>主请求</b>先发，它挂了就按顺序试勾上的<b>后备请求</b>。",
+    "description": "设置页 JS 动态文案"
+  },
+  "opt_del_fallback": {
+    "message": "删掉这条后备请求",
+    "description": "设置页 JS 动态文案"
+  },
+  "opt_down": {
+    "message": "下移",
+    "description": "设置页 JS 动态文案"
+  },
+  "opt_err_boot": {
+    "message": "设置页初始化失败：",
+    "description": "设置页 JS 动态文案"
+  },
+  "opt_fold": {
+    "message": "折叠 / 展开（点这一行也行）",
+    "description": "设置页 JS 动态文案"
+  },
+  "opt_hint_dismiss": {
+    "message": "不再显示",
+    "description": "设置页 JS 动态文案"
+  },
+  "opt_hist_empty": {
+    "message": "还没有记录（或上面把条数设成了 0）。",
+    "description": "设置页：翻译记录空态"
+  },
+  "opt_hist_nomatch_a": {
+    "message": "没有匹配「",
+    "description": "设置页：搜索无结果（前半句，后面接关键词）"
+  },
+  "opt_hist_nomatch_b": {
+    "message": "」的记录。",
+    "description": "设置页：搜索无结果（后半句）"
+  },
+  "opt_img_badge": {
+    "message": "这条填了「图片请求模板」，截图翻译时会走它（图片直传模式）",
+    "description": "设置页 JS 动态文案"
+  },
+  "opt_label_adapter": {
+    "message": "内置适配器",
+    "description": "设置页 JS 动态文案"
+  },
+  "opt_label_mode": {
+    "message": "响应格式",
+    "description": "设置页 JS 动态文案"
+  },
+  "opt_label_name": {
+    "message": "名称",
+    "description": "设置页 JS 动态文案"
+  },
+  "opt_label_path": {
+    "message": "响应提取路径（留空自动识别）",
+    "description": "设置页 JS 动态文案"
+  },
+  "opt_misc_001": {
+    "message": "RequestTranslate · 设置",
+    "description": "设置页：misc 区域"
+  },
+  "opt_misc_002": {
+    "message": "译",
+    "description": "设置页：misc 区域"
+  },
+  "opt_misc_003": {
+    "message": "配置就是一段请求，参数怎么摆你说了算",
+    "description": "设置页：misc 区域"
+  },
+  "opt_no_rotate": {
+    "message": "不勾就不参与轮换（测试也不跑它）",
+    "description": "设置页 JS 动态文案"
+  },
+  "opt_ph_209": {
+    "message": "测试用的原文，默认为 Hello, world!",
+    "description": "设置页 ph 区域"
+  },
+  "opt_ph_210": {
+    "message": "填语言名或代码，比如「粤语」/ YUE",
+    "description": "设置页 ph 区域"
+  },
+  "opt_ph_211": {
+    "message": "/* 例： #rt-panel { border-radius: 8px } */",
+    "description": "设置页 ph 区域"
+  },
+  "opt_ph_212": {
+    "message": "搜索原文、译文或配置名…",
+    "description": "设置页 ph 区域"
+  },
+  "opt_ph_213": {
+    "message": "口令",
+    "description": "设置页 ph 区域"
+  },
+  "opt_ph_214": {
+    "message": "再输一遍",
+    "description": "设置页 ph 区域"
+  },
+  "opt_ph_cfgname": {
+    "message": "例如：DeepSeek 翻译 / 本地 Ollama",
+    "description": "设置页 JS 动态文案"
+  },
+  "opt_ph_ocrname": {
+    "message": "例如：硅基流动",
+    "description": "设置页 JS 动态文案"
+  },
+  "opt_row_actual": {
+    "message": "实际请求",
+    "description": "设置页 JS 动态文案"
+  },
+  "opt_row_error": {
+    "message": "错误",
+    "description": "设置页 JS 动态文案"
+  },
+  "opt_row_raw": {
+    "message": "原始响应",
+    "description": "设置页 JS 动态文案"
+  },
+  "opt_row_text": {
+    "message": "提取到的译文",
+    "description": "设置页 JS 动态文案"
+  },
+  "opt_set_006": {
+    "message": "设置",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_007": {
+    "message": "配置列表",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_008": {
+    "message": "可拖动排序",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_009": {
+    "message": "＋ 新建配置",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_010": {
+    "message": "＋ 加一条后备请求",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_011": {
+    "message": "这次会发出去的请求（Key 已打码）",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_012": {
+    "message": "测试",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_013": {
+    "message": "发送",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_014": {
+    "message": "按顺序跑勾上的那些请求，哪条先拿到译文就停（和面板上真翻译时一个顺序）。",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_015": {
+    "message": "复制一份",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_016": {
+    "message": "删除配置",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_017": {
+    "message": "左边新建一条配置开始吧",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_018": {
+    "message": "OCR 配置",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_021": {
+    "message": "填了图片请求模板",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_026": {
+    "message": "剪切板里的第一张图",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_028": {
+    "message": "禁用外置 OCR（仅模型具有多模态时使用）",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_029": {
+    "message": "模型具有多模态时，无需中转 OCR",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_030": {
+    "message": "填了「图片请求模板」",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_033": {
+    "message": "左边新建一条 OCR 配置开始吧",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_034": {
+    "message": "自定义变量",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_035": {
+    "message": "{{名字}}",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_036": {
+    "message": "一行写一个时（模板里用到的那个含",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_037": {
+    "message": "＋ 添加变量",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_038": {
+    "message": "内置变量",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_039": {
+    "message": "划词行为",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_040": {
+    "message": "选中文字后",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_041": {
+    "message": "在选区旁边显示一个小圆点，点它才翻译",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_042": {
+    "message": "直接翻译",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_043": {
+    "message": "什么都不做（只用右键菜单）",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_044": {
+    "message": "翻译选中内容的快捷键",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_045": {
+    "message": "打开浏览器的快捷键设置页",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_046": {
+    "message": "三条快捷键都在那一个页面里改；重载扩展后显示「未设置」的，去那里设一次就好。",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_047": {
+    "message": "iframe 划词",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_048": {
+    "message": "在网页内嵌的小页面（iframe，比如一些评论框和编辑器）里也支持划词。桥接脚本只上报选区，按钮和面板仍只有一份。",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_049": {
+    "message": "右键菜单",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_050": {
+    "message": "加一项「用 RequestTranslate 翻译选中内容」（只在选中了文字时出现）",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_051": {
+    "message": "加一项「翻译剪切板中的截图」（要先用系统截图把图截进剪切板，见「OCR」那一栏）",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_052": {
+    "message": "加一项「框选截图翻译」（当场拖框截一块屏幕区域去翻译，不用先按系统截图）",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_053": {
+    "message": "翻译",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_054": {
+    "message": "目标语言（{{target}} 的值）",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_055": {
+    "message": "单次最多发送字数",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_056": {
+    "message": "面板显示条数",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_057": {
+    "message": "1 条结果",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_058": {
+    "message": "2 条对比",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_059": {
+    "message": "3 条对比",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_060": {
+    "message": "4 条对比",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_061": {
+    "message": "大于 1 时面板同时显示多条结果，看哪条翻得更好。在下面的配置列表里左键点亮要对比的那几条（可以亮多条），右键取消；不点亮任何一条时就用当前选中的那条。",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_062": {
+    "message": "在面板里新选一条配置时",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_063": {
+    "message": "放在最下面（顶掉最上面那条）",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_064": {
+    "message": "放在最上面（顶掉最下面那条）",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_065": {
+    "message": "显示 1 条时两种放法都是直接切换，所以这条只在「面板显示条数」大于 1 时出现。它只影响面板里临时点出来的组合，不动设置页那份默认名单。",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_066": {
+    "message": "翻译记录条数",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_067": {
+    "message": "成功的翻译会在本地留一条记录（原文 / 译文 / 用的哪条配置），只存这台浏览器里，不上传、不进导出文件。填 0 = 不记录。",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_068": {
+    "message": "翻译按钮",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_069": {
+    "message": "按钮样式",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_070": {
+    "message": "预览",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_071": {
+    "message": "地球",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_072": {
+    "message": "主题走；自定义",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_073": {
+    "message": "按钮大小（px）",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_074": {
+    "message": "按钮自动消失（秒）",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_075": {
+    "message": "鼠标移开后消失（秒）",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_076": {
+    "message": "自定义图标（SVG）",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_077": {
+    "message": "底座还是用上面选的那个预设，想连底座都自己说了算就选「自定义」",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_078": {
+    "message": "currentColor 跟着主题走。",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_079": {
+    "message": "&lt;svg 开头、",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_080": {
+    "message": "插入示例图标",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_081": {
+    "message": "清空",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_082": {
+    "message": "面板",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_083": {
+    "message": "效果预览",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_084": {
+    "message": "显示面板",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_085": {
+    "message": "浮出来的就是**网页上那个真面板**：样式、顶栏、拖动、✕ 关闭全都一样，跟着上面的宽度 / 字号 / 高度 / 主题实时变。里面的文字是示例内容。",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_086": {
+    "message": "结果面板宽度（px）",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_087": {
+    "message": "结果面板高度（px， 0 = 自适应）",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_088": {
+    "message": "结果区最大高度（vh，0 = 不限）",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_089": {
+    "message": "面板字号（px）",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_090": {
+    "message": "主题",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_091": {
+    "message": "跟随系统",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_092": {
+    "message": "暗色",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_093": {
+    "message": "亮色",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_094": {
+    "message": "在面板里显示原文",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_095": {
+    "message": "自定义面板样式（CSS）",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_096": {
+    "message": "填入示例：护眼暖色",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_098": {
+    "message": "注入到面板自己的 shadow root 里",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_099": {
+    "message": "无效的",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_100": {
+    "message": "可用的钩子：#rt-panel（面板本体，id 选择器优先级高于预设，一般不用",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_101": {
+    "message": "[data-rt-theme=\"dark\"] 与",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_102": {
+    "message": "不会改",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_103": {
+    "message": "导入 / 导出",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_104": {
+    "message": "导出备份",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_106": {
+    "message": "备份版里有明文 API Key，只发给你自己。勾上「加密导出」则用口令加密（AES-GCM）—— 口令不恢复，丢了文件就解不开。",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_107": {
+    "message": "导出分享版",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_108": {
+    "message": "导出分享版（不含 Key）",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_109": {
+    "message": "自动清空名字里含 key 的变量值，发给别人填他自己的 Key。请求模板正文里手写的 Key 不会被自动发现，分享前自己检查一遍。",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_110": {
+    "message": "导入",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_111": {
+    "message": "从文件导入",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_112": {
+    "message": "整体替换当前的配置、变量、设置和 OCR。加密的文件会先问口令。",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_113": {
+    "message": "翻译记录",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_114": {
+    "message": "最近的记录",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_115": {
+    "message": "清空翻译记录",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_116": {
+    "message": "把藏起来的说明文字都放回来",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_117": {
+    "message": "恢复全部默认配置",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_118": {
+    "message": "选择要导入的配置",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_119": {
+    "message": "全选 / 全不选",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_120": {
+    "message": "保留现有配置（勾上的追加进来，同名的覆盖）；不勾 = 整体替换",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_121": {
+    "message": "取消",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_122": {
+    "message": "导入选中的",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_123": {
+    "message": "设置口令",
+    "description": "设置页：set 区域"
+  },
+  "opt_set_125": {
+    "message": "确定",
+    "description": "设置页：set 区域"
+  },
+  "opt_title_201": {
+    "message": "按住左侧的手柄上下拖动，或者点右侧的 ↑ ↓",
+    "description": "设置页 title 区域"
+  },
+  "opt_title_202": {
+    "message": "把一个和网页上一模一样的面板浮到页面上（能拖动、点 ✕ 关闭）",
+    "description": "设置页 title 区域"
+  },
+  "opt_title_203": {
+    "message": "填入一套护眼暖色配色（可以再改）",
+    "description": "设置页 title 区域"
+  },
+  "opt_title_204": {
+    "message": "把全部配置 / 变量 / 设置 / OCR 导出成一个 JSON 文件（里面有明文 API Key，只发给你自己）",
+    "description": "设置页 title 区域"
+  },
+  "opt_title_205": {
+    "message": "勾上后导出的文件会用口令加密（AES-GCM），发给别人、存网盘都不怕泄露。口令不恢复 —— 丢了文件就解不开。",
+    "description": "设置页 title 区域"
+  },
+  "opt_title_206": {
+    "message": "生成一份去掉密钥的配置文件，发给别人填他自己的 Key",
+    "description": "设置页 title 区域"
+  },
+  "opt_title_207": {
+    "message": "从导出的 JSON 文件恢复配置（会替换当前的全部配置）",
+    "description": "设置页 title 区域"
+  },
+  "opt_title_208": {
+    "message": "清空全部翻译记录，不可恢复",
+    "description": "设置页 title 区域"
+  },
+  "opt_up": {
+    "message": "上移（越靠前越先试）",
+    "description": "设置页 JS 动态文案"
+  },
+  "opt_var_005": {
+    "message": "变量",
+    "description": "设置页：var 区域"
+  },
   "panel_cfg_only": {
     "message": "翻译接口",
     "description": "配置下拉 title：没有选中项时"

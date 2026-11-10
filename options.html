@@ -2,25 +2,25 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>RequestTranslate · 设置</title>
+<title data-i18n="opt_misc_001">RequestTranslate · 设置</title>
 <link rel="stylesheet" href="options.css">
 </head>
 <body>
 <div class="app">
   <header>
     <div class="brand">
-      <span class="logo">译</span>
+      <span class="logo" data-i18n="opt_misc_002">译</span>
       <div class="brand-text">
         <h1>RequestTranslate</h1>
-        <p>配置就是一段请求，参数怎么摆你说了算</p>
+        <p data-i18n="opt_misc_003">配置就是一段请求，参数怎么摆你说了算</p>
       </div>
     </div>
 
     <nav class="tabs">
-      <button class="tab is-active" data-tab="configs">配置</button>
+      <button class="tab is-active" data-tab="configs" data-i18n="opt_cfg_004">配置</button>
       <button class="tab" data-tab="ocr">OCR</button>
-      <button class="tab" data-tab="vars">变量</button>
-      <button class="tab" data-tab="settings">设置</button>
+      <button class="tab" data-tab="vars" data-i18n="opt_var_005">变量</button>
+      <button class="tab" data-tab="settings" data-i18n="opt_set_006">设置</button>
     </nav>
 
   </header>
@@ -30,12 +30,12 @@
     <section class="tabpanel is-active" data-panel="configs">
       <aside class="list">
         <div class="list-head">
-          <span>配置列表</span>
-          <span class="list-tip" title="按住左侧的手柄上下拖动，或者点右侧的 ↑ ↓">可拖动排序</span>
+          <span data-i18n="opt_set_007">配置列表</span>
+          <span class="list-tip" title="按住左侧的手柄上下拖动，或者点右侧的 ↑ ↓" data-i18n-title="opt_title_201" data-i18n="opt_set_008">可拖动排序</span>
         </div>
         <div id="cfg-list" class="list-body"></div>
         <div class="list-foot">
-          <button id="btn-new" class="primary block">＋ 新建配置</button>
+          <button id="btn-new" class="primary block" data-i18n="opt_set_009">＋ 新建配置</button>
         </div>
       </aside>
 
@@ -54,48 +54,48 @@
              必须一样高，请求块才对得齐 -->
         <div id="req-blocks"></div>
 
-        <button type="button" id="btn-add-fallback" class="ghost block">＋ 加一条后备请求</button>
+        <button type="button" id="btn-add-fallback" class="ghost block" data-i18n="opt_set_010">＋ 加一条后备请求</button>
 
         <details class="preview">
-          <summary>这次会发出去的请求（Key 已打码）</summary>
+          <summary data-i18n="opt_set_011">这次会发出去的请求（Key 已打码）</summary>
           <pre id="f-preview"></pre>
         </details>
 
         <div class="field">
-          <label>测试</label>
+          <label data-i18n="opt_set_012">测试</label>
           <div class="test-row">
-            <input id="test-text" type="text" placeholder="测试用的原文，默认为 Hello, world!" autocomplete="off">
-            <button id="btn-test" class="primary">发送</button>
+            <input id="test-text" type="text" placeholder="测试用的原文，默认为 Hello, world!" data-i18n-ph="opt_ph_209" autocomplete="off">
+            <button id="btn-test" class="primary" data-i18n="opt_set_013">发送</button>
           </div>
-          <p class="hint" data-hint="cfg-test">按顺序跑勾上的那些请求，哪条先拿到译文就停（和面板上真翻译时一个顺序）。</p>
+          <p class="hint" data-hint="cfg-test" data-i18n="opt_set_014">按顺序跑勾上的那些请求，哪条先拿到译文就停（和面板上真翻译时一个顺序）。</p>
           <div id="test-result" hidden></div>
         </div>
 
         <div class="editor-foot">
           <span id="save-status" class="save-status"></span>
           <span class="spacer"></span>
-          <button id="btn-duplicate" class="ghost">复制一份</button>
-          <button id="btn-delete" class="danger">删除配置</button>
+          <button id="btn-duplicate" class="ghost" data-i18n="opt_set_015">复制一份</button>
+          <button id="btn-delete" class="danger" data-i18n="opt_set_016">删除配置</button>
         </div>
       </div>
 
-      <div class="empty-hint" id="empty-hint" hidden>左边新建一条配置开始吧</div>
+      <div class="empty-hint" id="empty-hint" hidden data-i18n="opt_set_017">左边新建一条配置开始吧</div>
     </section>
 
     <!-- ============================ OCR ============================ -->
     <section class="tabpanel" data-panel="ocr">
       <aside class="list">
         <div class="list-head">
-          <span id="ocr-list-title">OCR 配置</span>
-          <span class="list-tip" id="ocr-list-tip" title="按住左侧的手柄上下拖动，或者点右侧的 ↑ ↓">可拖动排序</span>
+          <span id="ocr-list-title" data-i18n="opt_set_018">OCR 配置</span>
+          <span class="list-tip" id="ocr-list-tip" title="按住左侧的手柄上下拖动，或者点右侧的 ↑ ↓" data-i18n-title="opt_title_201" data-i18n="opt_set_008">可拖动排序</span>
         </div>
         <div id="ocr-list" class="list-body"></div>
         <!-- 勾了「禁用外置 OCR」时改列这些：配了「图片请求模板」的配置（renderImageConfigList） -->
         <div id="imgcfg-list" class="list-body" hidden></div>
         <div class="list-foot">
-          <button id="btn-ocr-new" class="primary block">＋ 新建配置</button>
+          <button id="btn-ocr-new" class="primary block" data-i18n="opt_set_009">＋ 新建配置</button>
           <p class="hint" id="imgcfg-foot" hidden data-hint="imgcfg-foot">
-            只列<b>填了图片请求模板</b>的配置 —— 增删改回「配置」栏。
+            只列<b data-i18n="opt_set_021">填了图片请求模板</b>的配置 —— 增删改回「配置」栏。
           </p>
         </div>
       </aside>
@@ -110,27 +110,27 @@
              区别只有两处：OCR 没有「图片请求模板 / 响应格式」（它用不到）。 -->
         <div id="ocr-blocks"></div>
 
-        <button type="button" id="btn-ocr-add-fallback" class="ghost block">＋ 加一条后备请求</button>
+        <button type="button" id="btn-ocr-add-fallback" class="ghost block" data-i18n="opt_set_010">＋ 加一条后备请求</button>
 
         <details class="preview">
-          <summary id="o-preview-summary">这次会发出去的请求（Key 已打码）</summary>
+          <summary id="o-preview-summary" data-i18n="opt_set_011">这次会发出去的请求（Key 已打码）</summary>
           <pre id="o-preview"></pre>
         </details>
 
         <!-- 这块在直传模式下不藏（其余 .field 都藏），只是换个对象：
              不测这条 OCR 配置，改测左边选中的那条「图片配置」的图片请求模板。 -->
         <div class="field" id="o-test-field">
-          <label for="ocr-test-img" id="o-test-label">测试</label>
+          <label for="ocr-test-img" id="o-test-label" data-i18n="opt_set_012">测试</label>
           <div class="test-row">
             <input id="ocr-test-img" type="file" accept="image/*">
-            <button id="btn-ocr-test" class="primary">测试</button>
+            <button id="btn-ocr-test" class="primary" data-i18n="opt_set_012">测试</button>
           </div>
           <p class="hint" id="ocr-test-hint" data-hint="ocr-test">
-            不选文件就直接点：用<b>剪切板里的第一张图</b>（Win + Shift + S 截图后回这儿点一下）。
+            不选文件就直接点：用<b data-i18n="opt_set_026">剪切板里的第一张图</b>（Win + Shift + S 截图后回这儿点一下）。
             发的是上面那段请求模板，和实际右键时同一套。
           </p>
           <p class="hint" id="imgcfg-test-hint" hidden data-hint="imgcfg-test">
-            不选文件就直接点：用<b>剪切板里的第一张图</b>（Win + Shift + S 截图后回这儿点一下）。
+            不选文件就直接点：用<b data-i18n="opt_set_026">剪切板里的第一张图</b>（Win + Shift + S 截图后回这儿点一下）。
             发的是左边选中那条的「图片请求模板」，和实际右键截图翻译时同一套。
           </p>
           <div id="ocr-test-result" class="result" hidden></div>
@@ -139,11 +139,11 @@
         <div class="setting">
           <label class="switch">
             <input type="checkbox" id="o-disabled">
-            <span>禁用外置 OCR（仅模型具有多模态时使用）</span>
+            <span data-i18n="opt_set_028">禁用外置 OCR（仅模型具有多模态时使用）</span>
           </label>
           <p class="hint" data-hint="ocr-direct">
-            <b>模型具有多模态时，无需中转 OCR</b>：截图直接交给左边选中的那条图片配置去翻，
-            不走上面那条。左边只列<b>填了「图片请求模板」</b>的配置；
+            <b data-i18n="opt_set_029">模型具有多模态时，无需中转 OCR</b>：截图直接交给左边选中的那条图片配置去翻，
+            不走上面那条。左边只列<b data-i18n="opt_set_030">填了「图片请求模板」</b>的配置；
             一条都没填时退回顶栏当前那条（那条多半不支持看图）。
           </p>
         </div>
@@ -151,23 +151,23 @@
         <div class="editor-foot">
           <span id="o-save-status" class="save-status"></span>
           <span class="spacer"></span>
-          <button id="btn-ocr-duplicate" class="ghost">复制一份</button>
-          <button id="btn-ocr-delete" class="danger">删除配置</button>
+          <button id="btn-ocr-duplicate" class="ghost" data-i18n="opt_set_015">复制一份</button>
+          <button id="btn-ocr-delete" class="danger" data-i18n="opt_set_016">删除配置</button>
         </div>
       </div>
 
-      <div class="empty-hint" id="ocr-empty" hidden>左边新建一条 OCR 配置开始吧</div>
+      <div class="empty-hint" id="ocr-empty" hidden data-i18n="opt_set_033">左边新建一条 OCR 配置开始吧</div>
     </section>
 
     <!-- ============================ 变量 ============================ -->
     <section class="tabpanel" data-panel="vars">
       <div class="page">
-        <h2>自定义变量</h2>
+        <h2 data-i18n="opt_set_034">自定义变量</h2>
         <p class="hint wide" data-hint="vars">
-          这里定义的值可以在请求模板里用 <code>{{名字}}</code> 引用，比如把 API Key 写成
+          这里定义的值可以在请求模板里用 <code data-i18n="opt_set_035">{{名字}}</code> 引用，比如把 API Key 写成
           <code>Bearer {{apiKey}}</code>。同名的话，下面这些会覆盖内置变量。
           <br>
-          值里<b>一行写一个</b>时（模板里用到的那个含 <code>model</code> 的变量，比如
+          值里<b data-i18n="opt_set_036">一行写一个</b>时（模板里用到的那个含 <code>model</code> 的变量，比如
           <code>model</code> / <code>GEMINI_MODEL</code>），翻译会从第一个开始试，
           哪个先返回译文就用哪个；只有一行就是普通单值。
         </p>
@@ -177,9 +177,9 @@
              和名字并排挤在一行里只剩四百来像素 —— 名字框还放不下
              SILICONFLOW_CN_API_KEY 这种长名字（kniph 2026-10-14 报的「局促」）。 -->
         <div id="vars-body" class="vars-list"></div>
-        <button id="btn-add-var" class="ghost">＋ 添加变量</button>
+        <button id="btn-add-var" class="ghost" data-i18n="opt_set_037">＋ 添加变量</button>
 
-        <h2>内置变量</h2>
+        <h2 data-i18n="opt_set_038">内置变量</h2>
         <table class="vars builtin">
           <tbody id="builtin-body"></tbody>
         </table>
@@ -190,66 +190,66 @@
     <section class="tabpanel" data-panel="settings">
       <div class="page">
         <details class="set-group" open>
-          <summary><span class="set-group-t">划词行为</span></summary>
+          <summary><span class="set-group-t" data-i18n="opt_set_039">划词行为</span></summary>
           <div class="set-group-body">
 
         <div class="setting">
-          <label for="s-trigger">选中文字后</label>
+          <label for="s-trigger" data-i18n="opt_set_040">选中文字后</label>
           <select id="s-trigger">
-            <option value="button">在选区旁边显示一个小圆点，点它才翻译</option>
-            <option value="auto">直接翻译</option>
-            <option value="off">什么都不做（只用右键菜单）</option>
+            <option value="button" data-i18n="opt_set_041">在选区旁边显示一个小圆点，点它才翻译</option>
+            <option value="auto" data-i18n="opt_set_042">直接翻译</option>
+            <option value="off" data-i18n="opt_set_043">什么都不做（只用右键菜单）</option>
           </select>
         </div>
 
         <div class="setting">
-          <label for="s-hotkey">翻译选中内容的快捷键</label>
+          <label for="s-hotkey" data-i18n="opt_set_044">翻译选中内容的快捷键</label>
           <div class="stack">
             <div class="io-row">
-              <button id="btn-hotkey-open" class="ghost">打开浏览器的快捷键设置页</button>
-              <span class="hint" data-hint="s-hotkey">三条快捷键都在那一个页面里改；重载扩展后显示「未设置」的，去那里设一次就好。</span>
+              <button id="btn-hotkey-open" class="ghost" data-i18n="opt_set_045">打开浏览器的快捷键设置页</button>
+              <span class="hint" data-hint="s-hotkey" data-i18n="opt_set_046">三条快捷键都在那一个页面里改；重载扩展后显示「未设置」的，去那里设一次就好。</span>
             </div>
             <p class="hint" id="hotkey-list"></p>
           </div>
         </div>
         <div class="setting">
-          <label for="s-framebridge">iframe 划词</label>
+          <label for="s-framebridge" data-i18n="opt_set_047">iframe 划词</label>
           <div class="stack">
             <label class="switch">
               <input type="checkbox" id="s-framebridge">
-              <span>在网页内嵌的小页面（iframe，比如一些评论框和编辑器）里也支持划词。桥接脚本只上报选区，按钮和面板仍只有一份。</span>
+              <span data-i18n="opt_set_048">在网页内嵌的小页面（iframe，比如一些评论框和编辑器）里也支持划词。桥接脚本只上报选区，按钮和面板仍只有一份。</span>
             </label>
           </div>
         </div>
         <div class="setting">
-          <label for="s-ctx">右键菜单</label>
+          <label for="s-ctx" data-i18n="opt_set_049">右键菜单</label>
           <div class="stack">
             <label class="switch">
               <input type="checkbox" id="s-ctx">
-              <span>加一项「用 RequestTranslate 翻译选中内容」（只在选中了文字时出现）</span>
+              <span data-i18n="opt_set_050">加一项「用 RequestTranslate 翻译选中内容」（只在选中了文字时出现）</span>
             </label>
             <label class="switch">
               <input type="checkbox" id="s-ocrmenu">
-              <span>加一项「翻译剪切板中的截图」（要先用系统截图把图截进剪切板，见「OCR」那一栏）</span>
+              <span data-i18n="opt_set_051">加一项「翻译剪切板中的截图」（要先用系统截图把图截进剪切板，见「OCR」那一栏）</span>
             </label>
             <label class="switch">
               <input type="checkbox" id="s-shotmenu">
-              <span>加一项「框选截图翻译」（当场拖框截一块屏幕区域去翻译，不用先按系统截图）</span>
+              <span data-i18n="opt_set_052">加一项「框选截图翻译」（当场拖框截一块屏幕区域去翻译，不用先按系统截图）</span>
             </label>
           </div>
         </div>          </div>
         </details>
 <details class="set-group" open>
-          <summary><span class="set-group-t">翻译</span></summary>
+          <summary><span class="set-group-t" data-i18n="opt_set_053">翻译</span></summary>
           <div class="set-group-body">
 
         <div class="setting">
-          <label for="s-lang">目标语言（<code>{{target}}</code> 的值）</label>
+          <label for="s-lang" data-i18n="opt_set_054">目标语言（<code>{{target}}</code> 的值）</label>
           <div class="stack">
             <!-- 候选项由 options.js 从 lib/template.js 的 TARGET_PRESETS 填，
                  别在这儿手抄一份（加语言只改 lib/template.js，两处同步由 test-lib 第 22 节盯着） -->
             <select id="s-lang"></select>
-            <input id="s-lang-other" type="text" placeholder="填语言名或代码，比如「粤语」/ YUE" autocomplete="off" hidden>
+            <input id="s-lang-other" type="text" placeholder="填语言名或代码，比如「粤语」/ YUE" data-i18n-ph="opt_ph_210" autocomplete="off" hidden>
             <p class="hint" data-hint="set-lang">
               划词面板顶栏也有一个，两边是同一个值，想临时换一门语言不用特意回这儿。
             </p>
@@ -257,71 +257,71 @@
         </div>
 
         <div class="setting">
-          <label for="s-max">单次最多发送字数</label>
+          <label for="s-max" data-i18n="opt_set_055">单次最多发送字数</label>
           <input id="s-max" type="number" min="100" max="200000" step="100">
         </div>
 
         <div class="setting">
-          <label for="s-slots">面板显示条数</label>
+          <label for="s-slots" data-i18n="opt_set_056">面板显示条数</label>
           <div class="stack">
             <select id="s-slots">
-              <option value="1">1 条结果</option>
-              <option value="2">2 条对比</option>
-              <option value="3">3 条对比</option>
-              <option value="4">4 条对比</option>
+              <option value="1" data-i18n="opt_set_057">1 条结果</option>
+              <option value="2" data-i18n="opt_set_058">2 条对比</option>
+              <option value="3" data-i18n="opt_set_059">3 条对比</option>
+              <option value="4" data-i18n="opt_set_060">4 条对比</option>
             </select>
-            <p class="hint" data-hint="s-slots">大于 1 时面板同时显示多条结果，看哪条翻得更好。<strong>在下面的配置列表里左键点亮要对比的那几条</strong>（可以亮多条），右键取消；不点亮任何一条时就用当前选中的那条。</p>
+            <p class="hint" data-hint="s-slots" data-i18n="opt_set_061">大于 1 时面板同时显示多条结果，看哪条翻得更好。<strong>在下面的配置列表里左键点亮要对比的那几条</strong>（可以亮多条），右键取消；不点亮任何一条时就用当前选中的那条。</p>
           </div>
         </div>
 
         <!-- 只在「面板显示条数」> 1 时才有意义：显示 1 条时两种放法都是「切换」 -->
         <div class="setting" id="row-slotinsert" hidden>
-          <label for="s-slotinsert">在面板里新选一条配置时</label>
+          <label for="s-slotinsert" data-i18n="opt_set_062">在面板里新选一条配置时</label>
           <div class="stack">
             <select id="s-slotinsert">
-              <option value="tail">放在最下面（顶掉最上面那条）</option>
-              <option value="head">放在最上面（顶掉最下面那条）</option>
+              <option value="tail" data-i18n="opt_set_063">放在最下面（顶掉最上面那条）</option>
+              <option value="head" data-i18n="opt_set_064">放在最上面（顶掉最下面那条）</option>
             </select>
-            <p class="hint" data-hint="s-slotinsert">显示 1 条时两种放法都是直接切换，所以这条只在「面板显示条数」大于 1 时出现。它只影响面板里临时点出来的组合，不动设置页那份默认名单。</p>
+            <p class="hint" data-hint="s-slotinsert" data-i18n="opt_set_065">显示 1 条时两种放法都是直接切换，所以这条只在「面板显示条数」大于 1 时出现。它只影响面板里临时点出来的组合，不动设置页那份默认名单。</p>
           </div>
         </div>
 
         <div class="setting">
-          <label for="s-historymax">翻译记录条数</label>
+          <label for="s-historymax" data-i18n="opt_set_066">翻译记录条数</label>
           <div class="stack">
             <input id="s-historymax" type="number" min="0" max="200" step="1">
-            <p class="hint" data-hint="s-history">成功的翻译会在本地留一条记录（原文 / 译文 / 用的哪条配置），只存这台浏览器里，不上传、不进导出文件。填 0 = 不记录。</p>
+            <p class="hint" data-hint="s-history" data-i18n="opt_set_067">成功的翻译会在本地留一条记录（原文 / 译文 / 用的哪条配置），只存这台浏览器里，不上传、不进导出文件。填 0 = 不记录。</p>
           </div>
         </div>          </div>
         </details>
 <details class="set-group">
-          <summary><span class="set-group-t">翻译按钮</span></summary>
+          <summary><span class="set-group-t" data-i18n="opt_set_068">翻译按钮</span></summary>
           <div class="set-group-body">
 
         <div class="setting">
-          <label>按钮样式</label>
+          <label data-i18n="opt_set_069">按钮样式</label>
           <div class="stack">
             <div class="trig-row">
               <div class="trig-styles" id="trig-styles"></div>
               <div class="trig-preview-box">
                 <div class="trig-preview" id="trig-preview"></div>
-                <span>预览</span>
+                <span data-i18n="opt_set_070">预览</span>
               </div>
             </div>
             <p class="hint" data-hint="set-trigstyle">
-              划词后出现在选区旁边那个小按钮的样子，只影响按钮本身。<b>地球</b>是线性图标，颜色跟着
-              <b>主题</b>走；<b>自定义</b>不给底座 —— 整块就是你粘进下面那段 SVG。
+              划词后出现在选区旁边那个小按钮的样子，只影响按钮本身。<b data-i18n="opt_set_071">地球</b>是线性图标，颜色跟着
+              <b data-i18n="opt_set_072">主题</b>走；<b>自定义</b>不给底座 —— 整块就是你粘进下面那段 SVG。
             </p>
           </div>
         </div>
 
         <div class="setting">
-          <label for="s-trigsize">按钮大小（px）</label>
+          <label for="s-trigsize" data-i18n="opt_set_073">按钮大小（px）</label>
           <input id="s-trigsize" type="number" min="20" max="96" step="1">
         </div>
 
         <div class="setting">
-          <label for="s-trigidle">按钮自动消失（秒）</label>
+          <label for="s-trigidle" data-i18n="opt_set_074">按钮自动消失（秒）</label>
           <div class="stack">
             <input id="s-trigidle" type="number" min="0" max="60" step="1">
             <p class="hint" data-hint="set-trigidle">
@@ -332,7 +332,7 @@
         </div>
 
         <div class="setting">
-          <label for="s-trigleave">鼠标移开后消失（秒）</label>
+          <label for="s-trigleave" data-i18n="opt_set_075">鼠标移开后消失（秒）</label>
           <div class="stack">
             <input id="s-trigleave" type="number" min="0" max="10" step="0.5">
             <p class="hint" data-hint="set-trigleave">
@@ -342,27 +342,27 @@
         </div>
 
         <div class="setting">
-          <label for="s-trigsvg">自定义图标（SVG）</label>
+          <label for="s-trigsvg" data-i18n="opt_set_076">自定义图标（SVG）</label>
           <div class="stack">
             <textarea id="s-trigsvg" spellcheck="false" rows="6" placeholder="&lt;svg viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;1.8&quot;&gt;&#10;  &lt;path d=&quot;M4 12h10M9 7l5 5-5 5&quot;/&gt;&#10;&lt;/svg&gt;"></textarea>
             <p class="trig-svg-msg" id="s-trigsvg-msg" hidden></p>
             <p class="hint" data-hint="set-trigsvg">
               粘 <code>&lt;svg&gt;…&lt;/svg&gt;</code> 进来，替换掉预设里的图标 /「译」字；
-              <b>底座还是用上面选的那个预设</b>，想连底座都自己说了算就选<b>「自定义」</b>。
-              颜色写 <code>currentColor</code> 跟着主题走。<br>
-              这段会插进页面，所以要求以 <code>&lt;svg</code> 开头、<code>&lt;/svg&gt;</code> 结尾，
+              <b data-i18n="opt_set_077">底座还是用上面选的那个预设</b>，想连底座都自己说了算就选<b>「自定义」</b>。
+              颜色写 <code data-i18n="opt_set_078">currentColor</code> 跟着主题走。<br>
+              这段会插进页面，所以要求以 <code data-i18n="opt_set_079">&lt;svg</code> 开头、<code>&lt;/svg&gt;</code> 结尾，
               且不含 <code>&lt;script&gt;</code> / <code>onload=</code> / <code>href</code> /
               <code>&lt;foreignObject&gt;</code> 这类东西 —— 不通过时下面会说明卡在哪一条（内容不会被改）。
             </p>
             <div class="trig-examples">
-              <button type="button" id="btn-trigsvg-demo" class="trig-ex">插入示例图标</button>
-              <button type="button" id="btn-trigsvg-clear" class="trig-ex">清空</button>
+              <button type="button" id="btn-trigsvg-demo" class="trig-ex" data-i18n="opt_set_080">插入示例图标</button>
+              <button type="button" id="btn-trigsvg-clear" class="trig-ex" data-i18n="opt_set_081">清空</button>
             </div>
           </div>
         </div>          </div>
         </details>
 <details class="set-group" open>
-          <summary><span class="set-group-t">面板</span></summary>
+          <summary><span class="set-group-t" data-i18n="opt_set_082">面板</span></summary>
           <div class="set-group-body">
 
 
@@ -371,28 +371,28 @@
              顶栏能拖、✕ 能关。关掉之后按钮还在，再点又回来。
              样式表和 DOM 与 content.js 共用（lib/panel-styles.js），两边必然一致。 -->
         <div class="setting">
-          <label>效果预览</label>
+          <label data-i18n="opt_set_083">效果预览</label>
           <div class="stack">
             <div class="io-row">
-              <button id="btn-pv-open" class="ghost" title="把一个和网页上一模一样的面板浮到页面上（能拖动、点 ✕ 关闭）">显示面板</button>
+              <button id="btn-pv-open" class="ghost" title="把一个和网页上一模一样的面板浮到页面上（能拖动、点 ✕ 关闭）" data-i18n-title="opt_title_202" data-i18n="opt_set_084">显示面板</button>
             </div>
-            <p class="hint" data-hint="s-preview">浮出来的就是**网页上那个真面板**：样式、顶栏、拖动、✕ 关闭全都一样，跟着上面的宽度 / 字号 / 高度 / 主题实时变。里面的文字是示例内容。</p>
+            <p class="hint" data-hint="s-preview" data-i18n="opt_set_085">浮出来的就是**网页上那个真面板**：样式、顶栏、拖动、✕ 关闭全都一样，跟着上面的宽度 / 字号 / 高度 / 主题实时变。里面的文字是示例内容。</p>
           </div>
         </div>
         <!-- 面板挂载点：平时 hidden 不占版面，点了「显示面板」才以 fixed 浮出来 -->
         <div id="panel-preview" hidden></div>
         <div class="setting">
-          <label for="s-width">结果面板宽度（px）</label>
+          <label for="s-width" data-i18n="opt_set_086">结果面板宽度（px）</label>
           <input id="s-width" type="number" min="280" max="1600" step="10">
         </div>
 
         <div class="setting">
-          <label for="s-height">结果面板高度（px， 0 = 自适应）</label>
+          <label for="s-height" data-i18n="opt_set_087">结果面板高度（px， 0 = 自适应）</label>
           <input id="s-height" type="number" min="0" max="2000" step="20">
         </div>
 
         <div class="setting">
-          <label for="s-maxh">结果区最大高度（vh，0 = 不限）</label>
+          <label for="s-maxh" data-i18n="opt_set_088">结果区最大高度（vh，0 = 不限）</label>
           <div class="stack">
             <input id="s-maxh" type="number" min="0" max="100" step="2">
             <p class="hint" data-hint="set-maxh">
@@ -403,16 +403,16 @@
         </div>
 
         <div class="setting">
-          <label for="s-font">面板字号（px）</label>
+          <label for="s-font" data-i18n="opt_set_089">面板字号（px）</label>
           <input id="s-font" type="number" min="11" max="48" step="1">
         </div>
 
         <div class="setting">
-          <label for="s-theme">主题</label>
+          <label for="s-theme" data-i18n="opt_set_090">主题</label>
           <select id="s-theme">
-            <option value="auto">跟随系统</option>
-            <option value="dark">暗色</option>
-            <option value="light">亮色</option>
+            <option value="auto" data-i18n="opt_set_091">跟随系统</option>
+            <option value="dark" data-i18n="opt_set_092">暗色</option>
+            <option value="light" data-i18n="opt_set_093">亮色</option>
           </select>
         </div>
 
@@ -420,28 +420,28 @@
         <div class="setting">
           <label class="switch">
             <input type="checkbox" id="s-showsrc">
-            <span>在面板里显示原文</span>
+            <span data-i18n="opt_set_094">在面板里显示原文</span>
           </label>
         </div>
 
         <div class="setting">
-          <label for="s-panelcss">自定义面板样式（CSS）</label>
+          <label for="s-panelcss" data-i18n="opt_set_095">自定义面板样式（CSS）</label>
           <div class="stack">
-            <textarea id="s-panelcss" rows="6" spellcheck="false" placeholder="/* 例： #rt-panel { border-radius: 8px } */"></textarea>
+            <textarea id="s-panelcss" rows="6" spellcheck="false" placeholder="/* 例： #rt-panel { border-radius: 8px } */" data-i18n-ph="opt_ph_211"></textarea>
             <div class="io-row">
-              <button id="btn-panelcss-warm" class="ghost" title="填入一套护眼暖色配色（可以再改）">填入示例：护眼暖色</button>
-              <button id="btn-panelcss-clear" class="ghost">清空</button>
+              <button id="btn-panelcss-warm" class="ghost" title="填入一套护眼暖色配色（可以再改）" data-i18n-title="opt_title_203" data-i18n="opt_set_096">填入示例：护眼暖色</button>
+              <button id="btn-panelcss-clear" class="ghost" data-i18n="opt_set_081">清空</button>
             </div>
             <p class="hint" data-hint="panel-css">
-              这段 CSS 会<strong>注入到面板自己的 shadow root 里</strong>。面板不在页面 DOM 中，
-              所以把它贴到 Stylus / user.css 是<strong>无效的</strong> —— 只能写在这儿。
-              <br>可用的钩子：<code>#rt-panel</code>（面板本体，id 选择器优先级高于预设，一般不用 <code>!important</code>）、
-              <code>[data-rt-theme="dark"]</code> 与 <code>[data-rt-theme="light"]</code>（按主题分别写）、
+              这段 CSS 会<strong data-i18n="opt_set_098">注入到面板自己的 shadow root 里</strong>。面板不在页面 DOM 中，
+              所以把它贴到 Stylus / user.css 是<strong data-i18n="opt_set_099">无效的</strong> —— 只能写在这儿。
+              <br data-i18n="opt_set_100">可用的钩子：<code>#rt-panel</code>（面板本体，id 选择器优先级高于预设，一般不用 <code>!important</code>）、
+              <code data-i18n="opt_set_101">[data-rt-theme="dark"]</code> 与 <code>[data-rt-theme="light"]</code>（按主题分别写）、
               <code>.rt-head</code> <code>.rt-cfg</code> <code>.rt-lang</code> <code>.rt-out</code> <code>.rt-src</code>
               <code>.rt-slot</code> <code>.rt-slot-h</code> <code>.rt-slot-name</code> <code>.rt-slot-b</code>
               <code>.rt-acts</code> <code>.rt-act</code> <code>.rt-foot</code> <code>.rt-msg</code> <code>.rt-more</code>
               <code>.rt-diag</code> <code>.d-k</code> <code>.d-v</code> <code>.rt-btn</code> <code>.rt-dot</code>。
-              这些名字<strong>不会改</strong>（真要改会给别名）。
+              这些名字<strong data-i18n="opt_set_102">不会改</strong>（真要改会给别名）。
             </p>
           </div>
         </div>
@@ -449,35 +449,35 @@
         </details>
 
         <details class="set-group">
-          <summary><span class="set-group-t">导入 / 导出</span></summary>
+          <summary><span class="set-group-t" data-i18n="opt_set_103">导入 / 导出</span></summary>
           <div class="set-group-body">
 
         <div class="setting">
-          <label>导出备份</label>
+          <label data-i18n="opt_set_104">导出备份</label>
           <div class="stack">
             <div class="io-row">
-              <button id="btn-export" class="ghost" title="把全部配置 / 变量 / 设置 / OCR 导出成一个 JSON 文件（里面有明文 API Key，只发给你自己）">导出备份</button>
-              <label class="enc-opt" title="勾上后导出的文件会用口令加密（AES-GCM），发给别人、存网盘都不怕泄露。口令不恢复 —— 丢了文件就解不开。">
+              <button id="btn-export" class="ghost" title="把全部配置 / 变量 / 设置 / OCR 导出成一个 JSON 文件（里面有明文 API Key，只发给你自己）" data-i18n-title="opt_title_204" data-i18n="opt_set_104">导出备份</button>
+              <label class="enc-opt" title="勾上后导出的文件会用口令加密（AES-GCM），发给别人、存网盘都不怕泄露。口令不恢复 —— 丢了文件就解不开。" data-i18n-title="opt_title_205">
                 <input type="checkbox" id="chk-encrypt"> 加密导出
               </label>
             </div>
-            <p class="hint" data-hint="io-backup">备份版里有<strong>明文 API Key</strong>，只发给你自己。勾上「加密导出」则用口令加密（AES-GCM）—— 口令不恢复，丢了文件就解不开。</p>
+            <p class="hint" data-hint="io-backup" data-i18n="opt_set_106">备份版里有<strong>明文 API Key</strong>，只发给你自己。勾上「加密导出」则用口令加密（AES-GCM）—— 口令不恢复，丢了文件就解不开。</p>
           </div>
         </div>
 
         <div class="setting">
-          <label>导出分享版</label>
+          <label data-i18n="opt_set_107">导出分享版</label>
           <div class="stack">
-            <button id="btn-export-share" class="ghost" title="生成一份去掉密钥的配置文件，发给别人填他自己的 Key">导出分享版（不含 Key）</button>
-            <p class="hint" data-hint="io-share">自动清空名字里含 key 的变量值，发给别人填他自己的 Key。<strong>请求模板正文里手写的 Key 不会被自动发现</strong>，分享前自己检查一遍。</p>
+            <button id="btn-export-share" class="ghost" title="生成一份去掉密钥的配置文件，发给别人填他自己的 Key" data-i18n-title="opt_title_206" data-i18n="opt_set_108">导出分享版（不含 Key）</button>
+            <p class="hint" data-hint="io-share" data-i18n="opt_set_109">自动清空名字里含 key 的变量值，发给别人填他自己的 Key。<strong>请求模板正文里手写的 Key 不会被自动发现</strong>，分享前自己检查一遍。</p>
           </div>
         </div>
 
         <div class="setting">
-          <label>导入</label>
+          <label data-i18n="opt_set_110">导入</label>
           <div class="stack">
-            <button id="btn-import" class="ghost" title="从导出的 JSON 文件恢复配置（会替换当前的全部配置）">从文件导入</button>
-            <p class="hint" data-hint="io-import">整体替换当前的配置、变量、设置和 OCR。加密的文件会先问口令。</p>
+            <button id="btn-import" class="ghost" title="从导出的 JSON 文件恢复配置（会替换当前的全部配置）" data-i18n-title="opt_title_207" data-i18n="opt_set_111">从文件导入</button>
+            <p class="hint" data-hint="io-import" data-i18n="opt_set_112">整体替换当前的配置、变量、设置和 OCR。加密的文件会先问口令。</p>
           </div>
         </div>
 
@@ -486,21 +486,21 @@
         </details>
 
         <details class="set-group">
-          <summary><span class="set-group-t">翻译记录</span></summary>
+          <summary><span class="set-group-t" data-i18n="opt_set_113">翻译记录</span></summary>
           <div class="set-group-body">
 
         <div class="setting">
-          <label>最近的记录</label>
+          <label data-i18n="opt_set_114">最近的记录</label>
           <div class="stack">
-            <input id="history-search" type="search" placeholder="搜索原文、译文或配置名…" autocomplete="off">
+            <input id="history-search" type="search" placeholder="搜索原文、译文或配置名…" data-i18n-ph="opt_ph_212" autocomplete="off">
             <div id="history-list" class="history-list"></div>
-            <button id="btn-clear-history" class="ghost" title="清空全部翻译记录，不可恢复">清空翻译记录</button>
+            <button id="btn-clear-history" class="ghost" title="清空全部翻译记录，不可恢复" data-i18n-title="opt_title_208" data-i18n="opt_set_115">清空翻译记录</button>
           </div>
         </div>
 
         <div class="page-foot">
-          <button id="btn-restore-hints" class="ghost" hidden>把藏起来的说明文字都放回来</button>
-          <button id="btn-reset" class="danger ghost">恢复全部默认配置</button>
+          <button id="btn-restore-hints" class="ghost" hidden data-i18n="opt_set_116">把藏起来的说明文字都放回来</button>
+          <button id="btn-reset" class="danger ghost" data-i18n="opt_set_117">恢复全部默认配置</button>
         </div>
           </div>
         </details>
@@ -516,33 +516,33 @@
   <!-- 导入时挑配置（F2）：列出文件里的每条，勾选的才进来 -->
   <div id="import-dialog" hidden>
     <div class="pass-box imp-box">
-      <p class="pass-title" id="import-title">选择要导入的配置</p>
+      <p class="pass-title" id="import-title" data-i18n="opt_set_118">选择要导入的配置</p>
       <p class="imp-note" id="import-note"></p>
       <div class="imp-list" id="import-list"></div>
       <label class="imp-all">
         <input type="checkbox" id="import-all" checked>
-        <span>全选 / 全不选</span>
+        <span data-i18n="opt_set_119">全选 / 全不选</span>
       </label>
       <label class="imp-mode">
         <input type="checkbox" id="import-merge">
-        <span>保留现有配置（勾上的追加进来，同名的覆盖）；不勾 = 整体替换</span>
+        <span data-i18n="opt_set_120">保留现有配置（勾上的追加进来，同名的覆盖）；不勾 = 整体替换</span>
       </label>
       <p class="pass-note" id="import-err"></p>
       <div class="pass-actions">
-        <button type="button" class="ghost" id="import-cancel">取消</button>
-        <button type="button" id="import-ok">导入选中的</button>
+        <button type="button" class="ghost" id="import-cancel" data-i18n="opt_set_121">取消</button>
+        <button type="button" id="import-ok" data-i18n="opt_set_122">导入选中的</button>
       </div>
     </div>
   </div>
   <div id="pass-dialog" hidden>
     <div class="pass-box">
-      <p class="pass-title" id="pass-title">设置口令</p>
-      <input type="password" id="pass-input" autocomplete="new-password" placeholder="口令">
-      <input type="password" id="pass-again" autocomplete="new-password" placeholder="再输一遍" hidden>
+      <p class="pass-title" id="pass-title" data-i18n="opt_set_123">设置口令</p>
+      <input type="password" id="pass-input" autocomplete="new-password" placeholder="口令" data-i18n-ph="opt_ph_213">
+      <input type="password" id="pass-again" autocomplete="new-password" placeholder="再输一遍" data-i18n-ph="opt_ph_214" hidden>
       <p class="pass-note" id="pass-note"></p>
       <div class="pass-actions">
-        <button type="button" class="ghost" id="pass-cancel">取消</button>
-        <button type="button" id="pass-ok">确定</button>
+        <button type="button" class="ghost" id="pass-cancel" data-i18n="opt_set_121">取消</button>
+        <button type="button" id="pass-ok" data-i18n="opt_set_125">确定</button>
       </div>
     </div>
   </div>
