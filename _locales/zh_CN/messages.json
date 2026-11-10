@@ -49,6 +49,54 @@
     "message": "一条配置能挂好几条请求：<b>主请求</b>先发，它挂了就按顺序试勾上的<b>后备请求</b>。",
     "description": "设置页 JS 动态文案"
   },
+  "opt_chip_apikey": {
+    "message": "「变量」页签里的 apiKey，和翻译配置共用",
+    "description": "占位符/响应格式标签的说明"
+  },
+  "opt_chip_date": {
+    "message": "今天日期",
+    "description": "占位符/响应格式标签的说明"
+  },
+  "opt_chip_image": {
+    "message": "图片占位符：截图直传模式下的图片（data URL）/ OCR 那栏是截图的 data URL；普通翻译时是空串",
+    "description": "占位符/响应格式标签的说明"
+  },
+  "opt_chip_imageb64": {
+    "message": "裸 base64（不带 data: 前缀），给要纯 base64 的接口",
+    "description": "占位符/响应格式标签的说明"
+  },
+  "opt_chip_imagepart": {
+    "message": "图片那一段（含前导逗号），写在 content 数组最后；没图时是空串。用它就能让一段模板同时翻文字和翻图",
+    "description": "占位符/响应格式标签的说明"
+  },
+  "opt_chip_imageurl": {
+    "message": "base64 再过一遍 URL 编码（百度这类表单接口要这种）",
+    "description": "占位符/响应格式标签的说明"
+  },
+  "opt_chip_target": {
+    "message": "设置里的目标语言，原样搬过来（给聊天模型看）",
+    "description": "占位符/响应格式标签的说明"
+  },
+  "opt_chip_targetcode": {
+    "message": "映射成接口要的代码 ZH-HANS / JA，给 DeepL 这类只认代码的接口用。换服务就在请求文本里写一张 #@lang 表改掉（README 有现成的表）",
+    "description": "占位符/响应格式标签的说明"
+  },
+  "opt_chip_text": {
+    "message": "选中/待翻译的文本",
+    "description": "占位符/响应格式标签的说明"
+  },
+  "opt_chip_title": {
+    "message": "页面标题",
+    "description": "占位符/响应格式标签的说明"
+  },
+  "opt_chip_url": {
+    "message": "页面地址",
+    "description": "占位符/响应格式标签的说明"
+  },
+  "opt_copy_suffix": {
+    "message": "副本",
+    "description": "设置页：测试面板/诊断/配置操作"
+  },
   "opt_del_fallback": {
     "message": "删掉这条后备请求",
     "description": "设置页 JS 动态文案"
@@ -137,6 +185,34 @@
     "message": "配置就是一段请求，参数怎么摆你说了算",
     "description": "设置页：misc 区域"
   },
+  "opt_mode_auto": {
+    "message": "自动识别",
+    "description": "占位符/响应格式标签的说明"
+  },
+  "opt_mode_json": {
+    "message": "整体 JSON",
+    "description": "占位符/响应格式标签的说明"
+  },
+  "opt_mode_sse": {
+    "message": "SSE 事件流",
+    "description": "占位符/响应格式标签的说明"
+  },
+  "opt_mode_text": {
+    "message": "纯文本",
+    "description": "占位符/响应格式标签的说明"
+  },
+  "opt_need_one_cfg": {
+    "message": "至少要留一条配置。",
+    "description": "设置页：测试面板/诊断/配置操作"
+  },
+  "opt_new_cfg": {
+    "message": "新配置",
+    "description": "设置页：测试面板/诊断/配置操作"
+  },
+  "opt_no_request": {
+    "message": "（还没写请求模板）",
+    "description": "设置页：测试面板/诊断/配置操作"
+  },
   "opt_no_rotate": {
     "message": "不勾就不参与轮换（测试也不跑它）",
     "description": "设置页 JS 动态文案"
@@ -196,6 +272,14 @@
   "opt_row_text": {
     "message": "提取到的译文",
     "description": "设置页 JS 动态文案"
+  },
+  "opt_send": {
+    "message": "发送",
+    "description": "设置页：测试面板/诊断/配置操作"
+  },
+  "opt_sending": {
+    "message": "发送中…",
+    "description": "设置页：测试面板/诊断/配置操作"
   },
   "opt_set_006": {
     "message": "设置",
@@ -629,6 +713,58 @@
     "message": "确定",
     "description": "设置页：set 区域"
   },
+  "opt_t_body": {
+    "message": "—— 实际会发出的请求体 ——",
+    "description": "设置页：测试面板/诊断/配置操作"
+  },
+  "opt_t_fix": {
+    "message": "修正：",
+    "description": "设置页：测试面板/诊断/配置操作"
+  },
+  "opt_t_headers": {
+    "message": "请求头：",
+    "description": "设置页：测试面板/诊断/配置操作"
+  },
+  "opt_t_hintlbl": {
+    "message": "提示：",
+    "description": "设置页：测试面板/诊断/配置操作"
+  },
+  "opt_t_method": {
+    "message": "方法：",
+    "description": "设置页：测试面板/诊断/配置操作"
+  },
+  "opt_t_noadapter": {
+    "message": "(没有可用的内置适配器)",
+    "description": "设置页：测试面板/诊断/配置操作"
+  },
+  "opt_t_nobody": {
+    "message": "(这条请求没有请求体)",
+    "description": "设置页：测试面板/诊断/配置操作"
+  },
+  "opt_t_noreq": {
+    "message": "(没有请求)",
+    "description": "设置页：测试面板/诊断/配置操作"
+  },
+  "opt_t_note": {
+    "message": "—— 备注 ——",
+    "description": "设置页：测试面板/诊断/配置操作"
+  },
+  "opt_t_notpl": {
+    "message": "(请求模板为空)",
+    "description": "设置页：测试面板/诊断/配置操作"
+  },
+  "opt_t_nourl": {
+    "message": "(没有 URL)",
+    "description": "设置页：测试面板/诊断/配置操作"
+  },
+  "opt_t_problem": {
+    "message": "问题：",
+    "description": "设置页：测试面板/诊断/配置操作"
+  },
+  "opt_t_url": {
+    "message": "地址：",
+    "description": "设置页：测试面板/诊断/配置操作"
+  },
   "opt_title_201": {
     "message": "按住左侧的手柄上下拖动，或者点右侧的 ↑ ↓",
     "description": "设置页 title 区域"
@@ -732,6 +868,14 @@
   "opt_ui_lang_reset": {
     "message": "已切回内置中文，正在重载…",
     "description": "界面语言：切回内置"
+  },
+  "opt_unknown_adapter": {
+    "message": "（未知适配器）",
+    "description": "设置页：测试面板/诊断/配置操作"
+  },
+  "opt_untitled_cfg": {
+    "message": "未命名配置",
+    "description": "设置页：测试面板/诊断/配置操作"
   },
   "opt_up": {
     "message": "上移（越靠前越先试）",

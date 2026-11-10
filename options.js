@@ -819,15 +819,15 @@ function currentConfig() {
    「这块是什么」改成**从数据上看**：条目带 `adapter` 就是内置通道，否则就是请求模板
    （见 `blockHtml` 的 `isAdapter`）。哪天有第二个适配器了再把它请回来。 */
 const MODE_OPTIONS = [
-  { v: 'auto', t: '自动识别' },
-  { v: 'sse', t: 'SSE 事件流' },
-  { v: 'json', t: '整体 JSON' },
-  { v: 'text', t: '纯文本' }
+  { v: 'auto', t: '自动识别', k: 'opt_mode_auto' },
+  { v: 'sse', t: 'SSE 事件流', k: 'opt_mode_sse' },
+  { v: 'json', t: '整体 JSON', k: 'opt_mode_json' },
+  { v: 'text', t: '纯文本', k: 'opt_mode_text' }
 ];
 
 function optionsHtml(list, value) {
   return list
-    .map((o) => `<option value="${escapeHtml(o.v)}"${o.v === value ? ' selected' : ''}>${escapeHtml(o.t)}</option>`)
+    .map((o) => `<option value="${escapeHtml(o.v)}"${o.v === value ? ' selected' : ''}>${escapeHtml(o.k ? T(o.k, o.t) : o.t)}</option>`)
     .join('');
 }
 
@@ -836,32 +836,34 @@ function optionsHtml(list, value) {
    以前配置栏那排是 pane 级的（插进「光标所在的框」，得先点一下框）、OCR 那排在块里 ——
    两套位置，kniph 2026-10-14 要求统一到块里面。 */
 const CHIPS = [
-  { ins: '{{text}}', t: '选中/待翻译的文本' },
-  { ins: '{{target}}', t: '设置里的目标语言，原样搬过来（给聊天模型看）' },
+  { ins: '{{text}}', t: '选中/待翻译的文本', k: 'opt_chip_text' },
+  { ins: '{{target}}', t: '设置里的目标语言，原样搬过来（给聊天模型看）', k: 'opt_chip_target' },
   {
     ins: '{{targetCode}}',
+    k: 'opt_chip_targetcode',
     t: '映射成接口要的代码 ZH-HANS / JA，给 DeepL 这类只认代码的接口用。换服务就在请求文本里写一张 #@lang 表改掉（README 有现成的表）'
   },
-  { ins: '{{image}}', t: '截图翻译直传模式下的图片（data URL）；普通翻译时是空串' },
+  { ins: '{{image}}', t: '截图翻译直传模式下的图片（data URL）；普通翻译时是空串', k: 'opt_chip_image' },
   {
     ins: '{{imagePart}}',
+    k: 'opt_chip_imagepart',
     t: '图片那一段（含前导逗号），写在 content 数组最后；没图时是空串。用它就能让一段模板同时翻文字和翻图'
   },
-  { ins: '{{url}}', t: '页面地址' },
-  { ins: '{{title}}', t: '页面标题' },
-  { ins: '{{date}}', t: '今天日期' }
+  { ins: '{{url}}', t: '页面地址', k: 'opt_chip_url' },
+  { ins: '{{title}}', t: '页面标题', k: 'opt_chip_title' },
+  { ins: '{{date}}', t: '今天日期', k: 'opt_chip_date' }
 ];
 const OCR_CHIPS = [
-  { ins: '{{image}}', t: '截图的 data URL（OpenAI 兼容接口用这个）' },
-  { ins: '{{imageBase64}}', t: '裸 base64（不带 data: 前缀），给要纯 base64 的接口' },
-  { ins: '{{imageUrlEncoded}}', t: 'base64 再过一遍 URL 编码（百度这类表单接口要这种）' },
-  { ins: '{{apiKey}}', t: '「变量」页签里的 apiKey，和翻译配置共用' }
+  { ins: '{{image}}', t: '截图的 data URL（OpenAI 兼容接口用这个）', k: 'opt_chip_image' },
+  { ins: '{{imageBase64}}', t: '裸 base64（不带 data: 前缀），给要纯 base64 的接口', k: 'opt_chip_imageb64' },
+  { ins: '{{imageUrlEncoded}}', t: 'base64 再过一遍 URL 编码（百度这类表单接口要这种）', k: 'opt_chip_imageurl' },
+  { ins: '{{apiKey}}', t: '「变量」页签里的 apiKey，和翻译配置共用', k: 'opt_chip_apikey' }
 ];
 
 /** 一排占位符标签（`ins` 是插进去的文本，标签上显示的是去掉花括号的名字） */
 function chipsHtml(list) {
   return `<div class="chips">` + list.map((c) =>
-    `<button type="button" class="chip" data-ins="${c.ins}" title="${escapeHtml(c.t)}">` +
+    `<button type="button" class="chip" data-ins="${c.ins}" title="${escapeHtml(c.k ? T(c.k, c.t) : c.t)}">` +
     `${escapeHtml(c.ins.slice(2, -2))}</button>`
   ).join('') + '</div>';
 }
@@ -869,13 +871,13 @@ function chipsHtml(list) {
 /** 内置适配器的显示名（`ADAPTERS` 里查不到就退回它的 id） */
 function adapterLabel(id) {
   const a = ADAPTERS[id];
-  return a ? a.label : String(id || '（未知适配器）');
+  return a ? a.label : String(id || T('opt_unknown_adapter', '（未知适配器）'));
 }
 
 /** 块头右边那句「这条打到哪儿」—— 折叠起来之后全靠它认人 */
 function blockSummary(item, kind) {
   if (kind === 'adapter') return T('opt_adapter_prefix', '内置适配器：') + adapterLabel(item.adapter);
-  return summarizeUrl(item.request, '（还没写请求模板）');
+  return summarizeUrl(item.request, T('opt_no_request', '（还没写请求模板）'));
 }
 
 /**
@@ -1114,7 +1116,7 @@ function renderEditor() {
 function collectEditor() {
   const cfg = currentConfig();
   if (!cfg) return null;
-  cfg.name = els.name.value.trim() || '未命名配置';
+  cfg.name = els.name.value.trim() || T('opt_untitled_cfg', '未命名配置');
 
   for (const node of els.blocks.querySelectorAll('.req-block')) {
     const isMain = node.dataset.id === cfg.id;
@@ -1152,7 +1154,7 @@ function bindConfigList() {
     flushEditor();
     const cfg = {
       id: uid(),
-      name: '新配置',
+      name: T('opt_new_cfg', '新配置'),
       note: '',
       adapter: '',
       request:
@@ -1249,7 +1251,7 @@ $('#btn-duplicate').addEventListener('click', () => {
     const copy = {
       ...cfg,
       id: uid(),
-      name: cfg.name + ' 副本',
+      name: cfg.name + ' ' + T('opt_copy_suffix', '副本'),
       // 后备每条的 id 也得换新的，不然两份配置里的块 id 撞上
       fallbacks: (cfg.fallbacks || []).map((f) => ({ ...f, id: uid() }))
     };
@@ -1264,7 +1266,7 @@ $('#btn-duplicate').addEventListener('click', () => {
     const cfg = currentConfig();
     if (!cfg) return;
     if (state.configs.length === 1) {
-      alert('至少要留一条配置。');
+      alert(T('opt_need_one_cfg', '至少要留一条配置。'));
       return;
     }
     if (!confirm(`确定删除「${cfg.name || '未命名'}」？此操作不可撤销。`)) return;
@@ -1327,18 +1329,18 @@ let previewTimer = null;
  */
 function formatPreview(req, notes = []) {
   const lines = [];
-  lines.push('方法：' + (req.method || 'GET'));
-  lines.push('地址：' + (req.url || '(没有 URL)'));
+  lines.push(T('opt_t_method', '方法：') + (req.method || 'GET'));
+  lines.push(T('opt_t_url', '地址：') + (req.url || T('opt_t_nourl', '(没有 URL)')));
   lines.push('');
-  lines.push('请求头：');
+  lines.push(T('opt_t_headers', '请求头：'));
   for (const [k, v] of Object.entries(req.headers || {})) lines.push('  ' + k + ': ' + v);
   lines.push('');
-  lines.push('—— 实际会发出的请求体 ——');
+  lines.push(T('opt_t_body', '—— 实际会发出的请求体 ——'));
   lines.push('');
-  lines.push(req.body == null || req.body === '' ? '(这条请求没有请求体)' : String(req.body));
+  lines.push(req.body == null || req.body === '' ? T('opt_t_nobody', '(这条请求没有请求体)') : String(req.body));
   if (notes.length) {
     lines.push('');
-    lines.push('—— 备注 ——');
+    lines.push(T('opt_t_note', '—— 备注 ——'));
     for (const n of notes) lines.push('· ' + n);
   }
   return lines.join('\n');
@@ -1356,9 +1358,9 @@ function previewBlock(b, vars, ivars) {
     const a = ADAPTERS[b.adapter];
     return a
       ? T('opt_adapter_prefix', '内置适配器：') + a.label + '\n\n' + a.hint + '\n\n' + T('opt_adapter_note', '这条请求不走请求模板，翻译流程由扩展内置的代码完成。')
-      : '(没有可用的内置适配器)';
+      : T('opt_t_noadapter', '(没有可用的内置适配器)');
   }
-  if (!b.request.trim()) return '(请求模板为空)';
+  if (!b.request.trim()) return T('opt_t_notpl', '(请求模板为空)');
 
   const info = previewRequest(b.request, vars, b.path);
   const notes = [`写法：${info.request.style === 'raw' ? '原始 HTTP 报文' : 'curl'}（自动识别）`];
@@ -1375,9 +1377,9 @@ function previewBlock(b, vars, ivars) {
   if (info.missing.length) {
     notes.push('未定义的变量（按空串替换）：' + info.missing.map((m) => '{{' + m + '}}').join(' '));
   }
-  for (const p of info.problems) notes.push('问题：' + p);
-  for (const w of info.warnings || []) notes.push('提示：' + w);
-  for (const n of info.notes) notes.push('修正：' + n);
+  for (const p of info.problems) notes.push(T('opt_t_problem', '问题：') + p);
+  for (const w of info.warnings || []) notes.push(T('opt_t_hintlbl', '提示：') + w);
+  for (const n of info.notes) notes.push(T('opt_t_fix', '修正：') + n);
 
   let out = formatPreview(info.request, notes);
 
@@ -1389,9 +1391,9 @@ function previewBlock(b, vars, ivars) {
     if (iinfo.missing.length) {
       inotes.push('未定义的变量（按空串替换）：' + iinfo.missing.map((m) => '{{' + m + '}}').join(' '));
     }
-    for (const p of iinfo.problems) inotes.push('问题：' + p);
-    for (const w of iinfo.warnings || []) inotes.push('提示：' + w);
-    for (const n of iinfo.notes) inotes.push('修正：' + n);
+    for (const p of iinfo.problems) inotes.push(T('opt_t_problem', '问题：') + p);
+    for (const w of iinfo.warnings || []) inotes.push(T('opt_t_hintlbl', '提示：') + w);
+    for (const n of iinfo.notes) inotes.push(T('opt_t_fix', '修正：') + n);
     out += '\n\n══════ 图片请求模板（截图直传那一次用它）══════\n\n' + formatPreview(iinfo.request, inotes);
   }
   return out;
@@ -1407,7 +1409,7 @@ function updatePreview() {
   previewTimer = setTimeout(() => {
     const nodes = [...els.blocks.querySelectorAll('.req-block')];
     if (!nodes.length) {
-      els.preview.textContent = '(没有请求)';
+      els.preview.textContent = T('opt_t_noreq', '(没有请求)');
       return;
     }
 
@@ -1467,7 +1469,7 @@ async function runTest() {
   const chain = requestChain(cfg);
   const btn = $('#btn-test');
   btn.disabled = true;
-  btn.textContent = '发送中…';
+  btn.textContent = T('opt_sending', '发送中…');
 
   let vars;
   try {
@@ -1544,7 +1546,7 @@ async function runTest() {
   }
 
   btn.disabled = false;
-  btn.textContent = '发送';
+  btn.textContent = T('opt_send', '发送');
 }
 
 /* 测试结果里的「实际请求」那一块。配置栏和 OCR 栏摊的是同一份东西 —— 一处排版，两边共用。
