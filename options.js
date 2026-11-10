@@ -956,37 +956,40 @@ function blockHtml(item, idx, lastIdx, opts = {}) {
         ${templateFieldHtml({
           wrapAttrs: 'class="preview tpl-fold rb-only-request"',
           boxAttrs: 'class="rb-request"',
-          title: '请求模板',
+          title: T('opt_tpl_title', '请求模板'),
           value: item.request,
-          placeholder: '在这里粘贴 curl，或者写原始 HTTP 报文',
+          placeholder: T('opt_tpl_ph', '在这里粘贴 curl，或者写原始 HTTP 报文'),
           open: true,
           hidden: isAdapter,
           chips: opts.chips,
           dismiss: ocr ? 'ocr-tpl' : 'cfg-tpl',
           hint: ocr
-            ? `除占位符外一字不改地发出去；<b>提示词直接写在请求文本里</b>，不是占位符。
-               三个图片占位符的区别见上面那排标签的悬停提示 —— 百度那类表单接口要
-               <code>{{imageUrlEncoded}}</code>（base64 里的 <code>+</code> 不转成 <code>%2B</code> 会被当空格）。
-               Key 走 <code>{{apiKey}}</code>，别写死在模板里。`
-            : `curl 和原始 HTTP 报文都行，除占位符外一字不改地发出去。
-               JSON 里不能有裸换行（写 <code>\\n</code>），双引号写 <code>\\"</code>；行首 <code>#</code> 是注释。`
+            ? T('opt_tpl_hint_ocr',
+                '除占位符外一字不改地发出去；<b>提示词直接写在请求文本里</b>，不是占位符。' +
+                '三个图片占位符的区别见上面那排标签的悬停提示 —— 百度那类表单接口要 ' +
+                '<code>{{imageUrlEncoded}}</code>（base64 里的 <code>+</code> 不转成 <code>%2B</code> 会被当空格）。' +
+                'Key 走 <code>{{apiKey}}</code>，别写死在模板里。')
+            : T('opt_tpl_hint_text',
+                'curl 和原始 HTTP 报文都行，除占位符外一字不改地发出去。' +
+                'JSON 里不能有裸换行（写 <code>\\n</code>），双引号写 <code>\\"</code>；行首 <code>#</code> 是注释。')
         })}
         ${ocr ? '' : templateFieldHtml({
           wrapAttrs: 'class="preview tpl-fold img-tpl rb-only-request"',
           boxAttrs: 'class="rb-image-request"',
-          title: '图片请求模板（可选 · 点开填）',
+          title: T('opt_imgtpl_title', '图片请求模板（可选 · 点开填）'),
           value: item.imageRequest,
-          placeholder: '留空 = 图片那次也用上面那段模板',
+          placeholder: T('opt_imgtpl_ph', '留空 = 图片那次也用上面那段模板'),
           // 空的时候收起（多数人用不到），填过就摊开
           open: !!item.imageRequest.trim(),
           hidden: isAdapter,
           chips: opts.chips,
           dismiss: 'img-tpl',
-          hint: `<b>填了这段（主请求或哪条后备都行），这条配置才会出现在 OCR 栏的「图片配置」列表里。</b>
-            它管翻图，上面那段继续管划词翻译；留空就回退到上面那段。<br>
-            写成多模态的样子，比如：
-            <code>{"role":"user","content":[{"type":"image_url","image_url":{"url":"{{image}}"}},{"type":"text","text":"把图里的文字翻成{{target}}，只输出译文"}]}</code><br>
-            这段里 <code>{{text}}</code> 是空串 —— 直传时图片本身就是原文。`
+          hint: T('opt_imgtpl_hint',
+            '<b>填了这段（主请求或哪条后备都行），这条配置才会出现在 OCR 栏的「图片配置」列表里。</b>' +
+            '它管翻图，上面那段继续管划词翻译；留空就回退到上面那段。<br>' +
+            '写成多模态的样子，比如：' +
+            '<code>{"role":"user","content":[{"type":"image_url","image_url":{"url":"{{image}}"}},{"type":"text","text":"把图里的文字翻成{{target}}，只输出译文"}]}</code><br>' +
+            '这段里 <code>{{text}}</code> 是空串 —— 直传时图片本身就是原文。'),
         })}
         ${/* 两个「响应」字段收尾，见 blockHtml 上面那段字段顺序的注释 */ ''}
         ${ocr ? '' : `<div class="field mode-field rb-only-request"${hideReq}>
@@ -997,8 +1000,8 @@ function blockHtml(item, idx, lastIdx, opts = {}) {
           <label>${T('opt_label_path', '响应提取路径（留空自动识别）')}</label>
           <input class="rb-path" type="text" spellcheck="false" placeholder="choices[0].message.content" value="${escapeHtml(item.path)}">
           <p class="hint" data-hint="${ocr ? 'ocr-path' : 'cfg-path'}">${ocr
-            ? '点号 + 下标，例如百度的 <code>words_result</code>（一行一个对象，会按行拼成一段）。留空时依次尝试各家常见的返回结构。'
-            : '点号 + 下标，例如 <code>data.translations[0].translatedText</code>。留空时会依次尝试各家常见的返回结构。'}</p>
+            ? T('opt_path_hint_ocr', '点号 + 下标，例如百度的 <code>words_result</code>（一行一个对象，会按行拼成一段）。留空时依次尝试各家常见的返回结构。')
+            : T('opt_path_hint_text', '点号 + 下标，例如 <code>data.translations[0].translatedText</code>。留空时会依次尝试各家常见的返回结构。')}</p>
         </div>
       </div>
     </div>`;

@@ -89,6 +89,18 @@
     "message": "这条填了「图片请求模板」，截图翻译时会走它（图片直传模式）",
     "description": "设置页 JS 动态文案"
   },
+  "opt_imgtpl_hint": {
+    "message": "<b>填了这段（主请求或哪条后备都行），这条配置才会出现在 OCR 栏的「图片配置」列表里。</b>它管翻图，上面那段继续管划词翻译；留空就回退到上面那段。<br>写成多模态的样子，比如：<code>{\"role\":\"user\",\"content\":[{\"type\":\"image_url\",\"image_url\":{\"url\":\"{{image}}\"}},{\"type\":\"text\",\"text\":\"把图里的文字翻成{{target}}，只输出译文\"}]}</code><br>这段里 <code>{{text}}</code> 是空串 —— 直传时图片本身就是原文。",
+    "description": "图片请求模板下方的说明"
+  },
+  "opt_imgtpl_ph": {
+    "message": "留空 = 图片那次也用上面那段模板",
+    "description": "图片请求模板输入框占位"
+  },
+  "opt_imgtpl_title": {
+    "message": "图片请求模板（可选 · 点开填）",
+    "description": "配置编辑器：图片请求模板折叠块的标题"
+  },
   "opt_label_adapter": {
     "message": "内置适配器",
     "description": "设置页 JS 动态文案"
@@ -124,6 +136,14 @@
   "opt_no_rotate": {
     "message": "不勾就不参与轮换（测试也不跑它）",
     "description": "设置页 JS 动态文案"
+  },
+  "opt_path_hint_ocr": {
+    "message": "点号 + 下标，例如百度的 <code>words_result</code>（一行一个对象，会按行拼成一段）。留空时依次尝试各家常见的返回结构。",
+    "description": "响应提取路径下方说明（OCR）"
+  },
+  "opt_path_hint_text": {
+    "message": "点号 + 下标，例如 <code>data.translations[0].translatedText</code>。留空时会依次尝试各家常见的返回结构。",
+    "description": "响应提取路径下方说明（文本）"
   },
   "opt_ph_209": {
     "message": "测试用的原文，默认为 Hello, world!",
@@ -637,6 +657,22 @@
     "message": "清空全部翻译记录，不可恢复",
     "description": "设置页 title 区域"
   },
+  "opt_tpl_hint_ocr": {
+    "message": "除占位符外一字不改地发出去；<b>提示词直接写在请求文本里</b>，不是占位符。三个图片占位符的区别见上面那排标签的悬停提示 —— 百度那类表单接口要 <code>{{imageUrlEncoded}}</code>（base64 里的 <code>+</code> 不转成 <code>%2B</code> 会被当空格）。Key 走 <code>{{apiKey}}</code>，别写死在模板里。",
+    "description": "请求模板下方的说明（OCR）"
+  },
+  "opt_tpl_hint_text": {
+    "message": "curl 和原始 HTTP 报文都行，除占位符外一字不改地发出去。JSON 里不能有裸换行（写 <code>\\n</code>），双引号写 <code>\\\"</code>；行首 <code>#</code> 是注释。",
+    "description": "请求模板下方的说明（文本翻译）"
+  },
+  "opt_tpl_ph": {
+    "message": "在这里粘贴 curl，或者写原始 HTTP 报文",
+    "description": "请求模板输入框占位"
+  },
+  "opt_tpl_title": {
+    "message": "请求模板",
+    "description": "配置编辑器：请求模板折叠块的标题"
+  },
   "opt_ui_lang": {
     "message": "界面语言",
     "description": "设置页：界面语言那一行的标签"
@@ -846,9 +882,17 @@
     "message": "等待结果…",
     "description": "结果区空态占位符"
   },
+  "popup_chars": {
+    "message": "字",
+    "description": "弹窗状态行：思考 N 字（后半）"
+  },
   "popup_clear": {
     "message": "清空",
     "description": "弹窗：清空按钮"
+  },
+  "popup_copied": {
+    "message": "已复制",
+    "description": "弹窗：复制成功提示"
   },
   "popup_copy": {
     "message": "复制",
@@ -858,6 +902,18 @@
     "message": "输入或粘贴要翻译的内容（会自动带上当前页面选中的文字）",
     "description": "弹窗：输入框占位"
   },
+  "popup_need_input": {
+    "message": "先输入点内容",
+    "description": "弹窗：没内容就点翻译"
+  },
+  "popup_no_config": {
+    "message": "没有可用配置",
+    "description": "弹窗：一条配置都没有"
+  },
+  "popup_no_result": {
+    "message": "没有拿到结果",
+    "description": "弹窗：请求没返回内容"
+  },
   "popup_open_full": {
     "message": "打开完整设置",
     "description": "弹窗：底部链接"
@@ -865,6 +921,10 @@
   "popup_open_settings": {
     "message": "打开设置",
     "description": "弹窗：齿轮按钮的 title"
+  },
+  "popup_reasoning": {
+    "message": "思考",
+    "description": "弹窗状态行：思考 N 字（前半）"
   },
   "popup_translate": {
     "message": "翻译",

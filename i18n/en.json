@@ -216,6 +216,21 @@
     "menuOcrClipboard": "Translate the screenshot in the clipboard",
     "menuShotTranslate": "Translate a screen region",
     "opt_hotkey_unset": "not set",
-    "opt_lang_samehint": "The panel's top bar has the same dropdown and the same value, so you can switch language on the fly without coming back here."
+    "opt_lang_samehint": "The panel's top bar has the same dropdown and the same value, so you can switch language on the fly without coming back here.",
+    "popup_copied": "Copied",
+    "popup_need_input": "Type something first",
+    "popup_no_config": "No configs available",
+    "popup_reasoning": "reasoning",
+    "popup_chars": "chars",
+    "popup_no_result": "No result returned",
+    "opt_tpl_title": "Request template",
+    "opt_tpl_ph": "Paste a curl here, or write a raw HTTP message",
+    "opt_tpl_hint_text": "curl or a raw HTTP message both work. Everything is sent verbatim except the placeholders. JSON cannot contain a bare newline (write <code>\\n</code>); escape double quotes as <code>\\\"</code>; a leading <code>#</code> is a comment.",
+    "opt_tpl_hint_ocr": "Sent verbatim except the placeholders; <b>the prompt goes directly in the request text</b>, it is not a placeholder. See the chip tooltips above for the three image placeholders. Form-style endpoints like Baidu need <code>{{imageUrlEncoded}}</code> (a <code>+</code> inside base64 must become <code>%2B</code>, otherwise it turns into a space). Use <code>{{apiKey}}</code> for the key instead of hard-coding it.",
+    "opt_imgtpl_title": "Image request template (optional, click to fill)",
+    "opt_imgtpl_ph": "Leave empty to reuse the template above for images too",
+    "opt_imgtpl_hint": "<b>Once this is filled in (on the main request or any fallback), the config shows up in the OCR tab's image config list.</b> It handles images; the template above keeps handling text. Leave it empty to fall back to the one above.<br>Write it the multimodal way, for example: <code>{\"role\":\"user\",\"content\":[{\"type\":\"image_url\",\"image_url\":{\"url\":\"{{image}}\"}},{\"type\":\"text\",\"text\":\"Translate the text in the image into {{target}}, output only the translation\"}]}</code><br>Inside this template <code>{{text}}</code> is the empty string: with direct image passing the image itself is the source.",
+    "opt_path_hint_text": "Dots plus indexes, e.g. <code>data.translations[0].translatedText</code>. When empty, common response shapes are tried in turn.",
+    "opt_path_hint_ocr": "Dots plus indexes, e.g. Baidu's <code>words_result</code> (one object per line, joined into one paragraph). When empty, common response shapes are tried in turn."
   }
 }

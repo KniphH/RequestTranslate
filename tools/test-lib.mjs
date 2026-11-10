@@ -4117,7 +4117,7 @@ await (async () => {
     JSON.stringify({ triggerSize: a.settings.triggerSize, triggerIdleSec: a.settings.triggerIdleSec,
       triggerLeaveSec: a.settings.triggerLeaveSec, panelWidth: a.settings.panelWidth, fontSize: a.settings.fontSize }),
     JSON.stringify(NEW));
-  eq('迁完版本号是 10', a.version, 10);
+  eq('迁完版本号是最新的', a.version, STORAGE_VERSION);
 
   /* 用户调过的必须留着 —— 这是这条迁移唯一真正危险的地方 */
   box = { version: 9, configs: [], vars: [], settings: { ...OLD, triggerSize: 60, fontSize: 24 }, ocr: {} };
