@@ -4,5 +4,166 @@
   },
   "extDesc": {
     "message": "划词翻译，但配置是你自己的 HTTP 请求。直接写 curl 或原始请求报文，可保存多个命名配置。"
+  },
+  "panel_cfg_only": {
+    "message": "翻译接口",
+    "description": "配置下拉 title：没有选中项时"
+  },
+  "panel_cfg_title": {
+    "message": "翻译接口",
+    "description": "面板顶栏那个配置下拉的 title"
+  },
+  "panel_cfg_with": {
+    "message": "翻译接口：$1$",
+    "description": "配置下拉 title：后面跟当前配置名",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "panel_close": {
+    "message": "关闭 (Esc)",
+    "description": "顶栏关闭按钮的 title"
+  },
+  "panel_compare_note": {
+    "message": "（对比中：共 $1$ 条）",
+    "description": "多配置对比时接在 title 后面",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "panel_copy": {
+    "message": "复制",
+    "description": "每条结果下面的复制按钮文字"
+  },
+  "panel_copy_title": {
+    "message": "复制这条译文",
+    "description": "复制按钮的 title"
+  },
+  "panel_diag_error": {
+    "message": "错误",
+    "description": "诊断区里错误那一行的标签"
+  },
+  "panel_error_fallback": {
+    "message": "出错了",
+    "description": "没有具体错误信息时的兜底文案"
+  },
+  "panel_img_cfg_with": {
+    "message": "图片接口：$1$",
+    "description": "配置下拉 title：图片模式下跟配置名",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "panel_img_none": {
+    "message": "还没有任何配置填过「图片请求模板」——去设置页的「配置」栏给能看图的那条填上，它才会出现在这个列表里。现在用的是「$1$」",
+    "description": "图片模式下没有可用配置时的说明",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "panel_lang_title": {
+    "message": "目标语言",
+    "description": "面板顶栏那个语言下拉的 title"
+  },
+  "panel_lang_with": {
+    "message": "目标语言：$1$",
+    "description": "语言下拉 title：后面跟当前语言",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "panel_more_title": {
+    "message": "查看详细信息",
+    "description": "顶栏「…」按钮的 title"
+  },
+  "panel_no_config": {
+    "message": "（没有配置）",
+    "description": "配置下拉在一条配置都没有时的占位项"
+  },
+  "panel_retry": {
+    "message": "重试",
+    "description": "单条重试按钮文字"
+  },
+  "panel_retry_title": {
+    "message": "只重试这一条",
+    "description": "单条重试按钮的 title"
+  },
+  "panel_slot_remove": {
+    "message": "不再显示这一条（只影响这次，不改设置里的默认组合）",
+    "description": "对比槽位上的 × 的 title"
+  },
+  "panel_speak": {
+    "message": "朗读",
+    "description": "朗读按钮文字"
+  },
+  "panel_speak_title": {
+    "message": "朗读这条译文",
+    "description": "朗读按钮的 title（未播放时）"
+  },
+  "panel_src_hidden": {
+    "message": "显示原文（当前隐藏中）",
+    "description": "原文按钮 title：当前隐藏"
+  },
+  "panel_src_showing": {
+    "message": "隐藏原文（当前显示中）",
+    "description": "原文按钮 title：正在显示"
+  },
+  "panel_src_toggle": {
+    "message": "显示 / 隐藏原文",
+    "description": "顶栏眼睛按钮的 title"
+  },
+  "panel_status_done": {
+    "message": "完成",
+    "description": "状态行：完成"
+  },
+  "panel_status_failed": {
+    "message": "失败",
+    "description": "状态行：失败"
+  },
+  "panel_status_translating": {
+    "message": "翻译中…",
+    "description": "状态行：正在翻译"
+  },
+  "panel_status_waiting": {
+    "message": "等待…",
+    "description": "状态行：排队等待"
+  },
+  "panel_stop": {
+    "message": "停止",
+    "description": "朗读按钮文字（正在播放时）"
+  },
+  "panel_stop_title": {
+    "message": "停止朗读",
+    "description": "朗读按钮的 title（正在播放时）"
+  },
+  "panel_waiting": {
+    "message": "等待结果…",
+    "description": "结果区空态占位符"
+  },
+  "trigger_dot_err": {
+    "message": "翻译失败",
+    "description": "小圆点提示：失败"
+  },
+  "trigger_dot_ok": {
+    "message": "翻译成功",
+    "description": "小圆点提示：成功"
+  },
+  "trigger_dot_on": {
+    "message": "正在翻译…",
+    "description": "小圆点提示：翻译中"
+  },
+  "trigger_translate": {
+    "message": "翻译选中内容",
+    "description": "划词小圆点的 title"
   }
 }

@@ -97,6 +97,17 @@
    以前这里是手抄一份 + 逐字比对断言，改样式要同步两处（text-align 就漏过一次）。 */
   const TRIGGER_CSS = window.RTPanelCore.TRIGGER_CSS;
 
+  /* 文案查表。lib/i18n.js 是普通脚本、在 manifest 里排在 panel-core 前面；
+     万一它没加载，回落成中文原文 —— 面板不能因为少一个文件就显示成 key。 */
+  function T(key, fallback) {
+    const api = window.RTI18n;
+    if (api && typeof api.t === "function") {
+      const got = api.t(key);
+      if (got && got !== key) return got;
+    }
+    return fallback;
+  }
+
   /* 用户粘进来的自定义 SVG 要过的几道关。⚠️ 同样与 lib/trigger-styles.js 的
      SVG_GUARDS 一致（测试逐个正则比对）。为什么是「整体拒绝」而不是「改写危险标签」，
      见那边的注释 —— 这段 HTML 会插进 shadow DOM，而 content script 的世界能碰 chrome.*。 */
@@ -168,7 +179,7 @@
 
   const trigger = document.createElement('div');
   trigger.className = 'rt-trigger s-badge';
-  trigger.title = '翻译选中内容';
+  trigger.title = T('trigger_translate', '翻译选中内容');
   const triggerIcon = document.createElement('span');
   triggerIcon.className = 'rt-ico';
   triggerIcon.textContent = TRIGGER_PRESETS.badge.html;
@@ -195,6 +206,29 @@
   const moreBtn = panel.querySelector('.rt-more');
   const diagBox = panel.querySelector('.rt-diag');
   const srcBtn = panel.querySelector('[data-act="src"]');
+  /**
+   * 刷新骨架里那几处**只在 shellHtml() 里写一次**的文案（title / placeholder）。
+   *
+   * 为什么需要：shellHtml() 在文件顶层同步执行，那时语言包还没从 storage 读回来 ——
+   * 所以骨架一定是按中文兜底渲染的。语言包到位后必须再刷一遍这几处，
+   * 否则会出现「关闭的 title 是中文、原文按钮的 title 却是英文」这种半截状态。
+   *
+   * 只改文本不改结构：重建 innerHTML 会让下面那一串 DOM 引用全变成悬空的。
+   */
+  function refreshShellText() {
+    const srcT = panel.querySelector('[data-act="src"]');
+    const closeT = panel.querySelector('[data-act="close"]');
+    if (srcT) srcT.title = T('panel_src_toggle', '显示 / 隐藏原文');
+    if (closeT) closeT.title = T('panel_close', '关闭 (Esc)');
+    if (moreBtn) moreBtn.title = T('panel_more_title', '查看详细信息');
+    const out = panel.querySelector('.rt-out');
+    // 占位符只在空态显示（CSS 用 content: attr(data-placeholder)）
+    if (out && out.classList.contains('empty')) {
+      out.dataset.placeholder = T('panel_waiting', '等待结果…');
+    }
+    if (trigger) trigger.title = T('trigger_translate', '翻译选中内容');
+  }
+
   /** 单条模式下的尾部操作条（多条时每条自己带一排，见 slotHtml） */
 
   function mount() {
@@ -533,11 +567,16 @@
   }
 
   /* 顶栏那盏灯的四种状态（悬停时给一句话，省得靠猜） */
-  const DOT_TIP = { on: '正在翻译…', ok: '翻译成功', err: '翻译失败' };
+  /* 小圆点顶部那句提示。做成函数而不是常量表 —— 换了语言要能立刻跟着变 */
+  const dotTip = (kind) => {
+    if (kind === 'on') return T('trigger_dot_on', '正在翻译…');
+    if (kind === 'ok') return T('trigger_dot_ok', '翻译成功');
+    return T('trigger_dot_err', '翻译失败');
+  };
 
   function setDot(kind) {
     dot.className = 'rt-dot' + (kind ? ' ' + kind : '');
-    dot.title = DOT_TIP[kind] || '';
+    dot.title = dotTip(kind);
   }
 
   /* ---- 两种「铺界面」的公共骨架 ----------------------------------------
@@ -600,7 +639,7 @@
   function showFailure(why, opts = {}) {
     leaveBusy();
     outBox.classList.remove('empty');
-    outBox.dataset.placeholder = opts.placeholder || '出错了';
+    outBox.dataset.placeholder = opts.placeholder || T('panel_error_fallback', '出错了');
     /* **失败也走块渲染**（kniph 2026-10-17：单条和多条统一）。
        以前是 textContent='' 铺一句占位文字 —— 块没了、里面那排
        「复制 / 朗读 / 重试」也跟着没了，而失败态恰恰最需要「重试」。
@@ -624,7 +663,7 @@
     const on = !!prefs.showOriginal;
     srcBox.classList.toggle('hidden', !on);
     srcBtn.classList.toggle('on', on);
-    srcBtn.title = on ? '隐藏原文（当前显示中）' : '显示原文（当前隐藏中）';
+    srcBtn.title = T(on ? 'panel_src_showing' : 'panel_src_hidden', on ? '隐藏原文（当前显示中）' : '显示原文（当前隐藏中）');
   }
 
   /* 写存档的唯一入口：**读整个 state → 让调用方改一改 → 写回去**。
@@ -1347,10 +1386,10 @@
     cfgSelect.innerHTML = '';
     if (!list.length) {
       const o = document.createElement('option');
-      o.textContent = '（没有配置）';
+      o.textContent = T('panel_no_config', '（没有配置）');
       o.value = '';
       cfgSelect.appendChild(o);
-      cfgSelect.title = '翻译接口';
+      cfgSelect.title = T('panel_cfg_only', '翻译接口');
       return;
     }
     for (const c of list) {
@@ -1381,15 +1420,19 @@
     // 多条对比时额外说一句「还开着几条」（下拉里只显示当前这条）。
     const cur = list.find((c) => c.id === want);
     const who = cur ? cur.name : '';
-    const extra = !imgMode && slots.length > 1 ? `（对比中：共 ${slots.length} 条）` : '';
+    const extra = !imgMode && slots.length > 1
+      ? T('panel_compare_note', '（对比中：共 $1$ 条）').replace('$1$', String(slots.length))
+      : '';
     if (cfgMode !== 'image') {
-      cfgSelect.title = cur ? '翻译接口：' + who + extra : '翻译接口';
+      cfgSelect.title = cur
+        ? T('panel_cfg_with', '翻译接口：$1$').replace('$1$', who + extra)
+        : T('panel_cfg_only', '翻译接口');
     } else if (imageConfigs.length) {
-      cfgSelect.title = '图片接口：' + who;
+      cfgSelect.title = T('panel_img_cfg_with', '图片接口：$1$').replace('$1$', who);
     } else {
-      cfgSelect.title =
+      cfgSelect.title = T('panel_img_none',
         '还没有任何配置填过「图片请求模板」——去设置页的「配置」栏给能看图的那条填上，' +
-        '它才会出现在这个列表里。现在用的是「' + who + '」';
+        '它才会出现在这个列表里。现在用的是「$1$」').replace('$1$', who);
     }
   }
 
@@ -1451,7 +1494,7 @@
       langSelect.appendChild(o);
     }
     langSelect.value = cur;
-    langSelect.title = '目标语言：' + cur;
+    langSelect.title = T('panel_lang_with', '目标语言：$1$').replace('$1$', cur);
   }
 
   /* ---- 翻译 ---- */
@@ -2609,13 +2652,21 @@
     renderLangOptions();
     syncSrcBtn();
     applyAppearance();
+    // 语言包这时才到位（见启动那段），骨架里写死的 title 要补刷一遍
+    refreshShellText();
     // 字号 / 面板尺寸变了，面板高度跟着变，可能就顶出视口了
     keepPanelInView();
     if (prefs.trigger === 'off') hideTrigger();
   }
 
+  /* 先载语言包，再读存档 —— 顺序反了的话面板会先按中文渲染一遍，
+     语言包到位后再补刷（用户看得见闪一下）。两个读取并发，几乎不增加启动延迟。 */
   try {
-    chrome.storage.local.get('state').then((raw) => applyState(raw && raw.state)).catch(() => {});
+    const i18nApi = window.RTI18n;
+    const loadPack = i18nApi && i18nApi.loadPack ? i18nApi.loadPack() : Promise.resolve(null);
+    Promise.all([loadPack, chrome.storage.local.get('state')])
+      .then(([, raw]) => applyState(raw && raw.state))
+      .catch(() => {});
   } catch { /* 忽略 */ }
 
   try {

@@ -4126,6 +4126,56 @@ await (async () => {
   globalThis.chrome.storage.local.get = original;
   globalThis.chrome.storage.local.set = originalSet;
 })();
+/* ---- i18n 第一阶段（面板 + 触发按钮那一族文案）----
+   这几条钉的是「抽 key 之后不许悄悄退回硬编码」：代码里每一处 T() 的 key
+   必须在 zh_CN/messages.json 里真有这一条，否则界面会显示成 key 本身。 */
+{
+  const i18nSrc = readFileSync(new URL('../lib/i18n.js', import.meta.url), 'utf8');
+  const zh = JSON.parse(readFileSync(new URL('../_locales/zh_CN/messages.json', import.meta.url), 'utf8'));
+  const panelSrc = readFileSync(new URL('../lib/panel-core.js', import.meta.url), 'utf8');
+  const contentSrc = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
+  const man = JSON.parse(readFileSync(new URL('../manifest.json', import.meta.url), 'utf8'));
+
+  check('i18n.js 是普通脚本（挂 window.RTI18n），不是 ES module',
+    !/^export /m.test(i18nSrc) && /window\.RTI18n\s*=/.test(i18nSrc));
+
+  /* 两个 content script 都排在 i18n.js 后面 —— 顺序反了 panel-core 拿不到 T() */
+  check('manifest 里 i18n.js 排在 panel-core 和 content.js 之前',
+    (() => {
+      const js = man.content_scripts[0].js;
+      return js.indexOf('lib/i18n.js') === 0 && js.indexOf('lib/panel-core.js') > 0;
+    })());
+
+  /* 代码里出现的每个 panel_* / trigger_* key，messages.json 里都得有。
+     漏一条的后果不是报错，是那处界面直接显示成 'panel_xxx' 这几个字。 */
+  check('代码里用到的 panel_/trigger_ key 在 messages.json 里全都有',
+    (() => {
+      const used = new Set();
+      for (const src of [panelSrc, contentSrc]) {
+        for (const m of src.matchAll(/T\(\s*'((?:panel|trigger)_[a-z_]+)'/g)) used.add(m[1]);
+      }
+      const missing = [...used].filter((k) => !zh[k]);
+      return used.size > 0 && missing.length === 0;
+    })(),
+    '缺的 key 会原样显示在界面上');
+
+  /* 反过来也要查：messages.json 里每条 message 必须是字符串（手改 JSON 会写成对象） */
+  check('messages.json 每条都有非空 message 字符串',
+    Object.values(zh).every((v) => v && typeof v.message === 'string' && v.message.length > 0));
+
+  /* 生成语言包时**绝不能**把含 ${} 的模板丢给机翻 —— 会变成 $ {mkey} 把功能搞坏。
+     zh_CN 是 base 语言，它的 value 里不许出现 ${。 */
+  check('messages.json 的 value 里没有 ${ 模板语法（机翻会把它拆坏）',
+    Object.values(zh).every((v) => !String(v.message).includes('${')));
+
+  /* 占位符 key 和 $1$ 必须对得上：声明了 placeholders 就必须在 message 里用到 $N$，反之亦然 */
+  check('声明的 placeholders 和 message 里的 $N$ 一一对应',
+    Object.values(zh).every((v) => {
+      const declared = v.placeholders ? Object.keys(v.placeholders).length : 0;
+      const usedNums = new Set([...String(v.message).matchAll(/\$(\d+)\$/g)].map((m) => Number(m[1])));
+      return declared === usedNums.size;
+    }));
+}
 console.log('\n' + '='.repeat(46));
 console.log(`通过 ${passed} 项，失败 ${failed} 项`);
 console.log('='.repeat(46));
