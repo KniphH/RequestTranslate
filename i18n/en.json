@@ -201,6 +201,19 @@
     "opt_ui_lang_checking": "Checking which language packs are available…",
     "opt_ui_lang_none": "No usable language packs in the list (none of the files could be fetched).",
     "opt_ui_lang_count_pre": "Found",
-    "opt_ui_lang_count_post": "languages available, pick one and click again."
+    "opt_ui_lang_count_post": "languages available, pick one and click again.",
+    "popup_open_settings": "Open settings",
+    "popup_input_ph": "Type or paste text to translate (the page selection is filled in automatically)",
+    "popup_translate": "Translate",
+    "popup_copy": "Copy",
+    "popup_clear": "Clear",
+    "popup_waiting": "Waiting for input…",
+    "popup_open_full": "Open full settings",
+    "cmdTranslateSelection": "Translate selected text",
+    "cmdShotTranslate": "Translate a screen region",
+    "cmdOcrClipboard": "Translate the screenshot in the clipboard",
+    "menuTranslate": "Translate selection with RequestTranslate",
+    "menuOcrClipboard": "Translate the screenshot in the clipboard",
+    "menuShotTranslate": "Translate a screen region"
   }
 }

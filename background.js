@@ -28,6 +28,7 @@ import {
 } from './lib/ocr.js';
 import { NO_IMAGE_MESSAGE, CLIPBOARD_UNAVAILABLE_MESSAGE } from './lib/clipboard.js';
 import { readClipboardImage as readClipboardInPage, errText as clipErrText } from './lib/clipboard-read.js';
+import { msg, invalidateI18nCache } from './lib/i18n-msg.js';
 // 顶栏那个「目标语言」下拉的候选。页面那边 import 不了模块，只能这样捎过去，
 // 免得在 content.js 里手抄一份 —— 加了语言两处就对不上了。
 import { TARGET_PRESETS } from './lib/template.js';
@@ -51,7 +52,7 @@ function ensureMenu() {
       if (state.settings.contextMenu) {
         chrome.contextMenus.create({
           id: MENU_ID,
-          title: '用 RequestTranslate 翻译选中内容',
+          title: await msg('menuTranslate', '用 RequestTranslate 翻译选中内容'),
           contexts: ['selection']
         });
       }
@@ -624,6 +625,8 @@ chrome.runtime.onConnect.addListener((port) => {
 let menuTimer = null;
 
 chrome.storage.onChanged.addListener((changes, area) => {
+  // 语言包换了，右键菜单要重建（标题得跟着变）
+  if (changes.rt_i18n) { invalidateI18nCache(); ensureMenu(); }
   if (area !== 'local' || !changes.state) return;
   // 设置页是边打字边自动保存的，别每敲一下就重建一次右键菜单
   clearTimeout(menuTimer);

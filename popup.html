@@ -180,25 +180,26 @@
   <div class="head">
     <span class="logo">译</span>
     <select id="sel"></select>
-    <button id="btn-open" class="icon-btn" title="打开设置">&#9881;</button>
+    <button id="btn-open" class="icon-btn" title="打开设置" data-i18n-title="popup_open_settings">&#9881;</button>
   </div>
 
   <div class="body">
-    <textarea id="txt" placeholder="输入或粘贴要翻译的内容（会自动带上当前页面选中的文字）"></textarea>
+    <textarea id="txt" placeholder="输入或粘贴要翻译的内容（会自动带上当前页面选中的文字）" data-i18n-ph="popup_input_ph"></textarea>
     <div class="row">
-      <button id="btn-go" class="primary">翻译</button>
-      <button id="btn-copy" class="ghost">复制</button>
-      <button id="btn-clear" class="ghost">清空</button>
+      <button id="btn-go" class="primary" data-i18n="popup_translate">翻译</button>
+      <button id="btn-copy" class="ghost" data-i18n="popup_copy">复制</button>
+      <button id="btn-clear" class="ghost" data-i18n="popup_clear">清空</button>
     </div>
-    <div id="out" class="out empty">等待输入…</div>
+    <div id="out" class="out empty" data-i18n="popup_waiting">等待输入…</div>
   </div>
 
   <div class="foot">
     <span id="status"></span>
     <span class="spacer"></span>
-    <a id="link-options">打开完整设置</a>
+    <a id="link-options" data-i18n="popup_open_full">打开完整设置</a>
   </div>
 
-<script type="module" src="popup.js"></script>
+<script src="lib/i18n.js"></script>
+    <script type="module" src="popup.js"></script>
 </body>
 </html>

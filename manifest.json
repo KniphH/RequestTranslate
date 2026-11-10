@@ -8,13 +8,13 @@
   "commands": {
     "translate-selection": {
       "suggested_key": { "default": "Alt+T" },
-      "description": "翻译选中的文字"
+      "description": "__MSG_cmdTranslateSelection__"
     },
     "shot-translate": {
-      "description": "框选截图翻译"
+      "description": "__MSG_cmdShotTranslate__"
     },
     "ocr-clipboard": {
-      "description": "翻译剪切板中的截图"
+      "description": "__MSG_cmdOcrClipboard__"
     }
   },
   "declarative_net_request": {

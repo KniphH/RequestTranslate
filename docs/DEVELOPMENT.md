@@ -350,7 +350,7 @@ Bing 网页版翻译是**两步**：先 GET `bing.com/translator`，从 630KB �
 | 准备打包 / 发版 | **`npm test` 全量**（四项都跑） |
 
 ```bash
-npm test              # 全量：静态检查 2 + test-lib 1031 + test-engine 89 + test-strip 19 + e2e 555 = 1696 项
+npm test              # 全量：静态检查 2 + test-lib 1034 + test-engine 89 + test-strip 19 + e2e 555 = 1699 项
 
 # 打包（会先跑一遍全量测试）
 python tools/pack.py          # 出 dist/request-translate-<版本>.zip

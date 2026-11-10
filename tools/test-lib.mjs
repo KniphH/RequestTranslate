@@ -4240,6 +4240,32 @@ await (async () => {
     })(),
     '漏一条那一处就永远是中文');
 
+  /* 右键菜单 / 快捷键那几条也在 messages.json 里 —— 它们在 Chrome 界面显示，
+     漏一条就是两种语言混在同一个右键菜单里。 */
+  check('右键菜单和快捷键的文案都在 messages.json 里',
+    (() => {
+      const zhM = JSON.parse(readFileSync(new URL('../_locales/zh_CN/messages.json', import.meta.url), 'utf8'));
+      const need = ['menuTranslate', 'menuOcrClipboard', 'menuShotTranslate',
+        'cmdTranslateSelection', 'cmdShotTranslate', 'cmdOcrClipboard'];
+      return need.every((k) => zhM[k] && zhM[k].message);
+    })());
+
+  /* manifest 的命令描述必须走 __MSG_，否则 Chrome 界面里永远是中文 */
+  check('manifest 的 commands 描述走 __MSG_',
+    (() => {
+      const man = JSON.parse(readFileSync(new URL('../manifest.json', import.meta.url), 'utf8'));
+      return Object.values(man.commands || {}).every((c) => !c.description || /^__MSG_\w+__$/.test(c.description));
+    })());
+
+  /* 背景那边用 lib/i18n-msg.js（ESM），网页这边用 lib/i18n.js（普通脚本）。
+     两份必须都存在且不互相 import —— 混了会在 service worker 里炸。 */
+  check('lib/i18n-msg.js 是 ESM，lib/i18n.js 是普通脚本（两者不能互相 import）',
+    (() => {
+      const esm = readFileSync(new URL('../lib/i18n-msg.js', import.meta.url), 'utf8');
+      const plain = readFileSync(new URL('../lib/i18n.js', import.meta.url), 'utf8');
+      return /^export /m.test(esm) && !/^export /m.test(plain) &&
+        !/from ['"]\.\/i18n\.js['"]/.test(esm) && !/from ['"]\.\/i18n-msg\.js['"]/.test(plain);
+    })());
   check('设置页启动时载入语言包并调用 applyI18n',
     /loadPack/.test(optJs2) && /applyI18n\(document\)/.test(optJs2));
 }

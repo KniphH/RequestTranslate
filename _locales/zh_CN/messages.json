@@ -5,6 +5,30 @@
   "extDesc": {
     "message": "划词翻译，但配置是你自己的 HTTP 请求。直接写 curl 或原始请求报文，可保存多个命名配置。"
   },
+  "cmdOcrClipboard": {
+    "message": "翻译剪切板中的截图",
+    "description": "快捷键设置页：剪贴板截图"
+  },
+  "cmdShotTranslate": {
+    "message": "框选截图翻译",
+    "description": "快捷键设置页：框选截图"
+  },
+  "cmdTranslateSelection": {
+    "message": "翻译选中的文字",
+    "description": "快捷键设置页里那条命令的名字"
+  },
+  "menuOcrClipboard": {
+    "message": "翻译剪切板中的截图",
+    "description": "右键菜单：剪贴板截图"
+  },
+  "menuShotTranslate": {
+    "message": "框选截图翻译",
+    "description": "右键菜单：框选截图"
+  },
+  "menuTranslate": {
+    "message": "用 RequestTranslate 翻译选中内容",
+    "description": "右键菜单：翻译选中文字"
+  },
   "opt_adapter_note": {
     "message": "这条请求不走请求模板，翻译流程由扩展内置的代码完成。",
     "description": "内置适配器条目的补充说明"
@@ -817,6 +841,34 @@
   "panel_waiting": {
     "message": "等待结果…",
     "description": "结果区空态占位符"
+  },
+  "popup_clear": {
+    "message": "清空",
+    "description": "弹窗：清空按钮"
+  },
+  "popup_copy": {
+    "message": "复制",
+    "description": "弹窗：复制按钮"
+  },
+  "popup_input_ph": {
+    "message": "输入或粘贴要翻译的内容（会自动带上当前页面选中的文字）",
+    "description": "弹窗：输入框占位"
+  },
+  "popup_open_full": {
+    "message": "打开完整设置",
+    "description": "弹窗：底部链接"
+  },
+  "popup_open_settings": {
+    "message": "打开设置",
+    "description": "弹窗：齿轮按钮的 title"
+  },
+  "popup_translate": {
+    "message": "翻译",
+    "description": "弹窗：翻译按钮"
+  },
+  "popup_waiting": {
+    "message": "等待输入…",
+    "description": "弹窗：输出区空态"
   },
   "trigger_dot_err": {
     "message": "翻译失败",

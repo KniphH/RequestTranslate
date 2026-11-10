@@ -76,7 +76,13 @@ function applyTheme() {
 }
 
 async function init() {
-  state = await loadState();
+  /* 语言包先载入再画界面 —— 顺序反了会先按中文渲染一遍再改，用户看得见闪。
+     两个读取并发，几乎不增加启动延迟。 */
+  const i18nApi = window.RTI18n;
+  const loadPack = i18nApi && i18nApi.loadPack ? i18nApi.loadPack() : Promise.resolve(null);
+  const [state0] = await Promise.all([loadState(), loadPack]);
+  state = state0;
+  if (i18nApi && i18nApi.applyI18n) i18nApi.applyI18n(document);
   applyTheme();
 
   sel.innerHTML = '';
