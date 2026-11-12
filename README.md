@@ -12,15 +12,12 @@
 变量可以拖动归类，配置列表也能排序。
 
 <!-- 商店徽章：shields.io 的 for-the-badge 样式，28px 高，带厂商 logo。
-       Edge 那个是 dynamic 的 —— 版本号由微软的公开接口读取，发版后自动跟着变，
-       不用改 README。（http:MicrosoftEdge.GetVersion 就是那个接口，
-       它返回的 version 字段＝线上生效的版本，不是提交中的。）
-       Firefox 那个暂时是静态的 IN REVIEW：AMO 还在审核，过审后换成 dynamic：
-       https://img.shields.io/amo/v/requesttranslate-请求式划词翻译?style=for-the-badge
-       注意 AMO 的 slug 里有中文，URL 里要 percent-encode。 -->
+       两边都是 dynamic 的 —— 版本号由各自的公开接口读取，发版后自动跟着变，不用改 README。
+       · Edge：microsoftedge.com/addons/getproductdetailsbycrxid/<crxId>，取 $version。
+       · Firefox：shields.io 的 amo/v 端点（背后是 AMO 的 API），slug 是 requesttranslate。 -->
 
 <a href="https://microsoftedge.microsoft.com/addons/detail/kbkgflnmkghalnfhgdjefbalgbljlpod"><img alt="Microsoft Edge" src="https://img.shields.io/badge/dynamic/json?label=Microsoft%20Edge&query=%24.version&url=https%3A%2F%2Fmicrosoftedge.microsoft.com%2Faddons%2Fgetproductdetailsbycrxid%2Fkbkgflnmkghalnfhgdjefbalgbljlpod&style=for-the-badge&logo=microsoftedge&logoColor=white&color=0078D7"></a>
-<img alt="Firefox Add-ons · coming soon" src="https://img.shields.io/badge/Firefox%20Add--ons-in%20review-FF7139?style=for-the-badge&logo=firefoxbrowser&logoColor=white">
+<a href="https://addons.mozilla.org/firefox/addon/requesttranslate/"><img alt="Firefox Add-ons" src="https://img.shields.io/amo/v/requesttranslate?style=for-the-badge&logo=firefoxbrowser&logoColor=white"></a>
 
 ## 它是什么
 
@@ -63,11 +60,25 @@ curl https://api.ant-ling.com/v1/chat/completions \
 
 ---
 
+## 安装
+
+| 浏览器 | 商店 |
+| --- | --- |
+| Edge / Chrome | [Microsoft Edge 加载项](https://microsoftedge.microsoft.com/addons/detail/kbkgflnmkghalnfhgdjefbalgbljlpod) |
+| Firefox | [Firefox Add-ons](https://addons.mozilla.org/firefox/addon/requesttranslate/) |
+
+两边的功能一样。权限也是一套：读取剪贴板、在所有页面上划词、访问你要翻译的接口。
+
+不装商店版也可以：下载 release 里的包解压，Edge / Chrome 走「加载解压缩的扩展」，
+Firefox 用 `about:debugging` → 「临时载入附加组件」选 `manifest.json`（重启浏览器会失效）。
+
+---
+
 ## 首次使用
 
 **开箱即用**
 
-内置的第一条配置是 **Bing 翻译（免费 · 无需 Key）**，默认选中。任意网页划词，出现一个按钮，点击即可翻译
+内置的第一条配置是 **Bing 翻译（free）**，默认选中，不需要 API Key。任意网页划词，出现一个按钮，点击即可翻译
 
 使用自定义模型：
 
@@ -193,14 +204,14 @@ JSON 里不能有裸换行，写成 `\n`。忘了转义也不至于崩 —— �
 
 - 有些 header 改不了：`Host`、`Content-Length`、`Origin`、`Cookie`、`User-Agent` 由浏览器自己管，写在模板里会被忽略。鉴权用 `Authorization` / `x-api-key`
 - 跨域不用管：请求发生在扩展后台，不受页面 CORS 限制
-- API Key 明文存在 `chrome.storage.local`。导出的配置文件里有；担心泄露就勾上「加密导出」设一个口令（口令不恢复，丢了文件就解不开）
+- API Key 明文存在扩展的本地存储里（`storage.local`，两个浏览器都一样），只在你自己这台机器上。导出的配置文件里也有；担心泄露就勾上「加密导出」设一个口令（口令不恢复，丢了文件就解不开）
 
 ---
 
 ## 限制
 
 - **朗读译文**：每条译文下面有「朗读」（浏览器自带语音，零依赖），再点停止。发音按设置里的目标语言挑。
-- 全局快捷键：**Alt+T** 翻译选中的文字。两条截图翻译（框选 / 剪切板）默认不设键，想要的话去浏览器的扩展快捷键设置页（edge://extensions/shortcuts）自己挑 —— 设置页里有跳转按钮和当前绑定一览。
+- 全局快捷键：**Alt+T** 翻译选中的文字。两条截图翻译（框选 / 剪切板）默认不设键，想要的话去浏览器的扩展快捷键设置页自己挑（Edge/Chrome: `edge://extensions/shortcuts`、`chrome://extensions/shortcuts`；Firefox: `about:addons` → 齿轮 → 管理扩展快捷键） —— 设置页里有跳转按钮和当前绑定一览。
 - **同时显示多条结果**（对比）：设置页「面板显示条数」调到 2~4，面板一次显示几条配置的译文，看哪条翻得更好。顶栏点配置名可以多选；选一条新的会顶掉最上面那条（显示 1 条时，这一步就等于切换）；「+临时」只加这一轮。
 - iframe（网页内嵌的小页面）里也支持划词：桥接脚本只上报选区，按钮和面板仍只有一份。设置页「iframe 划词」可关。
 - 页面里普通的富文本编辑框（知乎 / 微博那种）里划词不弹按钮 —— 那里划词多是在改自己的字
