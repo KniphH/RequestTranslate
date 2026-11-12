@@ -3553,11 +3553,23 @@ function downloadJson(text) {
  * 现取的好处是零体积、加语言不用发版；代价是要联网一次（约 1 秒）且依赖仓库可用，
  * 所以失败时必须**保持当前语言**，不能把界面切成空白。
  */
+/**
+ * 界面语言：**点开下拉就现场探测仓库**，选中一项立刻下载。
+ *
+ * 交互定成这样（kniph 2026-11-12）：用户点下拉的那一刻就该看到「哪些语言真的能装」，
+ * 而不是先选个占位项、再点一次按钮才去仓库核。所以：
+ *   · 下拉「获得焦点 / 被点开」→ 取清单（index.json）→ 逐个探文件在不在 → 填进下拉
+ *   · 用户改选一项 → 立刻下载那一个
+ *   · 「中文（内置）」= 清掉已下载的包，回内置
+ *
+ * 仍然**不在页面加载时联网** —— 那不叫「点开时探测」，叫偷偷联网，
+ * 而且断网时每次打开设置页都会甩一串 ERR_CONNECTION_RESET（e2e 抓过）。
+ * 只在用户真的操作那个下拉时才连。
+ */
 async function bindUiLang() {
   const sel = $('#s-ui-lang');
-  const btn = $('#btn-ui-lang');
   const status = $('#ui-lang-status');
-  if (!sel || !btn) return;
+  if (!sel) return;
   const api = window.RTI18n;
   if (!api || !api.fetchIndex) return;
 
@@ -3567,10 +3579,8 @@ async function bindUiLang() {
     status.classList.toggle('is-err', !!isErr);
   };
 
-  /* 当前已经装了哪种，下拉先停在哪个。
-     如果装的是下载来的语言包，光设 value 没用 —— 那个 <option> 要先有。
-     所以这里**补一个选项**（不联网）：否则用户重载设置页会看到下拉停在
-     「中文（内置）」，而界面明明是英文。 */
+  /* 当前装了哪种就停在哪。装的是下载来的包时，那个 <option> 还不存在 ——
+     先补一个（不联网），否则重载设置页会看到下拉停在「中文（内置）」而界面是英文。 */
   const cur = api.currentPack && api.currentPack();
   if (cur && cur.lang) {
     const o = document.createElement('option');
@@ -3580,77 +3590,81 @@ async function bindUiLang() {
     sel.value = cur.lang;
   }
 
-  /* 清单**不在这里拉**。原来页面一加载就去连 GitHub，没网时每次打开设置页
-     都往控制台甩一串 ERR_CONNECTION_RESET（e2e 的「不许报错」断言当场抓到）。
-     语言清单只在用户点「下载并使用」时才去取 —— 没网就只影响那一次操作，
-     报错也只出现在状态栏那一行，不进控制台。
-     这也符合「不做隐式行为」：不该在打开设置页时就偷偷联网。 */
-  let indexLoaded = false;
-  /* 取清单 → 逐个核实文件真的存在 → 才填进下拉。
-     清单是手写的：写错文件名、或者某次只提交了清单没提交文件，用户就会看到一个
-     点了必然失败的选项。所以列出来之前先 HEAD 探一遍，探不到的静默剔除。 */
-  const loadIndexOnce = async () => {
-    if (indexLoaded) return true;
-    const firstFill = !indexLoaded;
+  let probing = false;   // 正在探测，避免 focus + mousedown 连开两次
+  let probed = false;    // 探测过了（成功或失败都算，别反复骚扰仓库）
+
+  /** 取清单 + 逐个核实文件存在，才填进下拉 */
+  const probeOnce = async () => {
+    if (probed || probing) return;
+    probing = true;
+    say(T('opt_ui_lang_checking', '正在核实可用的语言包…'));
     try {
-      say(T('opt_ui_lang_checking', '正在核实可用的语言包…'));
       const index = await api.fetchIndex();
       const usable = api.verifyIndex ? await api.verifyIndex(index) : [];
       usable.sort((a, b) => String(a.meta.name || a.code).localeCompare(String(b.meta.name || b.code)));
+      const now = api.currentPack && api.currentPack();
+      const keep = now && now.lang ? now.lang : '';
       for (const item of usable) {
-        const opt = document.createElement('option');
-        opt.value = item.code;
+        if ([...sel.options].some((o) => o.value === item.code)) continue;
+        const o = document.createElement('option');
+        o.value = item.code;
         const meta = item.meta;
         const pct = typeof meta.progress === 'number' ? Math.round(meta.progress * 100) : 100;
-        opt.textContent = (meta.name || item.code) + (pct < 100 ? ' (' + pct + '%)' : '');
-        sel.appendChild(opt);
+        o.textContent = (meta.name || item.code) + (pct < 100 ? ' (' + pct + '%)' : '');
+        sel.appendChild(o);
       }
-      /* 填完选项后把选中项停到**当前生效的语言**；没有生效的就停在第一个可用项。
-         **只在第一次填充时做** —— 第二次点击是「用户已经选好了，去下载」，
-         这时再改 sel.value 会把用户的选择冲掉，那次点击就变成「又取一次清单」。 */
-      if (firstFill) {
-        const now = api.currentPack && api.currentPack();
-        sel.value = now && now.lang ? now.lang : usable[0].code;
+      // 探测完把选中项放回用户当前生效的那个（没装就是内置）
+      sel.value = keep || '';
+      probed = true;
+      if (usable.length) {
+        say(T('opt_ui_lang_count_pre', '核实到') + ' ' + usable.length + ' ' + T('opt_ui_lang_count_post', '种可用语言，选一种再点一次。'));
+      } else {
+        say(T('opt_ui_lang_none', '清单里没有可用的语言包（文件都取不到）。'), true);
       }
-      indexLoaded = true;
-      say(usable.length ? T('opt_ui_lang_count_pre', '核实到') + ' ' + usable.length + ' ' + T('opt_ui_lang_count_post', '种可用语言，选一种再点一次。')
-        : T('opt_ui_lang_none', '清单里没有可用的语言包（文件都取不到）。'), !usable.length);
-      return usable.length > 0;
     } catch {
       say(T('opt_ui_lang_offline', '取不到语言清单（离线或被挡），先用内置中文。'), true);
-      return false;
+    } finally {
+      probing = false;
     }
   };
 
-  btn.addEventListener('click', async () => {
-    /* 第一次点击才去取清单：下拉里如果还只有内置那一项，先补上可选项，
-       让用户能选完再点一次；取不到就只报一行状态。 */
-    if (!indexLoaded) {
-      btn.disabled = true;
-      say(T('opt_ui_lang_dl', '正在下载…'));
-      const got = await loadIndexOnce();
-      btn.disabled = false;
-      if (!got) return;
-      // 清单已填进下拉（loadIndexOnce 内部提示过了），第一次点击只负责取列表
-      if (Object.keys(sel.options).length > 1) return;
-    }
+  /* 「点开下拉」有好几种触发方式，覆盖全一点：
+       mousedown  —— 鼠标按下（最快，此时原生下拉还没弹出）
+       focus      —— 键盘 Tab 进来
+       click      —— 触屏 / 某些浏览器
+     探测本身是幂等的（probed 标记），连开几次也只发一轮请求。 */
+  sel.addEventListener('mousedown', () => { probeOnce(); });
+  sel.addEventListener('focus', () => { probeOnce(); });
+  sel.addEventListener('click', () => { probeOnce(); });
+
+  /* 选中即执行：不再需要第二个按钮 */
+  sel.addEventListener('change', async () => {
     const code = sel.value;
+    // 还没探测完就选了（比如键盘快速操作）—— 先补探测，别拿旧的 value 去下载
+    if (!probed) { await probeOnce(); }
     if (!code) {
+      // 选「中文（内置）」= 清掉下载的包
       await api.clearPack();
       say(T('opt_ui_lang_reset', '已切回内置中文，正在重载…'));
       setTimeout(() => location.reload(), 600);
       return;
     }
-    btn.disabled = true;
+    const now = api.currentPack && api.currentPack();
+    if (now && now.lang === code) {
+      say(T('opt_ui_lang_same', '这就是当前语言。'));
+      return;
+    }
     say(T('opt_ui_lang_dl', '正在下载…'));
+    sel.disabled = true;
     const r = await api.downloadPack(code);
-    btn.disabled = false;
+    sel.disabled = false;
     if (r.ok) {
-      /* 计数用字符串拼接，不用占位符 —— 这里是给用户看的一句话，不是 messages 里的模板 */
       say(T('opt_ui_lang_ok_pre', '已装好') + ' ' + r.count + ' ' + T('opt_ui_lang_ok_post', '条，正在重载…'));
       setTimeout(() => location.reload(), 600);
     } else {
-      /* 失败不动现有包 —— 界面保持原样，只报错 */
+      /* 失败不动现有包：把选中项退回当前语言，界面保持原样，只报错 */
+      const back = api.currentPack && api.currentPack();
+      sel.value = back && back.lang ? back.lang : '';
       say(T('opt_ui_lang_fail', '下载失败：') + r.why, true);
     }
   });
