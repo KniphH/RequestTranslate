@@ -200,6 +200,10 @@
     "message": "折叠 / 展开（点这一行也行）",
     "description": "设置页 JS 动态文案"
   },
+  "opt_grp_lang": {
+    "message": "语言",
+    "description": "界面语言切换"
+  },
   "opt_hint_dismiss": {
     "message": "不再显示",
     "description": "设置页 JS 动态文案"
@@ -957,6 +961,58 @@
       }
     }
   },
+  "opt_ui_lang": {
+    "message": "界面语言",
+    "description": "界面语言切换"
+  },
+  "opt_ui_lang_builtin": {
+    "message": "中文（内置）",
+    "description": "界面语言切换"
+  },
+  "opt_ui_lang_checking": {
+    "message": "正在核实可用的语言包…",
+    "description": "界面语言切换"
+  },
+  "opt_ui_lang_count_post": {
+    "message": "种可用语言，选中即会下载。",
+    "description": "界面语言切换"
+  },
+  "opt_ui_lang_count_pre": {
+    "message": "核实到",
+    "description": "界面语言切换"
+  },
+  "opt_ui_lang_dl": {
+    "message": "正在下载…",
+    "description": "界面语言切换"
+  },
+  "opt_ui_lang_fail": {
+    "message": "下载失败：",
+    "description": "界面语言切换"
+  },
+  "opt_ui_lang_none": {
+    "message": "清单里没有可用的语言包。",
+    "description": "界面语言切换"
+  },
+  "opt_ui_lang_offline": {
+    "message": "取不到语言清单，先用中文。",
+    "description": "界面语言切换"
+  },
+  "opt_ui_lang_ok_post": {
+    "message": "条，正在重载…",
+    "description": "界面语言切换"
+  },
+  "opt_ui_lang_ok_pre": {
+    "message": "已装好",
+    "description": "界面语言切换"
+  },
+  "opt_ui_lang_reset": {
+    "message": "已切回中文，正在重载…",
+    "description": "界面语言切换"
+  },
+  "opt_ui_lang_same": {
+    "message": "这就是当前语言。",
+    "description": "界面语言切换"
+  },
   "opt_unknown_adapter": {
     "message": "（未知适配器）",
     "description": "设置页：测试面板/诊断/配置操作"
@@ -1129,58 +1185,6 @@
   "panel_waiting": {
     "message": "等待结果…",
     "description": "结果区空态占位符"
-  },
-  "popup_chars": {
-    "message": "字",
-    "description": "弹窗状态行：思考 N 字（后半）"
-  },
-  "popup_clear": {
-    "message": "清空",
-    "description": "弹窗：清空按钮"
-  },
-  "popup_copied": {
-    "message": "已复制",
-    "description": "弹窗：复制成功提示"
-  },
-  "popup_copy": {
-    "message": "复制",
-    "description": "弹窗：复制按钮"
-  },
-  "popup_input_ph": {
-    "message": "输入或粘贴要翻译的内容（会自动带上当前页面选中的文字）",
-    "description": "弹窗：输入框占位"
-  },
-  "popup_need_input": {
-    "message": "先输入点内容",
-    "description": "弹窗：没内容就点翻译"
-  },
-  "popup_no_config": {
-    "message": "没有可用配置",
-    "description": "弹窗：一条配置都没有"
-  },
-  "popup_no_result": {
-    "message": "没有拿到结果",
-    "description": "弹窗：请求没返回内容"
-  },
-  "popup_open_full": {
-    "message": "打开完整设置",
-    "description": "弹窗：底部链接"
-  },
-  "popup_open_settings": {
-    "message": "打开设置",
-    "description": "弹窗：齿轮按钮的 title"
-  },
-  "popup_reasoning": {
-    "message": "思考",
-    "description": "弹窗状态行：思考 N 字（前半）"
-  },
-  "popup_translate": {
-    "message": "翻译",
-    "description": "弹窗：翻译按钮"
-  },
-  "popup_waiting": {
-    "message": "等待输入…",
-    "description": "弹窗：输出区空态"
   },
   "trigger_dot_err": {
     "message": "翻译失败",

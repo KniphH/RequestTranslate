@@ -486,6 +486,26 @@
         </div>
           </div>
         </details>
+        <!-- 界面语言：独立一组，放最底部 —— 它是「装一次就不动」的设置，不该占前面的位置 -->
+        <details class="set-group">
+          <summary><span class="set-group-t" data-i18n="opt_grp_lang">语言</span></summary>
+          <div class="set-group-body">
+
+          <div class="setting">
+            <label data-i18n="opt_ui_lang">界面语言</label>
+            <div class="stack">
+              <div class="ui-lang-row">
+                <select id="s-ui-lang">
+                  <option value="" data-i18n="opt_ui_lang_builtin">中文（内置）</option>
+                </select>
+              </div>
+              <div id="ui-lang-status" class="hint"></div>
+              <p class="hint" data-hint="s-uilang" data-i18n="opt_hint_uilang">只影响界面文字，不改翻译的目标语言。语言包约 10~40 KB，从 GitHub 现取，不占扩展体积；下载失败会保持当前语言。</p>
+            </div>
+          </div>
+
+          </div>
+        </details>
 
       </div>
     </section>

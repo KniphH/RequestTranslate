@@ -7,17 +7,6 @@ import { runRequest } from './lib/engine.js';
 
 const $ = (s) => document.querySelector(s);
 
-/* 文案查表。popup 是 module（不能像普通脚本那样用全局 T 包装），
-   但 lib/i18n.js 已经在 popup.html 里先加载了，直接取它的 t。 */
-function T(key, fallback) {
-  const api = window.RTI18n;
-  if (api && typeof api.t === "function") {
-    const got = api.t(key);
-    if (got && got !== key) return got;
-  }
-  return fallback;
-}
-
 const sel = $('#sel');
 const txt = $('#txt');
 const out = $('#out');
@@ -87,9 +76,7 @@ function applyTheme() {
 }
 
 async function init() {
-  const i18nApi = window.RTI18n;
   state = await loadState();
-  if (i18nApi && i18nApi.applyI18n) i18nApi.applyI18n(document);
   applyTheme();
 
   sel.innerHTML = '';
@@ -142,14 +129,14 @@ $('#btn-copy').addEventListener('click', async () => {
   const text = out.classList.contains('empty') ? '' : out.textContent;
   if (!text) return;
   await navigator.clipboard.writeText(text);
-  setStatus(T('popup_copied', '已复制'));
+  setStatus('已复制');
   setTimeout(() => setStatus(''), 1500);
 });
 
 $('#btn-clear').addEventListener('click', () => {
   if (controller) controller.abort();
   txt.value = '';
-  setOut(T('popup_waiting', '等待输入…'), true);
+  setOut('等待输入…', true);
   setStatus('');
   txt.focus();
 });
@@ -160,13 +147,13 @@ $('#link-options').addEventListener('click', () => chrome.runtime.openOptionsPag
 async function run() {
   const text = txt.value.trim();
   if (!text) {
-    setStatus(T('popup_need_input', '先输入点内容'), true);
+    setStatus('先输入点内容', true);
     return;
   }
 
   const cfg = getConfig(state, sel.value);
   if (!cfg) {
-    setStatus(T('popup_no_config', '没有可用配置'), true);
+    setStatus('没有可用配置', true);
     return;
   }
 
@@ -175,7 +162,7 @@ async function run() {
   cancelStreamRender();
 
   goBtn.disabled = true;
-  goBtn.textContent = T('panel_status_translating', '翻译中…');
+  goBtn.textContent = '翻译中…';
   setStatus('');
   setOut('', true);
   out.dataset.placeholder = '';
@@ -199,7 +186,7 @@ async function run() {
   cancelStreamRender();
 
   goBtn.disabled = false;
-  goBtn.textContent = T('popup_translate', '翻译');
+  goBtn.textContent = '翻译';
 
   if (result.text) {
     setOut(result.text);
@@ -207,11 +194,11 @@ async function run() {
     if (result.status) bits.push('HTTP ' + result.status);
     bits.push((result.ms / 1000).toFixed(1) + 's');
     if (result.usedPath) bits.push(result.usedPath);
-    if (result.reasoningChars) bits.push(T('popup_reasoning', '思考') + ' ' + result.reasoningChars + ' ' + T('popup_chars', '字'));
+    if (result.reasoningChars) bits.push('思考' + ' ' + result.reasoningChars + ' ' + '字');
     else if (result.warnings && result.warnings.length) bits.push(result.warnings[0]);
     setStatus(bits.join(' · '));
   } else {
-    setOut(result.error || T('popup_no_result', '没有拿到结果'), true);
+    setOut(result.error || '没有拿到结果', true);
     setStatus('失败', true);
   }
 }

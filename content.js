@@ -2660,7 +2660,11 @@
   }
 
   try {
-    chrome.storage.local.get('state').then((raw) => applyState(raw && raw.state)).catch(() => {});
+    /* 语言包先载入再渲染 —— 否则面板会先按中文画一遍再改（用户看得见闪）。 */
+    const loadPack = window.RTI18n && window.RTI18n.loadPack ? window.RTI18n.loadPack() : Promise.resolve(null);
+    Promise.all([loadPack, chrome.storage.local.get('state')])
+      .then(([, raw]) => applyState(raw && raw.state))
+      .catch(() => {});
   } catch { /* 忽略 */ }
 
   try {

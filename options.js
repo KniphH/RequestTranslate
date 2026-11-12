@@ -154,8 +154,12 @@ init().catch((err) => {
 });
 
 async function init() {
+  /* 语言包要在**读存档之前**载入 —— 顺序反了的话每个 renderXxx 都会先按中文画一遍，
+     语言包到位后再改一遍，用户看得见文字闪。两个读取并发，几乎不增加启动延迟。 */
   const i18nApi = window.RTI18n;
-  state = await loadState();
+  const loadPack = i18nApi && i18nApi.loadPack ? i18nApi.loadPack() : Promise.resolve(null);
+  const [state0] = await Promise.all([loadState(), loadPack]);
+  state = state0;
 
   /* HTML 里带 data-i18n / data-i18n-title / data-i18n-ph 的节点在这里统一填。
      只做一次：那些文案是静态的，后续重渲染不会碰它们。 */
@@ -175,6 +179,7 @@ async function init() {
   bindVars();
   bindSettings();
   bindImportExport();
+  bindUiLang();
 
   renderConfigList();
   renderEditor();
@@ -3547,6 +3552,123 @@ function downloadJson(text) {
  * 现取的好处是零体积、加语言不用发版；代价是要联网一次（约 1 秒）且依赖仓库可用，
  * 所以失败时必须**保持当前语言**，不能把界面切成空白。
  */
+/**
+ * 界面语言：**点开下拉就现场探测仓库**，选中一项立刻下载。
+ *
+ * 交互定成这样（kniph 2026-11-12）：用户点下拉的那一刻就该看到「哪些语言真的能装」，
+ * 而不是先选个占位项、再点一次按钮才去仓库核。所以：
+ *   · 下拉「获得焦点 / 被点开」→ 取清单（index.json）→ 逐个探文件在不在 → 填进下拉
+ *   · 用户改选一项 → 立刻下载那一个
+ *   · 「中文（内置）」= 清掉已下载的包，回内置
+ *
+ * 仍然**不在页面加载时联网** —— 那不叫「点开时探测」，叫偷偷联网，
+ * 而且断网时每次打开设置页都会甩一串 ERR_CONNECTION_RESET（e2e 抓过）。
+ * 只在用户真的操作那个下拉时才连。
+ */
+async function bindUiLang() {
+  const sel = $('#s-ui-lang');
+  const status = $('#ui-lang-status');
+  if (!sel) return;
+  const api = window.RTI18n;
+  if (!api || !api.fetchIndex) return;
+
+  const say = (text, isErr) => {
+    if (!status) return;
+    status.textContent = text;
+    status.classList.toggle('is-err', !!isErr);
+  };
+
+  /* 当前装了哪种就停在哪。装的是下载来的包时，那个 <option> 还不存在 ——
+     先补一个（不联网），否则重载设置页会看到下拉停在「中文（内置）」而界面是英文。 */
+  const cur = api.currentPack && api.currentPack();
+  if (cur && cur.lang) {
+    const o = document.createElement('option');
+    o.value = cur.lang;
+    o.textContent = cur.lang;
+    sel.appendChild(o);
+    sel.value = cur.lang;
+  }
+
+  let probing = false;   // 正在探测，避免 focus + mousedown 连开两次
+  let probed = false;    // 探测过了（成功或失败都算，别反复骚扰仓库）
+
+  /** 取清单 + 逐个核实文件存在，才填进下拉 */
+  const probeOnce = async () => {
+    if (probed || probing) return;
+    probing = true;
+    say(T('opt_ui_lang_checking', '正在核实可用的语言包…'));
+    try {
+      const index = await api.fetchIndex();
+      const usable = api.verifyIndex ? await api.verifyIndex(index) : [];
+      usable.sort((a, b) => String(a.meta.name || a.code).localeCompare(String(b.meta.name || b.code)));
+      const now = api.currentPack && api.currentPack();
+      const keep = now && now.lang ? now.lang : '';
+      for (const item of usable) {
+        if ([...sel.options].some((o) => o.value === item.code)) continue;
+        const o = document.createElement('option');
+        o.value = item.code;
+        const meta = item.meta;
+        const pct = typeof meta.progress === 'number' ? Math.round(meta.progress * 100) : 100;
+        o.textContent = (meta.name || item.code) + (pct < 100 ? ' (' + pct + '%)' : '');
+        sel.appendChild(o);
+      }
+      // 探测完把选中项放回用户当前生效的那个（没装就是内置）
+      sel.value = keep || '';
+      probed = true;
+      if (usable.length) {
+        say(T('opt_ui_lang_count_pre', '核实到') + ' ' + usable.length + ' ' + T('opt_ui_lang_count_post', '种可用语言，选一种再点一次。'));
+      } else {
+        say(T('opt_ui_lang_none', '清单里没有可用的语言包（文件都取不到）。'), true);
+      }
+    } catch {
+      say(T('opt_ui_lang_offline', '取不到语言清单（离线或被挡），先用内置中文。'), true);
+    } finally {
+      probing = false;
+    }
+  };
+
+  /* 「点开下拉」有好几种触发方式，覆盖全一点：
+       mousedown  —— 鼠标按下（最快，此时原生下拉还没弹出）
+       focus      —— 键盘 Tab 进来
+       click      —— 触屏 / 某些浏览器
+     探测本身是幂等的（probed 标记），连开几次也只发一轮请求。 */
+  sel.addEventListener('mousedown', () => { probeOnce(); });
+  sel.addEventListener('focus', () => { probeOnce(); });
+  sel.addEventListener('click', () => { probeOnce(); });
+
+  /* 选中即执行：不再需要第二个按钮 */
+  sel.addEventListener('change', async () => {
+    const code = sel.value;
+    // 还没探测完就选了（比如键盘快速操作）—— 先补探测，别拿旧的 value 去下载
+    if (!probed) { await probeOnce(); }
+    if (!code) {
+      // 选「中文（内置）」= 清掉下载的包
+      await api.clearPack();
+      say(T('opt_ui_lang_reset', '已切回内置中文，正在重载…'));
+      setTimeout(() => location.reload(), 600);
+      return;
+    }
+    const now = api.currentPack && api.currentPack();
+    if (now && now.lang === code) {
+      say(T('opt_ui_lang_same', '这就是当前语言。'));
+      return;
+    }
+    say(T('opt_ui_lang_dl', '正在下载…'));
+    sel.disabled = true;
+    const r = await api.downloadPack(code);
+    sel.disabled = false;
+    if (r.ok) {
+      say(T('opt_ui_lang_ok_pre', '已装好') + ' ' + r.count + ' ' + T('opt_ui_lang_ok_post', '条，正在重载…'));
+      setTimeout(() => location.reload(), 600);
+    } else {
+      /* 失败不动现有包：把选中项退回当前语言，界面保持原样，只报错 */
+      const back = api.currentPack && api.currentPack();
+      sel.value = back && back.lang ? back.lang : '';
+      say(T('opt_ui_lang_fail', '下载失败：') + r.why, true);
+    }
+  });
+}
+
 function bindImportExport() {
   $('#btn-export').addEventListener('click', async () => {
     // 正在编辑器里改的那条先收进 state，免得导出的还是上一版
