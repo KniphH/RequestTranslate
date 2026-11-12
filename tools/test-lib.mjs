@@ -4273,6 +4273,30 @@ await (async () => {
      所以启动时必须先 loadPack 再 applyI18n —— 顺序反了用户会看见文字闪。 */
   check('设置页启动时载入语言包并调用 applyI18n',
     /loadPack/.test(optJs2) && /applyI18n\(document\)/.test(optJs2));
+
+  /* ---- v11 → v12：内置配置 / OCR 供应商改名成简短英文 ----
+     kniph 2026-11-12：「默认的配置尽量不要用中文，用英文即可，简单易懂的英文，比如 bing (free)」。
+     判据是「逐字还等于老默认值」，用户自己改过的名字不能被冲掉。 */
+  check('v12：八条内置配置的默认名都是简短英文',
+    (() => {
+      const src = readFileSync(new URL('../lib/store.js', import.meta.url), 'utf8');
+      const want = ['Bing (free)', 'bilibili (free)', 'OpenAI-compatible', 'DeepSeek', 'DeepL', 'Ling', 'Ollama (local)', 'Anthropic (raw)'];
+      return want.every((n) => src.includes("name: '" + n + "'"));
+    })());
+  check('v12：三条 OCR 供应商的默认名也是英文',
+    (() => {
+      const src = readFileSync(new URL('../lib/ocr.js', import.meta.url), 'utf8');
+      const want = ['SiliconFlow', 'Baidu OCR (accurate)', 'OpenAI-compatible (vision)'];
+      return want.every((n) => src.includes("name: '" + n + "'"));
+    })());
+  check('v12：迁移用冻死旧名做判据，且 OCR id 是真实的那些',
+    (() => {
+      const src = readFileSync(new URL('../lib/store.js', import.meta.url), 'utf8');
+      return /OLD_CONFIG_NAMES/.test(src) && /OLD_OCR_NAMES/.test(src) &&
+        src.includes("'builtin-baidu-ocr': '百度 OCR（高精度版）'") &&
+        src.includes("'builtin-openai-vl': 'OpenAI 兼容（任意视觉模型）'") &&
+        /STORAGE_VERSION = 12/.test(src);
+    })());
 }
 console.log('\n' + '='.repeat(46));
 console.log(`通过 ${passed} 项，失败 ${failed} 项`);
