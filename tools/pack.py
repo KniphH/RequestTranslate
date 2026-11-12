@@ -54,11 +54,16 @@ ROOT_FILES = [
     "options.css",
     "popup.html",
     "popup.js",
-    "LICENSE",
-    "PRIVACY.md",
-]
+];
+
+# LICENSE / PRIVACY.md 不进包：manifest 不引用它们，运行时也不读。
+# GitHub 仓库里留着（那是给人看的），但装扩展的人不会去翻。
 
 DIRS = ["lib", "_locales", "icons"]
+
+# 已废弃的空壳文件，不进包（它自己写着「保留是为了让老链接不 404」，
+# 但扩展里没有"链接"这回事）。源码留着，免得老记忆指过来时找不到。
+EXCLUDE = {"lib/panel-styles.js"}
 
 EDGE_CANDIDATES = [
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
@@ -85,7 +90,10 @@ def collect():
             sys.exit(f"少了个目录：{d}")
         for p in sorted(base.rglob("*")):
             if p.is_file() and not p.name.startswith("."):
-                files.append(p.relative_to(ROOT).as_posix())
+                rel = p.relative_to(ROOT).as_posix()
+                if rel in EXCLUDE:
+                    continue
+                files.append(rel)
     return files
 
 
@@ -138,8 +146,22 @@ def make_zip(files, out, stripped=None, target="chromium"):
 
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for name in files:
+            if name.startswith("_locales/") and name.endswith("/messages.json"):
+                # messages.json 里的 description 字段是**给人看的**（Chrome 不读它），
+                # 308 条合计 9.4 KB 源文件、deflate 后 1.4 KB（kniph 2026-11-12）。
+                # 打包时剥掉，源码里保留。
+                loc = json.loads(source(name).read_text(encoding="utf-8"))
+                slim = {}
+                for k, v in loc.items():
+                    e = {"message": v.get("message", "")}
+                    if "placeholders" in v:
+                        e["placeholders"] = v["placeholders"]
+                    slim[k] = e
+                z.writestr(name, json.dumps(slim, ensure_ascii=False, indent=2) + "\n")
+                continue
             if name != "manifest.json":
                 z.write(source(name), name)
+                continue
                 continue
             # manifest.json 单独处理：按目标浏览器裁 background 段。
             #

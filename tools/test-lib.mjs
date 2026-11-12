@@ -2660,14 +2660,21 @@ section('20. 「临时直连」已彻底移除：权限 / 模块 / 调用点都�
     /* 滚动条相关的断言原本读「content.js 内联那份」，CSS 合并后没有了 ——
        改成读唯一真相源 PANEL_CSS。断言意图不变：钉住三个可滚动区都留了槽、
        右内边距扣掉 8px、滚动条宽度仍是 8px。 */
-    const cssInline = PANEL_CSS;
+    /* PANEL_CSS 是 panel-core.js 里的一个变量，测试里没有（原来是悬空的引用，
+       一跑就 ReferenceError）。直接从文件里抽出来。 */
+    const coreSrc = read('../lib/panel-core.js');
+    const m = coreSrc.match(/const PANEL_CSS = `([\s\S]*?)`;/);
+    const cssInline = m ? m[1] : '';
     const gutters = (cssInline.match(/scrollbar-gutter: stable;/g) || []).length;
     check("三个可滚动区都留了滚动条槽（.rt-out / .rt-src / .rt-diag）",
       gutters === 3, gutters + " 处");
+    /* 判据改成「右侧确实用了 calc(... - 8px) 这个补偿」—— 上下留白是会调的
+       （kniph 反复调过），但「右边扣掉滚动条宽度」这条规则不能变。 */
     check("右内边距扣掉了滚动条那 8px（左右才对称）",
-      cssInline.includes("padding: .6em calc(.7em - 8px) .6em .7em;") &&
-        cssInline.includes("padding: .5em calc(.7em - 8px) .5em .7em;") &&
-        cssInline.includes("padding: 10px 7px 10px 15px;"));
+      /\.rt-out \{[^}]*padding:[^;]*calc\(\.7em - 8px\)/s.test(cssInline) &&
+        /\.rt-src \{[^}]*padding:[^;]*calc\(\.7em - 8px\)/s.test(cssInline) &&
+        (/\.rt-diag \{[^}]*padding:[^;]*calc\(\.7em - 8px\)/s.test(cssInline) ||
+          /\.rt-diag \{[^}]*padding: 10px 7px 10px 15px;/s.test(cssInline)));   // 15 - 8 = 7
     /* 滚动条宽度是这件事的前提：改宽了补偿值就得跟着改 */
     check("自绘滚动条仍是 8px（补偿值按它算的）",
       cssInline.includes("::-webkit-scrollbar { width: 8px; }"));
