@@ -143,25 +143,25 @@ def make_zip(files, out, stripped=None, target="chromium"):
                 continue
             # manifest.json 单独处理：按目标浏览器裁 background 段。
             #
-            # 仓库里那份同时写了 service_worker（Chromium）和 scripts（Firefox）——
-            # 两个浏览器**运行时**都能加载（各自忽略不认的那个），本地「加载解压文件夹」也正常。
-            # 但**商店校验器不容忍**：Edge 会直接报
-            #   The background.scripts field cannot be used with manifest version 3
-            # 整包被拒（2026-11-08 实测）。所以出包时按 target 裁一次：
-            #   chromium -> 只留 service_worker
-            #   firefox  -> 只留 scripts（Firefox 不支持 service_worker，BCD version_added: false）
-            # 仓库里那份保持双份不动 —— 那是给本地加载和「一份源码两端用」的。
+            # 仓库里那份**只写 Chromium 的合法形态**（service_worker + type），
+            # 因为它在 Chrome 里要被「加载解压文件夹」直接吃 —— 一旦多写一个 scripts，
+            # Chrome 立刻报「'background.scripts' requires manifest version of 2 or lower」
+            # （kniph 2026-11-12 在扩展管理页实测到这条警告）。
+            #
+            # 火狐不认 service_worker（BCD version_added: false），它要 scripts。
+            # 所以**只在打 firefox 包时注入** scripts、去掉 service_worker：
+            #   chromium -> 原样（service_worker + type）
+            #   firefox  -> scripts + type（type 必须留，background.js 是 ES module，
+            #               删了会按普通脚本解析、import 直接语法错误 → 白屏，2026-11-08 踩过）
             m = json.loads(source(name).read_text(encoding="utf-8"))
             bg = m.get("background") or {}
-            if bg.get("service_worker") and bg.get("scripts"):
-                if target == "firefox":
-                    bg.pop("service_worker", None)
-                    # 只去掉 service_worker。
-                    # **type: module 必须留着** —— background.js 是 ES module
-                    # （8 个 import），删了火狐会按普通脚本解析，import 直接语法错误
-                    # （2026-11-08 踩到：1.3.1 首版把它删了，会白屏）
-                else:
-                    bg.pop("scripts", None)
+            if target == "firefox" and bg.get("service_worker"):
+                bg.pop("service_worker", None)
+                bg["scripts"] = ["background.js"]
+                m["background"] = bg
+            elif target != "firefox" and bg.get("scripts"):
+                # 兜底：万一仓库里又被人加回双字段，出 chromium 包时也裁掉
+                bg.pop("scripts", None)
                 m["background"] = bg
             z.writestr(name, json.dumps(m, ensure_ascii=False, indent=2) + "\n")
     if out.read_bytes()[:2] != b"PK":
