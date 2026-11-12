@@ -94,8 +94,9 @@
         <div id="imgcfg-list" class="list-body" hidden></div>
         <div class="list-foot">
           <button id="btn-ocr-new" class="primary block" data-i18n="opt_set_009">＋ 新建配置</button>
-          <p class="hint" id="imgcfg-foot" hidden data-hint="imgcfg-foot">
-            只列<b data-i18n="opt_set_021">填了图片请求模板</b>的配置 —— 增删改回「配置」栏。
+          <p class="hint" id="imgcfg-foot" hidden data-hint="imgcfg-foot" data-i18n-html="opt_hint_imgcfg_foot">
+            只列<b>填了图片请求模板</b>的配置 —— 增删改回「配置」栏。
+          </p>
           </p>
         </div>
       </aside>
@@ -125,13 +126,13 @@
             <input id="ocr-test-img" type="file" accept="image/*">
             <button id="btn-ocr-test" class="primary" data-i18n="opt_set_012">测试</button>
           </div>
-          <p class="hint" id="ocr-test-hint" data-hint="ocr-test">
-            不选文件就直接点：用<b data-i18n="opt_set_026">剪切板里的第一张图</b>（Win + Shift + S 截图后回这儿点一下）。
-            发的是上面那段请求模板，和实际右键时同一套。
+          <p class="hint" id="ocr-test-hint" data-hint="ocr-test" data-i18n-html="opt_hint_ocr_test">
+            不选文件就直接点：用<b>剪切板里的第一张图</b>（Win + Shift + S 截图后回这儿点一下）。发的是上面那段请求模板，和实际右键时同一套。
           </p>
-          <p class="hint" id="imgcfg-test-hint" hidden data-hint="imgcfg-test">
-            不选文件就直接点：用<b data-i18n="opt_set_026">剪切板里的第一张图</b>（Win + Shift + S 截图后回这儿点一下）。
-            发的是左边选中那条的「图片请求模板」，和实际右键截图翻译时同一套。
+          </p>
+          <p class="hint" id="imgcfg-test-hint" hidden data-hint="imgcfg-test" data-i18n-html="opt_hint_imgcfg_test">
+            不选文件就直接点：用<b>剪切板里的第一张图</b>（Win + Shift + S 截图后回这儿点一下）。发的是左边选中那条的「图片请求模板」，和实际右键截图翻译时同一套。
+          </p>
           </p>
           <div id="ocr-test-result" class="result" hidden></div>
         </div>
@@ -141,10 +142,9 @@
             <input type="checkbox" id="o-disabled">
             <span data-i18n="opt_set_028">禁用外置 OCR（仅模型具有多模态时使用）</span>
           </label>
-          <p class="hint" data-hint="ocr-direct">
-            <b data-i18n="opt_set_029">模型具有多模态时，无需中转 OCR</b>：截图直接交给左边选中的那条图片配置去翻，
-            不走上面那条。左边只列<b data-i18n="opt_set_030">填了「图片请求模板」</b>的配置；
-            一条都没填时退回顶栏当前那条（那条多半不支持看图）。
+          <p class="hint" data-hint="ocr-direct" data-i18n-html="opt_hint_ocr_direct">
+            <b>模型具有多模态时，无需中转 OCR</b>：截图直接交给左边选中的那条图片配置去翻，不走上面那条。左边只列<b>填了「图片请求模板」</b>的配置；一条都没填时退回顶栏当前那条（那条多半不支持看图）。
+          </p>
           </p>
         </div>
 
@@ -163,13 +163,9 @@
     <section class="tabpanel" data-panel="vars">
       <div class="page">
         <h2 data-i18n="opt_set_034">自定义变量</h2>
-        <p class="hint wide" data-hint="vars">
-          这里定义的值可以在请求模板里用 <code data-i18n="opt_set_035">{{名字}}</code> 引用，比如把 API Key 写成
-          <code>Bearer {{apiKey}}</code>。同名的话，下面这些会覆盖内置变量。
-          <br>
-          值里<b data-i18n="opt_set_036">一行写一个</b>时（模板里用到的那个含 <code>model</code> 的变量，比如
-          <code>model</code> / <code>GEMINI_MODEL</code>），翻译会从第一个开始试，
-          哪个先返回译文就用哪个；只有一行就是普通单值。
+        <p class="hint wide" data-hint="vars" data-i18n-html="opt_hint_vars">
+          这里定义的值可以在请求模板里用 <code>{{名字}}</code> 引用，比如把 API Key 写成 <code>Bearer {{apiKey}}</code>。同名的话，下面这些会覆盖内置变量。<br>值里<b>一行写一个</b>时（模板里用到的那个含 <code>model</code> 的变量，比如 <code>model</code> / <code>GEMINI_MODEL</code>），翻译会从第一个开始试，哪个先返回译文就用哪个；只有一行就是普通单值。
+        </p>
         </p>
 
         <!-- 每条变量是一小块：名字一行、值一行（见 options.css 里 .var-row 的说明）。
@@ -308,9 +304,9 @@
                 <span data-i18n="opt_set_070">预览</span>
               </div>
             </div>
-            <p class="hint" data-hint="set-trigstyle">
-              划词后出现在选区旁边那个小按钮的样子，只影响按钮本身。<b data-i18n="opt_set_071">地球</b>是线性图标，颜色跟着
-              <b data-i18n="opt_set_072">主题</b>走；<b>自定义</b>不给底座 —— 整块就是你粘进下面那段 SVG。
+            <p class="hint" data-hint="set-trigstyle" data-i18n-html="opt_hint_trigstyle">
+              划词后出现在选区旁边那个小按钮的样子，只影响按钮本身。<b>地球</b>是线性图标，颜色跟着<b>主题</b>走；<b>自定义</b>不给底座 —— 整块就是你粘进下面那段 SVG。
+            </p>
             </p>
           </div>
         </div>
@@ -324,9 +320,9 @@
           <label for="s-trigidle" data-i18n="opt_set_074">按钮自动消失（秒）</label>
           <div class="stack">
             <input id="s-trigidle" type="number" min="0" max="60" step="1">
-            <p class="hint" data-hint="set-trigidle">
-              出现后鼠标一直不动，过这么多秒就自己消失（鼠标动一下、或者停在按钮上，都不算）。
-              填 0 = 不消失。
+            <p class="hint" data-hint="set-trigidle" data-i18n-html="opt_hint_trigidle">
+              出现后鼠标一直不动，过这么多秒就自己消失（鼠标动一下、或者停在按钮上，都不算）。填 0 = 不消失。
+            </p>
             </p>
           </div>
         </div>
@@ -335,7 +331,7 @@
           <label for="s-trigleave" data-i18n="opt_set_075">鼠标移开后消失（秒）</label>
           <div class="stack">
             <input id="s-trigleave" type="number" min="0" max="10" step="0.5">
-            <p class="hint" data-hint="set-trigleave">
+            <p class="hint" data-hint="set-trigleave" data-i18n-html="opt_hint_trigleave">
               鼠标从按钮上移开、又没点，过这么多秒就消失；移回去就不消失。填 0 = 这项不生效。
             </p>
           </div>
@@ -346,13 +342,8 @@
           <div class="stack">
             <textarea id="s-trigsvg" spellcheck="false" rows="6" placeholder="&lt;svg viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;1.8&quot;&gt;&#10;  &lt;path d=&quot;M4 12h10M9 7l5 5-5 5&quot;/&gt;&#10;&lt;/svg&gt;"></textarea>
             <p class="trig-svg-msg" id="s-trigsvg-msg" hidden></p>
-            <p class="hint" data-hint="set-trigsvg">
-              粘 <code>&lt;svg&gt;…&lt;/svg&gt;</code> 进来，替换掉预设里的图标 /「译」字；
-              <b data-i18n="opt_set_077">底座还是用上面选的那个预设</b>，想连底座都自己说了算就选<b>「自定义」</b>。
-              颜色写 <code data-i18n="opt_set_078">currentColor</code> 跟着主题走。<br>
-              这段会插进页面，所以要求以 <code data-i18n="opt_set_079">&lt;svg</code> 开头、<code>&lt;/svg&gt;</code> 结尾，
-              且不含 <code>&lt;script&gt;</code> / <code>onload=</code> / <code>href</code> /
-              <code>&lt;foreignObject&gt;</code> 这类东西 —— 不通过时下面会说明卡在哪一条（内容不会被改）。
+            <p class="hint" data-hint="set-trigsvg" data-i18n-html="opt_hint_trigsvg">
+              粘 <code>&lt;svg&gt;…&lt;/svg&gt;</code> 进来，替换掉预设里的图标 /「译」字；<b>底座还是用上面选的那个预设</b>，想连底座都自己说了算就选<b>「自定义」</b>。颜色写 <code>currentColor</code> 跟着主题走。
             </p>
             <div class="trig-examples">
               <button type="button" id="btn-trigsvg-demo" class="trig-ex" data-i18n="opt_set_080">插入示例图标</button>
@@ -395,9 +386,8 @@
           <label for="s-maxh" data-i18n="opt_set_088">结果区最大高度（vh，0 = 不限）</label>
           <div class="stack">
             <input id="s-maxh" type="number" min="0" max="100" step="2">
-            <p class="hint" data-hint="set-maxh">
-              只在上一条是「自适应」时有用：译文太长时正文区到这儿就不再长，多出来的滚着看。
-              单位 vh（窗口高度的百分之几），默认 46；填 0 = 不限。
+            <p class="hint" data-hint="set-maxh" data-i18n-html="opt_hint_maxh">
+              只在上一条是「自适应」时有用：译文太长时正文区到这儿就不再长，多出来的滚着看。单位 vh（窗口高度的百分之几），默认 46；填 0 = 不限。
             </p>
           </div>
         </div>
@@ -432,16 +422,8 @@
               <button id="btn-panelcss-warm" class="ghost" title="填入一套护眼暖色配色（可以再改）" data-i18n-title="opt_title_203" data-i18n="opt_set_096">填入示例：护眼暖色</button>
               <button id="btn-panelcss-clear" class="ghost" data-i18n="opt_set_081">清空</button>
             </div>
-            <p class="hint" data-hint="panel-css">
-              这段 CSS 会<strong data-i18n="opt_set_098">注入到面板自己的 shadow root 里</strong>。面板不在页面 DOM 中，
-              所以把它贴到 Stylus / user.css 是<strong data-i18n="opt_set_099">无效的</strong> —— 只能写在这儿。
-              <br data-i18n="opt_set_100">可用的钩子：<code>#rt-panel</code>（面板本体，id 选择器优先级高于预设，一般不用 <code>!important</code>）、
-              <code data-i18n="opt_set_101">[data-rt-theme="dark"]</code> 与 <code>[data-rt-theme="light"]</code>（按主题分别写）、
-              <code>.rt-head</code> <code>.rt-cfg</code> <code>.rt-lang</code> <code>.rt-out</code> <code>.rt-src</code>
-              <code>.rt-slot</code> <code>.rt-slot-h</code> <code>.rt-slot-name</code> <code>.rt-slot-b</code>
-              <code>.rt-acts</code> <code>.rt-act</code> <code>.rt-foot</code> <code>.rt-msg</code> <code>.rt-more</code>
-              <code>.rt-diag</code> <code>.d-k</code> <code>.d-v</code> <code>.rt-btn</code> <code>.rt-dot</code>。
-              这些名字<strong data-i18n="opt_set_102">不会改</strong>（真要改会给别名）。
+            <p class="hint" data-hint="panel-css" data-i18n-html="opt_hint_panelcss">
+              这段 CSS 会<strong>注入到面板自己的 shadow root 里</strong>。面板不在页面 DOM 中，所以把它贴到 Stylus / user.css 是<strong>无效的</strong> —— 只能写在这儿。<br>可用的钩子：<code>#rt-panel</code>（面板本体，id 选择器优先级高于预设，一般不用 <code>!important</code>）、<code>[data-rt-theme="dark"]</code> 与 <code>[data-rt-theme="light"]</code>（按主题分别写）、<code>.rt-head</code> <code>.rt-cfg</code> <code>.rt-lang</code> <code>.rt-out</code> <code>.rt-src</code> <code>.rt-slot</code> <code>.rt-slot-h</code> <code>.rt-slot-name</code> <code>.rt-slot-b</code> <code>.rt-acts</code> <code>.rt-act</code> <code>.rt-foot</code> <code>.rt-msg</code> <code>.rt-more</code> <code>.rt-diag</code> <code>.d-k</code> <code>.d-v</code> <code>.rt-btn</code> <code>.rt-dot</code>。这些名字<strong>不会改</strong>（真要改会给别名）。
             </p>
           </div>
         </div>
@@ -458,7 +440,7 @@
             <div class="io-row">
               <button id="btn-export" class="ghost" title="把全部配置 / 变量 / 设置 / OCR 导出成一个 JSON 文件（里面有明文 API Key，只发给你自己）" data-i18n-title="opt_title_204" data-i18n="opt_set_104">导出备份</button>
               <label class="enc-opt" title="勾上后导出的文件会用口令加密（AES-GCM），发给别人、存网盘都不怕泄露。口令不恢复 —— 丢了文件就解不开。" data-i18n-title="opt_title_205">
-                <input type="checkbox" id="chk-encrypt"> 加密导出
+            <input type="checkbox" id="chk-encrypt"> <span data-i18n="opt_encrypt_export">加密导出</span>
               </label>
             </div>
             <p class="hint" data-hint="io-backup" data-i18n="opt_set_106">备份版里有<strong>明文 API Key</strong>，只发给你自己。勾上「加密导出」则用口令加密（AES-GCM）—— 口令不恢复，丢了文件就解不开。</p>
@@ -520,7 +502,7 @@
                 <button type="button" id="btn-ui-lang" class="ghost" data-i18n="opt_ui_lang_go">下载并使用</button>
               </div>
               <div id="ui-lang-status" class="hint"></div>
-              <p class="hint" data-hint="s-uilang">只影响界面文字，不改翻译的目标语言。语言包约 10~40 KB，从 GitHub 现取，不占扩展体积；下载失败会保持当前语言。</p>
+              <p class="hint" data-hint="s-uilang" data-i18n="opt_hint_uilang">只影响界面文字，不改翻译的目标语言。语言包约 10~40 KB，从 GitHub 现取，不占扩展体积；下载失败会保持当前语言。</p>
             </div>
           </div>
 

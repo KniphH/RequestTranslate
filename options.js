@@ -26,10 +26,11 @@ const { TRIGGER_CSS, PANEL_CSS } = window.RTPanelCore;
 
 /* 文案查表。lib/i18n.js 是普通脚本、在 options.html 里排在 options.js 之前；
    万一没加载，回落成中文原文 —— 设置页不能因为少一个文件就显示成 key。 */
-function T(key, fallback) {
+function T(key, fallback, params) {
   const api = window.RTI18n;
   if (api && typeof api.t === "function") {
-    const got = api.t(key);
+    // params 走 i18n 的 $1 $2 替换（同 chrome.i18n 的写法），数字位置由译文决定
+    const got = api.t(key, params);
     if (got && got !== key) return got;
   }
   return fallback;
@@ -40,7 +41,7 @@ import { uid, allRequests, requestChain, requestTemplateFor } from './lib/reques
 import { runRequest, previewRequest } from './lib/engine.js';
 import { encryptExport, decryptExport, isEncryptedExport } from './lib/crypto.js';
 import { ADAPTERS } from './lib/adapters.js';
-import { BUILTIN_VAR_HINTS, TARGET_PRESETS, isSecretVar, modelCandidates, modelVarFor } from './lib/template.js';
+import { BUILTIN_VAR_HINTS, VAR_HINT_KEYS, TARGET_PRESETS, isSecretVar, modelCandidates, modelVarFor } from './lib/template.js';
 import {
   toDataUrl,
   pickImageMime,
@@ -189,6 +190,15 @@ async function init() {
   syncGroupCounts();
   renderPanelPreview();
   applyHintHides();
+
+  /* 收尾再填一次 —— 上面那些 renderXxx 会新建节点（编辑器头部、列表、预览），
+     它们里面的 data-i18n 在第一次 applyI18n 时还不存在。
+     这里补一次最省事，也比在每个 render 里各调一次好维护。 */
+  if (i18nApi && i18nApi.applyI18n) i18nApi.applyI18n(document);
+  /* ⚠️ 必须再跑一次 applyHintHides：上面的 applyI18n 里，data-i18n-html 那条会
+     用 innerHTML 整段覆盖，把之前 applyHintHides 挂上去的「不再显示」按钮一起抹掉。
+     它是幂等的（已经有 .hint-hide 就跳过），重复调用没有副作用。 */
+  applyHintHides();
 }
 
 /* ---- 右栏头部：两栏**共用这一份** ----
@@ -206,7 +216,8 @@ async function init() {
 function editorHeadHtml({ nameId, placeholder, top, bottom }) {
   const hint = (h) =>
     `<p class="hint wide"${h.id ? ` id="${h.id}"` : ''}` +
-    `${h.hint ? ` data-hint="${h.hint}"` : ''}${h.hidden ? ' hidden' : ''}>${h.html || ''}</p>`;
+    `${h.hint ? ` data-hint="${h.hint}"` : ''}${h.hidden ? ' hidden' : ''}` +
+    `${h.htmlKey ? ` data-i18n-html="${h.htmlKey}"` : ''}>${h.html || ''}</p>`;
   return `
     <div class="hint-slot">${top.map(hint).join('')}</div>
     <div class="editor-head">
@@ -226,11 +237,13 @@ function renderEditorHeads() {
     top: [
       {
         hint: 'cfg-intro',
+        htmlKey: 'opt_cfg_intro',
         html: T('opt_cfg_intro', '照着内置那条改：换地址、模型名、提示词，<b>占位符别动</b>。')
       }
     ],
     bottom: {
       hint: 'cfg-requests',
+      htmlKey: 'opt_cfg_requests',
       html: T('opt_cfg_requests', '一条配置能挂好几条请求：<b>主请求</b>先发，它挂了就按顺序试勾上的<b>后备请求</b>。')
     }
   });
@@ -242,15 +255,15 @@ function renderEditorHeads() {
       {
         id: 'o-hint',
         hint: 'ocr',
-        html:
-          '<b>「翻译剪切板中的截图」</b>和<b>「框选截图翻译」</b>都先用这里<b>选中</b>的配置把图转成文字，' +
-          '再交给「配置」翻译。'
+        htmlKey: 'opt_ocr_intro',
+        html: T('opt_ocr_intro', '<b>「翻译剪切板中的截图」</b>和<b>「框选截图翻译」</b>都先用这里<b>选中</b>的配置把图转成文字，再交给「配置」翻译。')
       },
       {
         id: 'imgcfg-hint',
         hint: 'imgcfg',
         hidden: true,
-        html: '现在是<b>图片直传</b>：截图不过 OCR，直接交给左边选中那条的<b>「图片请求模板」</b>去翻。'
+        htmlKey: 'opt_ocr_direct_intro',
+        html: T('opt_ocr_direct_intro', '现在是<b>图片直传</b>：截图不过 OCR，直接交给左边选中那条的<b>「图片请求模板」</b>去翻。')
       }
     ],
     /* 这一条的备注（内置那几条自带，只读；自建那条是空的）。跟着选中项走，
@@ -445,7 +458,7 @@ function toggleSlotConfig(id, opts) {
   // 左键那条路紧随其后会 selectConfig() 重画（传 redraw:false 就不在这里画，避免闪）
   if (redraw) renderConfigList();
   persist(false);
-  setSaveStatus(next.length ? T('opt_compare_n', '对比 ') + next.length + T('opt_compare_unit', ' 条') : T('opt_compare_cleared', '对比已清空'));
+  setSaveStatus(next.length ? T('opt_compare', '对比 $1$ 条', [String(next.length)]) : T('opt_compare_cleared', '对比已清空'));
 }
 
 /** 把一组配置 id 按**设置页列表的当前顺序**排好（面板默认顺序靠它和设置一致） */
@@ -871,7 +884,16 @@ function chipsHtml(list) {
 /** 内置适配器的显示名（`ADAPTERS` 里查不到就退回它的 id） */
 function adapterLabel(id) {
   const a = ADAPTERS[id];
+  // 自带 labelKey 的走查表（英文界面显示英文名），没有就退回中文原文
+  if (a && a.labelKey) return T(a.labelKey, a.label);
   return a ? a.label : String(id || T('opt_unknown_adapter', '（未知适配器）'));
+}
+
+/** 适配器的说明文字（跟着界面语言） */
+function adapterHint(id) {
+  const a = ADAPTERS[id];
+  if (a && a.hintKey) return T(a.hintKey, a.hint);
+  return (a && a.hint) || '';
 }
 
 /** 块头右边那句「这条打到哪儿」—— 折叠起来之后全靠它认人 */
@@ -953,7 +975,7 @@ function blockHtml(item, idx, lastIdx, opts = {}) {
         <div class="field rb-adapter-field">
           <label>${T('opt_label_adapter', '内置适配器')}</label>
           <p class="rb-adapter-note">${escapeHtml(adapterLabel(item.adapter))}</p>
-          <p class="hint">${escapeHtml((ADAPTERS[item.adapter] || {}).hint || '')}</p>
+          <p class="hint">${escapeHtml(adapterHint(item.adapter))}</p>
         </div>` : ''}
         ${templateFieldHtml({
           wrapAttrs: 'class="preview tpl-fold rb-only-request"',
@@ -1496,8 +1518,8 @@ async function runTest() {
   /* 这枚徽章只交代「这条链上一共有几条」—— 不是「要试几条」。
      写成「按顺序试 2 条」会被读成「两条都会发」，可实际拿到译文就停（kniph 报过这个歧义）。 */
   head.innerHTML =
-    `<span class="badge">${T('opt_chain_a', '链上共 ')}${chain.length}${T('opt_chain_b', ' 条请求')}</span>` +
-    (rotating ? `<span class="badge">${T('opt_tryall_a', 'model 逐个试，最多发 ')}${total}${T('opt_tryall_b', ' 次')}</span>` : '');
+    `<span class="badge">${T('opt_chain', '链上共 $1$ 条请求', [String(chain.length)])}</span>` +
+    (rotating ? `<span class="badge">${T('opt_tryall', 'model 逐个试，最多发 $1$ 次', [String(total)])}</span>` : '');
   els.testResult.appendChild(head);
 
   let got = false;
@@ -1911,7 +1933,7 @@ function renderVars() {
   });
 
   els.builtinBody.innerHTML = Object.entries(BUILTIN_VAR_HINTS)
-    .map(([k, hint]) => `<tr><td>{{${escapeHtml(k)}}}</td><td>${escapeHtml(hint)}</td></tr>`)
+    .map(([k, hint]) => `<tr><td>{{${escapeHtml(k)}}}</td><td>${escapeHtml(VAR_HINT_KEYS[k] ? T(VAR_HINT_KEYS[k], hint) : hint)}</td></tr>`)
     .join('');
 }
 
@@ -3123,10 +3145,10 @@ function renderTriggerStyles() {
     const icon = s.id === 'custom' ? customSvg : (s.svg || escapeHtml(s.text || ''));
     return (
       '<button type="button" class="trig-card' + (s.id === cur ? ' on' : '') +
-      '" data-style="' + s.id + '" title="' + escapeHtml(s.hint) + '">' +
+      '" data-style="' + s.id + '" title="' + escapeHtml(s.hintKey ? T(s.hintKey, s.hint) : s.hint) + '">' +
       '<span class="trig-prev' + (s.round ? ' round' : '') + (s.bare ? ' bare' : '') + '">' +
       icon + '</span>' +
-      '<span>' + escapeHtml(s.name) + '</span>' +
+      '<span>' + escapeHtml(s.key ? T(s.key, s.name) : s.name) + '</span>' +
       '</button>'
     );
   }).join('');
