@@ -4269,8 +4269,10 @@ await (async () => {
       return /^export /m.test(esm) && !/^export /m.test(plain) &&
         !/from ['"]\.\/i18n\.js['"]/.test(esm) && !/from ['"]\.\/i18n-msg\.js['"]/.test(plain);
     })());
-  check('设置页启动时载入语言包并调用 applyI18n',
-    /loadPack/.test(optJs2) && /applyI18n\(document\)/.test(optJs2));
+  /* 语言包不再运行时下载（kniph 2026-11-12 定的），改成判「启动时把静态文案填一遍」+
+     「不再有任何 loadPack / fetchIndex 之类的联网调用」 */
+  check('设置页启动时调用 applyI18n，且不再载入语言包',
+    /applyI18n\(document\)/.test(optJs2) && !/loadPack|fetchIndex|downloadPack/.test(optJs2));
 }
 console.log('\n' + '='.repeat(46));
 console.log(`通过 ${passed} 项，失败 ${failed} 项`);

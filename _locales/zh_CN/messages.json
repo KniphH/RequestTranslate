@@ -1,12 +1,12 @@
 {
-  "extName": {
-    "message": "RequestTranslate · 请求式划词翻译"
-  },
   "extDesc": {
     "message": "划词翻译，但配置是你自己的 HTTP 请求。直接写 curl 或原始请求报文，可保存多个命名配置。"
   },
+  "extName": {
+    "message": "RequestTranslate · 请求式划词翻译"
+  },
   "adapter_bing_hint": {
-    "message": "走 bing.com 网页版接口。第一次翻译会先抓一次鉴权参数（多花约 0.5 秒），之后一小时内的请求都很快。",
+    "message": "走 bing.com 网页版接口，首次多花约 0.5 秒。",
     "description": "内置适配器的显示名/说明"
   },
   "adapter_bing_label": {
@@ -46,6 +46,22 @@
     "message": "用 RequestTranslate 翻译选中内容",
     "description": "右键菜单：翻译选中文字"
   },
+  "ocr_preview_summary_img": {
+    "message": "这次会发出去的请求（示例图 · Key 已打码）",
+    "description": "OCR 栏：图片直传模式下的测试"
+  },
+  "ocr_test_label_img": {
+    "message": "测试图片配置",
+    "description": "OCR 栏：图片直传模式下的测试"
+  },
+  "ocr_test_title_img": {
+    "message": "用的是左边选中那条「图片配置」的图片请求模板",
+    "description": "OCR 栏：图片直传模式下的测试"
+  },
+  "ocr_test_title_none": {
+    "message": "还没有配置填过「图片请求模板」，去「配置」栏给能看图的那条填上",
+    "description": "OCR 栏：图片直传模式下的测试"
+  },
   "opt_adapter_note": {
     "message": "这条请求不走请求模板，翻译流程由扩展内置的代码完成。",
     "description": "内置适配器条目的补充说明"
@@ -63,11 +79,11 @@
     "description": "设置页：cfg 区域"
   },
   "opt_cfg_intro": {
-    "message": "照着内置那条改：换地址、模型名、提示词，<b>占位符别动</b>。",
+    "message": "照着内置那条改就行，占位符别动。",
     "description": "设置页 JS 动态文案"
   },
   "opt_cfg_requests": {
-    "message": "一条配置能挂好几条请求：<b>主请求</b>先发，它挂了就按顺序试勾上的<b>后备请求</b>。",
+    "message": "主请求先发，失败才按顺序试后备。",
     "description": "设置页 JS 动态文案"
   },
   "opt_chain": {
@@ -88,19 +104,19 @@
     "description": "占位符/响应格式标签的说明"
   },
   "opt_chip_image": {
-    "message": "图片占位符：截图直传模式下的图片（data URL）/ OCR 那栏是截图的 data URL；普通翻译时是空串",
+    "message": "直传模式下的图片 data URL；普通翻译时为空。",
     "description": "占位符/响应格式标签的说明"
   },
   "opt_chip_imageb64": {
-    "message": "裸 base64（不带 data: 前缀），给要纯 base64 的接口",
+    "message": "裸 base64，不带 data: 前缀。",
     "description": "占位符/响应格式标签的说明"
   },
   "opt_chip_imagepart": {
-    "message": "图片那一段（含前导逗号），写在 content 数组最后；没图时是空串。用它就能让一段模板同时翻文字和翻图",
+    "message": "图片那一段（含前导逗号），没图时为空。",
     "description": "占位符/响应格式标签的说明"
   },
   "opt_chip_imageurl": {
-    "message": "base64 再过一遍 URL 编码（百度这类表单接口要这种）",
+    "message": "base64 再过一遍 URL 编码。",
     "description": "占位符/响应格式标签的说明"
   },
   "opt_chip_target": {
@@ -108,7 +124,7 @@
     "description": "占位符/响应格式标签的说明"
   },
   "opt_chip_targetcode": {
-    "message": "映射成接口要的代码 ZH-HANS / JA，给 DeepL 这类只认代码的接口用。换服务就在请求文本里写一张 #@lang 表改掉（README 有现成的表）",
+    "message": "映射成接口代码（ZH-HANS / JA）。换服务改末尾的 #@lang 表。",
     "description": "占位符/响应格式标签的说明"
   },
   "opt_chip_text": {
@@ -184,60 +200,56 @@
     "message": "折叠 / 展开（点这一行也行）",
     "description": "设置页 JS 动态文案"
   },
-  "opt_grp_lang": {
-    "message": "语言",
-    "description": "设置页：语言那一组的标题（组标题短一点，行标签才是「界面语言」）"
-  },
   "opt_hint_dismiss": {
     "message": "不再显示",
     "description": "设置页 JS 动态文案"
   },
   "opt_hint_imgcfg_foot": {
-    "message": "只列<b>填了图片请求模板</b>的配置 —— 增删改回「配置」栏。",
+    "message": "只列填了图片模板的配置。",
     "description": "设置页：整段说明（含内联标签，走 data-i18n-html）"
   },
   "opt_hint_imgcfg_test": {
-    "message": "不选文件就直接点：用<b>剪切板里的第一张图</b>（Win + Shift + S 截图后回这儿点一下）。发的是左边选中那条的「图片请求模板」，和实际右键截图翻译时同一套。",
+    "message": "不选文件就直接点：用剪切板里第一张图。",
     "description": "设置页：整段说明（含内联标签，走 data-i18n-html）"
   },
   "opt_hint_maxh": {
-    "message": "只在上一条是「自适应」时有用：译文太长时正文区到这儿就不再长，多出来的滚着看。单位 vh（窗口高度的百分之几），默认 46；填 0 = 不限。",
+    "message": "超出后滚动。vh，默认 46，0 = 不限。",
     "description": "设置页：各项说明"
   },
   "opt_hint_ocr_direct": {
-    "message": "<b>模型具有多模态时，无需中转 OCR</b>：截图直接交给左边选中的那条图片配置去翻，不走上面那条。左边只列<b>填了「图片请求模板」</b>的配置；一条都没填时退回顶栏当前那条（那条多半不支持看图）。",
+    "message": "截图跳过 OCR，直接交给左边选中的图片配置。",
     "description": "设置页：整段说明（含内联标签，走 data-i18n-html）"
   },
   "opt_hint_ocr_test": {
-    "message": "不选文件就直接点：用<b>剪切板里的第一张图</b>（Win + Shift + S 截图后回这儿点一下）。发的是上面那段请求模板，和实际右键时同一套。",
+    "message": "不选文件就直接点：用剪切板里第一张图。",
     "description": "设置页：整段说明（含内联标签，走 data-i18n-html）"
   },
   "opt_hint_panelcss": {
-    "message": "这段 CSS 会<strong>注入到面板自己的 shadow root 里</strong>。面板不在页面 DOM 中，所以把它贴到 Stylus / user.css 是<strong>无效的</strong> —— 只能写在这儿。<br>可用的钩子：<code>#rt-panel</code>（面板本体，id 选择器优先级高于预设，一般不用 <code>!important</code>）、<code>[data-rt-theme=\"dark\"]</code> 与 <code>[data-rt-theme=\"light\"]</code>（按主题分别写）、<code>.rt-head</code> <code>.rt-cfg</code> <code>.rt-lang</code> <code>.rt-out</code> <code>.rt-src</code> <code>.rt-slot</code> <code>.rt-slot-h</code> <code>.rt-slot-name</code> <code>.rt-slot-b</code> <code>.rt-acts</code> <code>.rt-act</code> <code>.rt-foot</code> <code>.rt-msg</code> <code>.rt-more</code> <code>.rt-diag</code> <code>.d-k</code> <code>.d-v</code> <code>.rt-btn</code> <code>.rt-dot</code>。这些名字<strong>不会改</strong>（真要改会给别名）。",
+    "message": "只作用于面板。<code>#rt-panel</code> 和 <code>.rt-*</code> 是稳定钩子。",
     "description": "设置页：整段说明（含内联标签，走 data-i18n-html）"
   },
   "opt_hint_trigidle": {
-    "message": "出现后鼠标一直不动，过这么多秒就自己消失（鼠标动一下、或者停在按钮上，都不算）。填 0 = 不消失。",
+    "message": "鼠标不动就消失。0 = 不消失。",
     "description": "设置页：各项说明"
   },
   "opt_hint_trigleave": {
-    "message": "鼠标从按钮上移开、又没点，过这么多秒就消失；移回去就不消失。填 0 = 这项不生效。",
+    "message": "移开就消失。0 = 不生效。",
     "description": "设置页：各项说明"
   },
   "opt_hint_trigstyle": {
-    "message": "划词后出现在选区旁边那个小按钮的样子，只影响按钮本身。<b>地球</b>是线性图标，颜色跟着<b>主题</b>走；<b>自定义</b>不给底座 —— 整块就是你粘进下面那段 SVG。",
+    "message": "只影响这个按钮。",
     "description": "设置页：整段说明（含内联标签，走 data-i18n-html）"
   },
   "opt_hint_trigsvg": {
-    "message": "粘 <code>&lt;svg&gt;…&lt;/svg&gt;</code> 进来，替换掉预设里的图标 /「译」字；<b>底座还是用上面选的那个预设</b>，想连底座都自己说了算就选<b>「自定义」</b>。颜色写 <code>currentColor</code> 跟着主题走。",
+    "message": "替换图标本身。想连底座也自己定，选「自定义」。",
     "description": "设置页：整段说明（含内联标签，走 data-i18n-html）"
   },
   "opt_hint_uilang": {
-    "message": "只影响界面文字，不改翻译的目标语言。语言包约 10~40 KB，从 GitHub 现取，不占扩展体积；下载失败会保持当前语言。",
+    "message": "只影响界面文字，不改翻译的目标语言。",
     "description": "设置页：各项说明"
   },
   "opt_hint_vars": {
-    "message": "这里定义的值可以在请求模板里用 <code>{{名字}}</code> 引用，比如把 API Key 写成 <code>Bearer {{apiKey}}</code>。同名的话，下面这些会覆盖内置变量。<br>值里<b>一行写一个</b>时（模板里用到的那个含 <code>model</code> 的变量，比如 <code>model</code> / <code>GEMINI_MODEL</code>），翻译会从第一个开始试，哪个先返回译文就用哪个；只有一行就是普通单值。",
+    "message": "用 <code>{{名字}}</code> 引用；同名覆盖内置。",
     "description": "设置页：整段说明（含内联标签，走 data-i18n-html）"
   },
   "opt_hist_empty": {
@@ -261,7 +273,7 @@
     "description": "设置页 JS 动态文案"
   },
   "opt_imgtpl_hint": {
-    "message": "<b>填了这段（主请求或哪条后备都行），这条配置才会出现在 OCR 栏的「图片配置」列表里。</b>它管翻图，上面那段继续管划词翻译；留空就回退到上面那段。<br>写成多模态的样子，比如：<code>{\"role\":\"user\",\"content\":[{\"type\":\"image_url\",\"image_url\":{\"url\":\"{{image}}\"}},{\"type\":\"text\",\"text\":\"把图里的文字翻成{{target}}，只输出译文\"}]}</code><br>这段里 <code>{{text}}</code> 是空串 —— 直传时图片本身就是原文。",
+    "message": "填了才会出现在「图片配置」里；留空复用上面那段。",
     "description": "图片请求模板下方的说明"
   },
   "opt_imgtpl_ph": {
@@ -293,7 +305,7 @@
     "description": "设置页 JS 动态文案"
   },
   "opt_lang_samehint": {
-    "message": "划词面板顶栏也有一个，两边是同一个值，想临时换一门语言不用特意回这儿。",
+    "message": "和面板顶栏那个是同一个值。",
     "description": "设置页：目标语言下方的说明"
   },
   "opt_main_req": {
@@ -373,19 +385,19 @@
     "description": "设置页 JS 动态文案"
   },
   "opt_ocr_direct_intro": {
-    "message": "现在是<b>图片直传</b>：截图不过 OCR，直接交给左边选中那条的<b>「图片请求模板」</b>去翻。",
+    "message": "截图跳过 OCR，直接交给左边的图片配置。",
     "description": "设置页：OCR 栏头部说明（含内联标签）"
   },
   "opt_ocr_intro": {
-    "message": "<b>「翻译剪切板中的截图」</b>和<b>「框选截图翻译」</b>都先用这里<b>选中</b>的配置把图转成文字，再交给「配置」翻译。",
+    "message": "先用这里选中的配置把图转成文字，再交给「配置」翻译。",
     "description": "设置页：OCR 栏头部说明（含内联标签）"
   },
   "opt_path_hint_ocr": {
-    "message": "点号 + 下标，例如百度的 <code>words_result</code>（一行一个对象，会按行拼成一段）。留空时依次尝试各家常见的返回结构。",
+    "message": "如 <code>words_result</code>。留空自动识别。",
     "description": "响应提取路径下方说明（OCR）"
   },
   "opt_path_hint_text": {
-    "message": "点号 + 下标，例如 <code>data.translations[0].translatedText</code>。留空时会依次尝试各家常见的返回结构。",
+    "message": "如 <code>data.translations[0].translatedText</code>。留空自动识别。",
     "description": "响应提取路径下方说明（文本）"
   },
   "opt_ph_209": {
@@ -481,7 +493,7 @@
     "description": "设置页：set 区域"
   },
   "opt_set_014": {
-    "message": "按顺序跑勾上的那些请求，哪条先拿到译文就停（和面板上真翻译时一个顺序）。",
+    "message": "按顺序跑，哪条先出译文就停。",
     "description": "设置页：set 区域"
   },
   "opt_set_015": {
@@ -549,7 +561,7 @@
     "description": "设置页：set 区域"
   },
   "opt_set_046": {
-    "message": "三条快捷键都在那一个页面里改；重载扩展后显示「未设置」的，去那里设一次就好。",
+    "message": "都在浏览器那个页面里改。",
     "description": "设置页：set 区域"
   },
   "opt_set_047": {
@@ -557,7 +569,7 @@
     "description": "设置页：set 区域"
   },
   "opt_set_048": {
-    "message": "在网页内嵌的小页面（iframe，比如一些评论框和编辑器）里也支持划词。桥接脚本只上报选区，按钮和面板仍只有一份。",
+    "message": "内嵌小页面（iframe）里也能划词。",
     "description": "设置页：set 区域"
   },
   "opt_set_049": {
@@ -565,15 +577,15 @@
     "description": "设置页：set 区域"
   },
   "opt_set_050": {
-    "message": "加一项「用 RequestTranslate 翻译选中内容」（只在选中了文字时出现）",
+    "message": "「用 RequestTranslate 翻译选中内容」",
     "description": "设置页：set 区域"
   },
   "opt_set_051": {
-    "message": "加一项「翻译剪切板中的截图」（要先用系统截图把图截进剪切板，见「OCR」那一栏）",
+    "message": "「翻译剪切板中的截图」",
     "description": "设置页：set 区域"
   },
   "opt_set_052": {
-    "message": "加一项「框选截图翻译」（当场拖框截一块屏幕区域去翻译，不用先按系统截图）",
+    "message": "「框选截图翻译」",
     "description": "设置页：set 区域"
   },
   "opt_set_053": {
@@ -609,7 +621,7 @@
     "description": "设置页：set 区域"
   },
   "opt_set_061": {
-    "message": "大于 1 时面板同时显示多条结果，看哪条翻得更好。在下面的配置列表里左键点亮要对比的那几条（可以亮多条），右键取消；不点亮任何一条时就用当前选中的那条。",
+    "message": "大于 1 时同时显示多条。左键点亮要对比的，右键取消。",
     "description": "设置页：set 区域"
   },
   "opt_set_062": {
@@ -625,7 +637,7 @@
     "description": "设置页：set 区域"
   },
   "opt_set_065": {
-    "message": "显示 1 条时两种放法都是直接切换，所以这条只在「面板显示条数」大于 1 时出现。它只影响面板里临时点出来的组合，不动设置页那份默认名单。",
+    "message": "只在显示条数大于 1 时有意义。",
     "description": "设置页：set 区域"
   },
   "opt_set_066": {
@@ -633,7 +645,7 @@
     "description": "设置页：set 区域"
   },
   "opt_set_067": {
-    "message": "成功的翻译会在本地留一条记录（原文 / 译文 / 用的哪条配置），只存这台浏览器里，不上传、不进导出文件。填 0 = 不记录。",
+    "message": "本地记录，不上传、不进导出。填 0 不记录。",
     "description": "设置页：set 区域"
   },
   "opt_set_068": {
@@ -685,7 +697,7 @@
     "description": "设置页：set 区域"
   },
   "opt_set_085": {
-    "message": "浮出来的就是**网页上那个真面板**：样式、顶栏、拖动、✕ 关闭全都一样，跟着上面的宽度 / 字号 / 高度 / 主题实时变。里面的文字是示例内容。",
+    "message": "真面板的效果，跟着上面的设置实时变。",
     "description": "设置页：set 区域"
   },
   "opt_set_086": {
@@ -741,7 +753,7 @@
     "description": "设置页：set 区域"
   },
   "opt_set_106": {
-    "message": "备份版里有明文 API Key，只发给你自己。勾上「加密导出」则用口令加密（AES-GCM）—— 口令不恢复，丢了文件就解不开。",
+    "message": "含明文 Key。勾上加密会用口令保护，口令丢了文件就解不开。",
     "description": "设置页：set 区域"
   },
   "opt_set_107": {
@@ -753,7 +765,7 @@
     "description": "设置页：set 区域"
   },
   "opt_set_109": {
-    "message": "自动清空名字里含 key 的变量值，发给别人填他自己的 Key。请求模板正文里手写的 Key 不会被自动发现，分享前自己检查一遍。",
+    "message": "自动清空名字含 key 的变量。模板里手写的 Key 不会被发现。",
     "description": "设置页：set 区域"
   },
   "opt_set_110": {
@@ -765,7 +777,7 @@
     "description": "设置页：set 区域"
   },
   "opt_set_112": {
-    "message": "整体替换当前的配置、变量、设置和 OCR。加密的文件会先问口令。",
+    "message": "会替换当前的配置、变量、设置和 OCR。",
     "description": "设置页：set 区域"
   },
   "opt_set_113": {
@@ -797,7 +809,7 @@
     "description": "设置页：set 区域"
   },
   "opt_set_120": {
-    "message": "保留现有配置（勾上的追加进来，同名的覆盖）；不勾 = 整体替换",
+    "message": "勾上则追加、同名覆盖；不勾整体替换",
     "description": "设置页：set 区域"
   },
   "opt_set_121": {
@@ -893,7 +905,7 @@
     "description": "设置页 title 区域"
   },
   "opt_title_202": {
-    "message": "把一个和网页上一模一样的面板浮到页面上（能拖动、点 ✕ 关闭）",
+    "message": "浮出一个和网页上一模一样的面板",
     "description": "设置页 title 区域"
   },
   "opt_title_203": {
@@ -901,11 +913,11 @@
     "description": "设置页 title 区域"
   },
   "opt_title_204": {
-    "message": "把全部配置 / 变量 / 设置 / OCR 导出成一个 JSON 文件（里面有明文 API Key，只发给你自己）",
+    "message": "导出全部配置为一个 JSON 文件（含明文 Key，只发给自己）",
     "description": "设置页 title 区域"
   },
   "opt_title_205": {
-    "message": "勾上后导出的文件会用口令加密（AES-GCM），发给别人、存网盘都不怕泄露。口令不恢复 —— 丢了文件就解不开。",
+    "message": "用口令加密导出（AES-GCM）。口令丢了文件解不开",
     "description": "设置页 title 区域"
   },
   "opt_title_206": {
@@ -921,11 +933,11 @@
     "description": "设置页 title 区域"
   },
   "opt_tpl_hint_ocr": {
-    "message": "除占位符外一字不改地发出去；<b>提示词直接写在请求文本里</b>，不是占位符。三个图片占位符的区别见上面那排标签的悬停提示 —— 百度那类表单接口要 <code>{{imageUrlEncoded}}</code>（base64 里的 <code>+</code> 不转成 <code>%2B</code> 会被当空格）。Key 走 <code>{{apiKey}}</code>，别写死在模板里。",
+    "message": "除占位符外原样发出。表单接口用 <code>{{imageUrlEncoded}}</code>。",
     "description": "请求模板下方的说明（OCR）"
   },
   "opt_tpl_hint_text": {
-    "message": "curl 和原始 HTTP 报文都行，除占位符外一字不改地发出去。JSON 里不能有裸换行（写 <code>\\n</code>），双引号写 <code>\\\"</code>；行首 <code>#</code> 是注释。",
+    "message": "curl 或原始报文都行，只替换占位符。换行写 <code>\\n</code>。",
     "description": "请求模板下方的说明（文本翻译）"
   },
   "opt_tpl_ph": {
@@ -944,62 +956,6 @@
         "content": "$1"
       }
     }
-  },
-  "opt_ui_lang": {
-    "message": "界面语言",
-    "description": "设置页：界面语言那一行的标签"
-  },
-  "opt_ui_lang_builtin": {
-    "message": "中文（内置）",
-    "description": "界面语言下拉：内置中文选项"
-  },
-  "opt_ui_lang_checking": {
-    "message": "正在核实可用的语言包…",
-    "description": "界面语言：清单取回后逐个探测文件"
-  },
-  "opt_ui_lang_count_post": {
-    "message": "种可用语言，选中即会下载。",
-    "description": "界面语言：核实完成，数量后面那段（选中即下载）"
-  },
-  "opt_ui_lang_count_pre": {
-    "message": "核实到",
-    "description": "界面语言：核实完成，数量前面那段"
-  },
-  "opt_ui_lang_dl": {
-    "message": "正在下载…",
-    "description": "界面语言：下载中"
-  },
-  "opt_ui_lang_fail": {
-    "message": "下载失败：",
-    "description": "界面语言：失败提示"
-  },
-  "opt_ui_lang_go": {
-    "message": "下载并使用",
-    "description": "（已废弃：现在选中即下载，按钮已移除）"
-  },
-  "opt_ui_lang_none": {
-    "message": "清单里没有可用的语言包（文件都取不到）。",
-    "description": "界面语言：核实后一个都没有"
-  },
-  "opt_ui_lang_offline": {
-    "message": "取不到语言清单（离线或被挡），先用内置中文。",
-    "description": "界面语言：拉清单失败"
-  },
-  "opt_ui_lang_ok_post": {
-    "message": "条，正在重载…",
-    "description": "界面语言：成功提示后半"
-  },
-  "opt_ui_lang_ok_pre": {
-    "message": "已装好",
-    "description": "界面语言：成功提示前半"
-  },
-  "opt_ui_lang_reset": {
-    "message": "已切回内置中文，正在重载…",
-    "description": "界面语言：切回内置"
-  },
-  "opt_ui_lang_same": {
-    "message": "这就是当前语言。",
-    "description": "界面语言：选中的就是当前语言"
   },
   "opt_unknown_adapter": {
     "message": "（未知适配器）",
@@ -1085,8 +1041,8 @@
     }
   },
   "panel_img_none": {
-    "message": "还没有任何配置填过「图片请求模板」——去设置页的「配置」栏给能看图的那条填上，它才会出现在这个列表里。现在用的是「$1$」",
-    "description": "图片模式下没有可用配置时的说明",
+    "message": "还没有配置填过「图片请求模板」。现在用的是「$1$」",
+    "description": "面板顶栏：没有图片配置时的说明",
     "placeholders": {
       "1": {
         "content": "$1"
@@ -1243,7 +1199,7 @@
     "description": "触发按钮预设的说明"
   },
   "trigger_hint_custom": {
-    "message": "没有底座，你粘进来的 SVG 就是按钮本身（还没填图标时卡片空着）",
+    "message": "没有底座，粘进来的 SVG 就是按钮本身",
     "description": "触发按钮预设的说明"
   },
   "trigger_hint_globe": {
@@ -1271,19 +1227,19 @@
     "description": "内置变量的说明（变量页签那张表）"
   },
   "varhint_image": {
-    "message": "截图翻译直传模式下的图片（data URL）；普通翻译时是空串",
+    "message": "直传模式下的图片 data URL；普通翻译时为空。",
     "description": "内置变量的说明（变量页签那张表）"
   },
   "varhint_imageb64": {
-    "message": "裸 base64（去掉 data: 前缀），给要纯 base64 的接口",
+    "message": "裸 base64，不带 data: 前缀。",
     "description": "内置变量的说明（变量页签那张表）"
   },
   "varhint_imagepart": {
-    "message": "图片那一段（含前导逗号），写在 content 数组最后；没图时是空串",
+    "message": "图片那一段（含前导逗号），没图时为空。",
     "description": "内置变量的说明（变量页签那张表）"
   },
   "varhint_imageurl": {
-    "message": "base64 再过一遍 URL 编码（百度 OCR 的 image 参数要这种）",
+    "message": "base64 再过一遍 URL 编码。",
     "description": "内置变量的说明（变量页签那张表）"
   },
   "varhint_selection": {
@@ -1295,7 +1251,7 @@
     "description": "内置变量的说明（变量页签那张表）"
   },
   "varhint_targetcode": {
-    "message": "映射成接口要的代码（ZH-HANS / JA），给 DeepL 这类只认代码的接口用。换服务就改进配置末尾的 #@lang 表",
+    "message": "映射成接口代码（ZH-HANS / JA）。",
     "description": "内置变量的说明（变量页签那张表）"
   },
   "varhint_targetlang": {

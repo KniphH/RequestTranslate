@@ -2659,14 +2659,8 @@
     if (prefs.trigger === 'off') hideTrigger();
   }
 
-  /* 先载语言包，再读存档 —— 顺序反了的话面板会先按中文渲染一遍，
-     语言包到位后再补刷（用户看得见闪一下）。两个读取并发，几乎不增加启动延迟。 */
   try {
-    const i18nApi = window.RTI18n;
-    const loadPack = i18nApi && i18nApi.loadPack ? i18nApi.loadPack() : Promise.resolve(null);
-    Promise.all([loadPack, chrome.storage.local.get('state')])
-      .then(([, raw]) => applyState(raw && raw.state))
-      .catch(() => {});
+    chrome.storage.local.get('state').then((raw) => applyState(raw && raw.state)).catch(() => {});
   } catch { /* 忽略 */ }
 
   try {

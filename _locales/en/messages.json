@@ -4,5 +4,965 @@
   },
   "extDesc": {
     "message": "Translate selected text with your own HTTP request — paste a curl, swap in {{text}}, done. Any OpenAI-compatible API."
+  },
+  "adapter_bing_hint": {
+    "message": "Uses the bing.com web endpoint; the first call takes about 0.5s longer."
+  },
+  "adapter_bing_label": {
+    "message": "Bing translate · free, no API key"
+  },
+  "adapter_unknown": {
+    "message": "No built-in adapter named $1$",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "cmdOcrClipboard": {
+    "message": "Translate the screenshot in the clipboard"
+  },
+  "cmdShotTranslate": {
+    "message": "Translate a screen region"
+  },
+  "cmdTranslateSelection": {
+    "message": "Translate selected text"
+  },
+  "menuOcrClipboard": {
+    "message": "Translate the screenshot in the clipboard"
+  },
+  "menuShotTranslate": {
+    "message": "Translate a screen region"
+  },
+  "menuTranslate": {
+    "message": "Translate selection with RequestTranslate"
+  },
+  "ocr_preview_summary_img": {
+    "message": "Request to be sent (sample image · key masked)"
+  },
+  "ocr_test_label_img": {
+    "message": "Test image config"
+  },
+  "ocr_test_title_img": {
+    "message": "Uses the image request template of the config on the left"
+  },
+  "ocr_test_title_none": {
+    "message": "No config has an image request template yet; add one in the Configs tab"
+  },
+  "opt_adapter_note": {
+    "message": "This request bypasses the template; the extension's built-in code drives it."
+  },
+  "opt_adapter_prefix": {
+    "message": "Built-in adapter: "
+  },
+  "opt_block_off": {
+    "message": " (unchecked, skipped)"
+  },
+  "opt_cfg_004": {
+    "message": "Config"
+  },
+  "opt_cfg_intro": {
+    "message": "Edit a built-in one and leave the placeholders alone."
+  },
+  "opt_cfg_requests": {
+    "message": "The main request goes first; fallbacks run in order if it fails."
+  },
+  "opt_chain": {
+    "message": "$1$ requests in the chain",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_chip_apikey": {
+    "message": "apiKey from the Variables tab, shared with translation configs"
+  },
+  "opt_chip_date": {
+    "message": "Today's date"
+  },
+  "opt_chip_image": {
+    "message": "Image data URL in direct mode; empty otherwise."
+  },
+  "opt_chip_imageb64": {
+    "message": "Raw base64, no data: prefix."
+  },
+  "opt_chip_imagepart": {
+    "message": "The image segment (with leading comma); empty when there is no image."
+  },
+  "opt_chip_imageurl": {
+    "message": "Base64, URL-encoded again."
+  },
+  "opt_chip_target": {
+    "message": "Target language from settings, passed through as-is (for chat models)"
+  },
+  "opt_chip_targetcode": {
+    "message": "Mapped to the API code (ZH-HANS / JA). Edit the trailing #@lang table to change services."
+  },
+  "opt_chip_text": {
+    "message": "The selected text to translate"
+  },
+  "opt_chip_title": {
+    "message": "Page title"
+  },
+  "opt_chip_url": {
+    "message": "Page URL"
+  },
+  "opt_compare": {
+    "message": "Comparing $1$",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_compare_cleared": {
+    "message": "Comparison cleared"
+  },
+  "opt_copy_suffix": {
+    "message": "copy"
+  },
+  "opt_del_confirm_a": {
+    "message": "Delete \""
+  },
+  "opt_del_confirm_b": {
+    "message": "\"? This cannot be undone."
+  },
+  "opt_del_fallback": {
+    "message": "Delete this fallback"
+  },
+  "opt_down": {
+    "message": "Move down"
+  },
+  "opt_drag_hint": {
+    "message": "Drag to reorder"
+  },
+  "opt_empty": {
+    "message": "(empty)"
+  },
+  "opt_encrypt_export": {
+    "message": "Encrypted export"
+  },
+  "opt_err_boot": {
+    "message": "Settings page failed to start: "
+  },
+  "opt_fallback_n": {
+    "message": "Fallback "
+  },
+  "opt_fallback_word": {
+    "message": "fallback"
+  },
+  "opt_fold": {
+    "message": "Collapse / expand (clicking the row works too)"
+  },
+  "opt_hint_dismiss": {
+    "message": "Don't show again"
+  },
+  "opt_hint_imgcfg_foot": {
+    "message": "Lists only configs with an image template."
+  },
+  "opt_hint_imgcfg_test": {
+    "message": "No file needed: just click, it uses the first clipboard image."
+  },
+  "opt_hint_maxh": {
+    "message": "Scrolls past this. vh, default 46, 0 = unlimited."
+  },
+  "opt_hint_ocr_direct": {
+    "message": "Screenshots skip OCR and go straight to the image config on the left."
+  },
+  "opt_hint_ocr_test": {
+    "message": "No file needed: just click, it uses the first clipboard image."
+  },
+  "opt_hint_panelcss": {
+    "message": "Affects the panel only. <code>#rt-panel</code> and <code>.rt-*</code> are stable hooks."
+  },
+  "opt_hint_trigidle": {
+    "message": "Hides when the mouse stops moving. 0 = never."
+  },
+  "opt_hint_trigleave": {
+    "message": "Hides when the mouse leaves. 0 = off."
+  },
+  "opt_hint_trigstyle": {
+    "message": "Affects this button only."
+  },
+  "opt_hint_trigsvg": {
+    "message": "Replaces the icon. Pick Custom to control the base plate too."
+  },
+  "opt_hint_uilang": {
+    "message": "Changes the interface language only, not the translation target."
+  },
+  "opt_hint_vars": {
+    "message": "Reference with <code>{{name}}</code>; same name overrides built-ins."
+  },
+  "opt_hist_empty": {
+    "message": "No records yet (or the count above is 0)."
+  },
+  "opt_hist_nomatch_a": {
+    "message": "No records matching \""
+  },
+  "opt_hist_nomatch_b": {
+    "message": "\"."
+  },
+  "opt_hotkey_unset": {
+    "message": "not set"
+  },
+  "opt_img_badge": {
+    "message": "Has an image request template, so screenshots use it in direct-image mode"
+  },
+  "opt_imgtpl_hint": {
+    "message": "Fill this in to appear in the image config list; empty falls back to the template above."
+  },
+  "opt_imgtpl_ph": {
+    "message": "Empty = images reuse the template above"
+  },
+  "opt_imgtpl_sep": {
+    "message": "====== image request template (used for direct image passing) ======"
+  },
+  "opt_imgtpl_title": {
+    "message": "Image request template (optional, click to fill)"
+  },
+  "opt_label_adapter": {
+    "message": "Built-in adapter"
+  },
+  "opt_label_mode": {
+    "message": "Response format"
+  },
+  "opt_label_name": {
+    "message": "Name"
+  },
+  "opt_label_path": {
+    "message": "Response path (empty = auto-detect)"
+  },
+  "opt_lang_samehint": {
+    "message": "Same value as the panel's top bar."
+  },
+  "opt_main_req": {
+    "message": "Main request"
+  },
+  "opt_misc_001": {
+    "message": "RequestTranslate · Settings"
+  },
+  "opt_misc_002": {
+    "message": "译"
+  },
+  "opt_misc_003": {
+    "message": "A config is just a request. You decide how the parameters look."
+  },
+  "opt_mode_auto": {
+    "message": "Auto-detect"
+  },
+  "opt_mode_json": {
+    "message": "Whole JSON"
+  },
+  "opt_mode_sse": {
+    "message": "SSE stream"
+  },
+  "opt_mode_text": {
+    "message": "Plain text"
+  },
+  "opt_model_rotate_a": {
+    "message": "Model rotation: "
+  },
+  "opt_model_rotate_b": {
+    "message": " has "
+  },
+  "opt_model_rotate_c": {
+    "message": " candidates, showing the first ("
+  },
+  "opt_model_rotate_d": {
+    "message": "); "
+  },
+  "opt_model_rotate2": {
+    "message": "Both the test and a real translation start from it and try them in turn"
+  },
+  "opt_move_down_word": {
+    "message": "Move down"
+  },
+  "opt_move_up_word": {
+    "message": "Move up"
+  },
+  "opt_need_one_cfg": {
+    "message": "At least one config must remain."
+  },
+  "opt_new_cfg": {
+    "message": "New config"
+  },
+  "opt_no_request": {
+    "message": "(no request template yet)"
+  },
+  "opt_no_rotate": {
+    "message": "Unchecked means it is skipped in rotation (and in tests)"
+  },
+  "opt_ocr_direct_intro": {
+    "message": "Screenshots skip OCR and go straight to the image config on the left."
+  },
+  "opt_ocr_intro": {
+    "message": "First turns the image into text with the config selected here, then hands it to a config."
+  },
+  "opt_path_hint_ocr": {
+    "message": "e.g. <code>words_result</code>. Empty = auto-detect."
+  },
+  "opt_path_hint_text": {
+    "message": "e.g. <code>data.translations[0].translatedText</code>. Empty = auto-detect."
+  },
+  "opt_ph_209": {
+    "message": "Test text, defaults to Hello, world!"
+  },
+  "opt_ph_210": {
+    "message": "Language name or code, e.g. \"Cantonese\" / YUE"
+  },
+  "opt_ph_211": {
+    "message": "/* e.g. #rt-panel { border-radius: 8px } */"
+  },
+  "opt_ph_212": {
+    "message": "Search source, translation, or config name…"
+  },
+  "opt_ph_213": {
+    "message": "Passphrase"
+  },
+  "opt_ph_214": {
+    "message": "Enter it again"
+  },
+  "opt_ph_cfgname": {
+    "message": "e.g. DeepSeek translate / local Ollama"
+  },
+  "opt_ph_ocrname": {
+    "message": "e.g. SiliconFlow"
+  },
+  "opt_row_actual": {
+    "message": "Request sent"
+  },
+  "opt_row_error": {
+    "message": "Error"
+  },
+  "opt_row_raw": {
+    "message": "Raw response"
+  },
+  "opt_row_text": {
+    "message": "Extracted translation"
+  },
+  "opt_sample_page": {
+    "message": "Sample page"
+  },
+  "opt_send": {
+    "message": "Send"
+  },
+  "opt_sending": {
+    "message": "Sending…"
+  },
+  "opt_set_006": {
+    "message": "Settings"
+  },
+  "opt_set_007": {
+    "message": "Configs"
+  },
+  "opt_set_008": {
+    "message": "Drag to reorder"
+  },
+  "opt_set_009": {
+    "message": "+ New config"
+  },
+  "opt_set_010": {
+    "message": "+ Add a fallback request"
+  },
+  "opt_set_011": {
+    "message": "Request to be sent (key masked)"
+  },
+  "opt_set_012": {
+    "message": "Test"
+  },
+  "opt_set_013": {
+    "message": "Send"
+  },
+  "opt_set_014": {
+    "message": "Runs in order and stops at the first result."
+  },
+  "opt_set_015": {
+    "message": "Duplicate"
+  },
+  "opt_set_016": {
+    "message": "Delete config"
+  },
+  "opt_set_017": {
+    "message": "Create a config on the left to start"
+  },
+  "opt_set_018": {
+    "message": "OCR configs"
+  },
+  "opt_set_028": {
+    "message": "Disable external OCR (multimodal models only)"
+  },
+  "opt_set_033": {
+    "message": "Create an OCR config on the left to start"
+  },
+  "opt_set_034": {
+    "message": "Custom variables"
+  },
+  "opt_set_037": {
+    "message": "+ Add variable"
+  },
+  "opt_set_038": {
+    "message": "Built-in variables"
+  },
+  "opt_set_039": {
+    "message": "Selection behavior"
+  },
+  "opt_set_040": {
+    "message": "After selecting text"
+  },
+  "opt_set_041": {
+    "message": "show a small dot, translate on click"
+  },
+  "opt_set_042": {
+    "message": "translate immediately"
+  },
+  "opt_set_043": {
+    "message": "do nothing (right-click menu only)"
+  },
+  "opt_set_044": {
+    "message": "Shortcut to translate selection"
+  },
+  "opt_set_045": {
+    "message": "Open the browser's shortcut settings"
+  },
+  "opt_set_046": {
+    "message": "All are set on that one browser page."
+  },
+  "opt_set_047": {
+    "message": "Selection in iframes"
+  },
+  "opt_set_048": {
+    "message": "Also works in embedded frames (iframes)."
+  },
+  "opt_set_049": {
+    "message": "Context menu"
+  },
+  "opt_set_050": {
+    "message": "\"Translate selection with RequestTranslate\""
+  },
+  "opt_set_051": {
+    "message": "\"Translate the screenshot in the clipboard\""
+  },
+  "opt_set_052": {
+    "message": "\"Translate a screen region\""
+  },
+  "opt_set_053": {
+    "message": "Translation"
+  },
+  "opt_set_054": {
+    "message": "Target language (the {{target}} value)"
+  },
+  "opt_set_055": {
+    "message": "Max characters per request"
+  },
+  "opt_set_056": {
+    "message": "Results in the panel"
+  },
+  "opt_set_057": {
+    "message": "1 result"
+  },
+  "opt_set_058": {
+    "message": "2 to compare"
+  },
+  "opt_set_059": {
+    "message": "3 to compare"
+  },
+  "opt_set_060": {
+    "message": "4 to compare"
+  },
+  "opt_set_061": {
+    "message": "Above 1, shows several at once. Click to include, right-click to remove."
+  },
+  "opt_set_062": {
+    "message": "When picking a new config in the panel"
+  },
+  "opt_set_063": {
+    "message": "put it at the bottom (drops the top one)"
+  },
+  "opt_set_064": {
+    "message": "put it at the top (drops the bottom one)"
+  },
+  "opt_set_065": {
+    "message": "Only matters when showing more than 1."
+  },
+  "opt_set_066": {
+    "message": "History entries"
+  },
+  "opt_set_067": {
+    "message": "Local only, never uploaded or exported. 0 = record nothing."
+  },
+  "opt_set_068": {
+    "message": "Trigger button"
+  },
+  "opt_set_069": {
+    "message": "Button style"
+  },
+  "opt_set_070": {
+    "message": "Preview"
+  },
+  "opt_set_073": {
+    "message": "Button size (px)"
+  },
+  "opt_set_074": {
+    "message": "Auto-hide after (seconds)"
+  },
+  "opt_set_075": {
+    "message": "Hide after mouse leaves (seconds)"
+  },
+  "opt_set_076": {
+    "message": "Custom icon (SVG)"
+  },
+  "opt_set_080": {
+    "message": "Insert sample icon"
+  },
+  "opt_set_081": {
+    "message": "Clear"
+  },
+  "opt_set_082": {
+    "message": "Panel"
+  },
+  "opt_set_083": {
+    "message": "Live preview"
+  },
+  "opt_set_084": {
+    "message": "Show panel"
+  },
+  "opt_set_085": {
+    "message": "The real panel, updating live with the settings above."
+  },
+  "opt_set_086": {
+    "message": "Panel width (px)"
+  },
+  "opt_set_087": {
+    "message": "Panel height (px, 0 = auto)"
+  },
+  "opt_set_088": {
+    "message": "Max body height (vh, 0 = unlimited)"
+  },
+  "opt_set_089": {
+    "message": "Panel font size (px)"
+  },
+  "opt_set_090": {
+    "message": "Theme"
+  },
+  "opt_set_091": {
+    "message": "Follow system"
+  },
+  "opt_set_092": {
+    "message": "Dark"
+  },
+  "opt_set_093": {
+    "message": "Light"
+  },
+  "opt_set_094": {
+    "message": "Show the source text in the panel"
+  },
+  "opt_set_095": {
+    "message": "Custom panel styles (CSS)"
+  },
+  "opt_set_096": {
+    "message": "Fill in an example: warm tone"
+  },
+  "opt_set_103": {
+    "message": "Import / Export"
+  },
+  "opt_set_104": {
+    "message": "Export backup"
+  },
+  "opt_set_106": {
+    "message": "Contains plaintext keys. Encrypt it with a passphrase you cannot recover."
+  },
+  "opt_set_107": {
+    "message": "Export shareable"
+  },
+  "opt_set_108": {
+    "message": "Export shareable (no keys)"
+  },
+  "opt_set_109": {
+    "message": "Clears variables with key in the name. Keys typed in templates are not detected."
+  },
+  "opt_set_110": {
+    "message": "Import"
+  },
+  "opt_set_111": {
+    "message": "Import from file"
+  },
+  "opt_set_112": {
+    "message": "Replaces the current configs, variables, settings and OCR."
+  },
+  "opt_set_113": {
+    "message": "History"
+  },
+  "opt_set_114": {
+    "message": "Recent entries"
+  },
+  "opt_set_115": {
+    "message": "Clear history"
+  },
+  "opt_set_116": {
+    "message": "Bring back all hidden hints"
+  },
+  "opt_set_117": {
+    "message": "Restore all default configs"
+  },
+  "opt_set_118": {
+    "message": "Choose configs to import"
+  },
+  "opt_set_119": {
+    "message": "Select all / none"
+  },
+  "opt_set_120": {
+    "message": "Checked: append and overwrite by name. Unchecked: replace everything."
+  },
+  "opt_set_121": {
+    "message": "Cancel"
+  },
+  "opt_set_122": {
+    "message": "Import selected"
+  },
+  "opt_set_123": {
+    "message": "Set passphrase"
+  },
+  "opt_set_125": {
+    "message": "OK"
+  },
+  "opt_style_auto": {
+    "message": " (auto-detected)"
+  },
+  "opt_style_prefix": {
+    "message": "Format: "
+  },
+  "opt_style_raw": {
+    "message": "raw HTTP message"
+  },
+  "opt_t_body": {
+    "message": "--- request body actually sent ---"
+  },
+  "opt_t_fix": {
+    "message": "Fix: "
+  },
+  "opt_t_headers": {
+    "message": "Headers:"
+  },
+  "opt_t_hintlbl": {
+    "message": "Hint: "
+  },
+  "opt_t_method": {
+    "message": "Method: "
+  },
+  "opt_t_noadapter": {
+    "message": "(no built-in adapter available)"
+  },
+  "opt_t_nobody": {
+    "message": "(this request has no body)"
+  },
+  "opt_t_noreq": {
+    "message": "(no request)"
+  },
+  "opt_t_note": {
+    "message": "--- notes ---"
+  },
+  "opt_t_notpl": {
+    "message": "(request template is empty)"
+  },
+  "opt_t_nourl": {
+    "message": "(no URL)"
+  },
+  "opt_t_problem": {
+    "message": "Problem: "
+  },
+  "opt_t_undef": {
+    "message": "Undefined variables (replaced with an empty string):"
+  },
+  "opt_t_url": {
+    "message": "URL: "
+  },
+  "opt_test_page": {
+    "message": "RequestTranslate test"
+  },
+  "opt_title_201": {
+    "message": "Drag the handle on the left, or click the arrows on the right"
+  },
+  "opt_title_202": {
+    "message": "Float a panel identical to the one on web pages"
+  },
+  "opt_title_203": {
+    "message": "Fill in a warm, easy-on-the-eyes palette (editable)"
+  },
+  "opt_title_204": {
+    "message": "Export all configs as one JSON file (plaintext keys, keep it to yourself)"
+  },
+  "opt_title_205": {
+    "message": "Encrypted export (AES-GCM). A lost passphrase means a locked file"
+  },
+  "opt_title_206": {
+    "message": "Generate a config file with keys stripped, for someone to fill in their own"
+  },
+  "opt_title_207": {
+    "message": "Restore configs from an exported JSON file (replaces everything)"
+  },
+  "opt_title_208": {
+    "message": "Clear all translation history, cannot be undone"
+  },
+  "opt_tpl_hint_ocr": {
+    "message": "Sent verbatim except placeholders. Form APIs need <code>{{imageUrlEncoded}}</code>."
+  },
+  "opt_tpl_hint_text": {
+    "message": "curl or a raw message, placeholders substituted. Write newlines as <code>\\n</code>."
+  },
+  "opt_tpl_ph": {
+    "message": "Paste a curl here, or write a raw HTTP message"
+  },
+  "opt_tpl_title": {
+    "message": "Request template"
+  },
+  "opt_tryall": {
+    "message": "model tried in turn, up to $1$ sends",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_unknown_adapter": {
+    "message": "(unknown adapter)"
+  },
+  "opt_unnamed": {
+    "message": "(untitled)"
+  },
+  "opt_untitled": {
+    "message": "Untitled"
+  },
+  "opt_untitled_cfg": {
+    "message": "Untitled config"
+  },
+  "opt_up": {
+    "message": "Move up (higher is tried first)"
+  },
+  "opt_var_005": {
+    "message": "Variables"
+  },
+  "opt_var_click_edit": {
+    "message": "Click to edit"
+  },
+  "opt_var_empty": {
+    "message": "empty"
+  },
+  "panel_cfg_only": {
+    "message": "Endpoint"
+  },
+  "panel_cfg_title": {
+    "message": "Endpoint"
+  },
+  "panel_cfg_with": {
+    "message": "Endpoint: $1$",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "panel_close": {
+    "message": "Close (Esc)"
+  },
+  "panel_compare_note": {
+    "message": " (comparing: $1$)",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "panel_copy": {
+    "message": "Copy"
+  },
+  "panel_copy_title": {
+    "message": "Copy this translation"
+  },
+  "panel_error_fallback": {
+    "message": "Something went wrong"
+  },
+  "panel_img_cfg_with": {
+    "message": "Image endpoint: $1$",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "panel_img_none": {
+    "message": "No config has an image request template yet. Currently using \"$1$\"",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "panel_lang_title": {
+    "message": "Target language"
+  },
+  "panel_lang_with": {
+    "message": "Target language: $1$",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "panel_more_title": {
+    "message": "Details"
+  },
+  "panel_no_config": {
+    "message": "(no config)"
+  },
+  "panel_retry": {
+    "message": "Retry"
+  },
+  "panel_retry_title": {
+    "message": "Retry just this one"
+  },
+  "panel_slot_remove": {
+    "message": "Hide this result (this time only; defaults are untouched)"
+  },
+  "panel_speak": {
+    "message": "Speak"
+  },
+  "panel_speak_title": {
+    "message": "Read this translation aloud"
+  },
+  "panel_src_hidden": {
+    "message": "Show source (currently hidden)"
+  },
+  "panel_src_showing": {
+    "message": "Hide source (currently shown)"
+  },
+  "panel_src_toggle": {
+    "message": "Show / hide source"
+  },
+  "panel_status_done": {
+    "message": "Done"
+  },
+  "panel_status_failed": {
+    "message": "Failed"
+  },
+  "panel_status_translating": {
+    "message": "Translating…"
+  },
+  "panel_status_waiting": {
+    "message": "Queued…"
+  },
+  "panel_stop": {
+    "message": "Stop"
+  },
+  "panel_stop_title": {
+    "message": "Stop reading"
+  },
+  "panel_waiting": {
+    "message": "Waiting for result…"
+  },
+  "popup_chars": {
+    "message": "chars"
+  },
+  "popup_clear": {
+    "message": "Clear"
+  },
+  "popup_copied": {
+    "message": "Copied"
+  },
+  "popup_copy": {
+    "message": "Copy"
+  },
+  "popup_input_ph": {
+    "message": "Type or paste text to translate (the page selection is filled in automatically)"
+  },
+  "popup_need_input": {
+    "message": "Type something first"
+  },
+  "popup_no_config": {
+    "message": "No configs available"
+  },
+  "popup_no_result": {
+    "message": "No result returned"
+  },
+  "popup_open_full": {
+    "message": "Open full settings"
+  },
+  "popup_open_settings": {
+    "message": "Open settings"
+  },
+  "popup_reasoning": {
+    "message": "reasoning"
+  },
+  "popup_translate": {
+    "message": "Translate"
+  },
+  "popup_waiting": {
+    "message": "Waiting for input…"
+  },
+  "trigger_dot_err": {
+    "message": "Translation failed"
+  },
+  "trigger_dot_ok": {
+    "message": "Translated"
+  },
+  "trigger_dot_on": {
+    "message": "Translating…"
+  },
+  "trigger_hint_badge": {
+    "message": "Rounded purple gradient tile with the character in the middle. The default"
+  },
+  "trigger_hint_custom": {
+    "message": "No base plate; the SVG you paste is the button itself"
+  },
+  "trigger_hint_globe": {
+    "message": "Round base with a line-drawn globe"
+  },
+  "trigger_style_badge": {
+    "message": "Character tile"
+  },
+  "trigger_style_custom": {
+    "message": "Custom"
+  },
+  "trigger_style_globe": {
+    "message": "Globe"
+  },
+  "trigger_translate": {
+    "message": "Translate selection"
+  },
+  "varhint_date": {
+    "message": "Today's date, YYYY-MM-DD"
+  },
+  "varhint_image": {
+    "message": "Image data URL in direct mode; empty otherwise."
+  },
+  "varhint_imageb64": {
+    "message": "Raw base64, no data: prefix."
+  },
+  "varhint_imagepart": {
+    "message": "The image segment (with leading comma); empty when there is no image."
+  },
+  "varhint_imageurl": {
+    "message": "Base64, URL-encoded again."
+  },
+  "varhint_selection": {
+    "message": "Same as {{text}}"
+  },
+  "varhint_target": {
+    "message": "Target language from settings, passed through as-is (for chat models)"
+  },
+  "varhint_targetcode": {
+    "message": "Mapped to the API code (ZH-HANS / JA)."
+  },
+  "varhint_targetlang": {
+    "message": "Same as {{target}}"
+  },
+  "varhint_text": {
+    "message": "The selected text to translate"
+  },
+  "varhint_title": {
+    "message": "The title of the current page"
+  },
+  "varhint_url": {
+    "message": "The URL of the current page"
   }
 }
