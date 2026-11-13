@@ -31,7 +31,7 @@ import { readClipboardImage as readClipboardInPage, errText as clipErrText } fro
 import { msg, invalidateI18nCache } from './lib/i18n-msg.js';
 // 顶栏那个「目标语言」下拉的候选。页面那边 import 不了模块，只能这样捎过去，
 // 免得在 content.js 里手抄一份 —— 加了语言两处就对不上了。
-import { TARGET_PRESETS } from './lib/template.js';
+import { TARGET_PRESETS, LANG_REGION_VARIANTS } from './lib/template.js';
 
 const PORT_NAME = 'rt-translate';
 const MENU_ID = 'rt-translate-selection';
@@ -370,7 +370,7 @@ chrome.runtime.onConnect.addListener((port) => {
         // 图片模式下顶栏下拉显示 / 改的就是它（和设置页 OCR 栏那份列表同一个选中项）
         imageConfigId: state.ocr.imageConfigId,
         settings: state.settings,
-        targetLangs: TARGET_PRESETS
+        targetLangs: TARGET_PRESETS.concat(LANG_REGION_VARIANTS)
       });
       return;
     }

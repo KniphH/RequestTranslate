@@ -457,8 +457,8 @@ section('9. 内置适配器：语言代码映射');
     targetCodeOf('克林贡语', ''), '');
   eq('空值也走兜底', targetCodeOf(''), 'ZH-HANS');
 
-  const picked = buildVars({ settings: { targetLang: '日语' }, vars: [] }, 'Hello');
-  eq('{{target}} 原样搬：日语', picked.target, '日语');
+const picked = buildVars({ settings: { targetLang: 'JA', targetNames: { JA: '日语' } }, vars: [] }, 'Hello');
+eq('{{target}} 取 targetNames 里那个名字（日语）', picked.target, '日语');
   eq('{{targetCode}} 映射成接口代码：JA', picked.targetCode, 'JA');
 
   check('bing 适配器已注册', hasAdapter('bing'));
@@ -2305,11 +2305,9 @@ section('18. 目标语言：下拉挑语言，接口要的代码自动转');
   const values = TARGET_PRESETS;
   check('列表不是空的', values.length > 0, values.length);
   check('够挑（至少 20 个）', values.length >= 20, values.length);
-  check('有「名字」那种：简体中文', values.includes('简体中文'), values.slice(0, 6).join(','));
-  check('常用语言都在：英语 / 日语', values.includes('英语') && values.includes('日语'));
-  check('映射不了的地区变体才留代码：EN-GB / PT-BR',
-    values.includes('EN-GB') && values.includes('PT-BR'));
-  check('没有空值', values.every((v) => v.trim() !== ''));
+  check('列表里是**语言代码**（ZH-HANS / EN），不是语言名', values.includes('ZH-HANS') && values.includes('EN'), values.slice(0, 6).join(','));
+  check('常用语言都在：EN / JA', values.includes('EN') && values.includes('JA'));
+  check('地区变体不在主表里（它们在 LANG_REGION_VARIANTS）', !values.includes('EN-GB') && !values.includes('PT-BR'));
   eq('没有重复项', new Set(values).size, values.length);
 
   /* 列表和映射表必须同步 —— 挑得到却转不出代码，等于骗人 */
@@ -2347,15 +2345,15 @@ section('18. 目标语言：下拉挑语言，接口要的代码自动转');
     /const keepTop = outBox\.scrollTop/.test(panelJs) &&
       /outBox\.scrollTop = keepTop/.test(panelJs));
 
-  /* 挑了语言名之后：{{target}} 原样喂聊天模型，{{targetCode}} 喂只认代码的接口 */
-  const picked = buildVars({ settings: { targetLang: '英语' }, vars: [] }, 'Hello');
-  eq('{{target}} 原样是「英语」', picked.target, '英语');
-  eq('{{targetCode}} 自动是 EN', picked.targetCode, 'EN');
-  const codeLiteral = buildVars({ settings: { targetLang: 'ZH-HANS' }, vars: [] }, 'Hello');
-  eq('直接填代码也认（原样大写）', codeLiteral.targetCode, 'ZH-HANS');
-
-  /* DeepL 那条预设必须靠映射，不能把语言写死在模板里 */
   const deeplCfg = DEFAULT_CONFIGS.find((c) => c.id === 'builtin-deepl');
+  check('DeepL 预设还在（下面几条都靠它）', !!deeplCfg);
+  /* 挑了语言名之后：{{target}} 原样喂聊天模型，{{targetCode}} 喂只认代码的接口 */
+  /* {{target}} 是显示名（可被用户改），{{targetCode}} 是代码 */
+  const picked2 = buildVars({ settings: { targetLang: 'EN', targetNames: { EN: '英语' } }, vars: [] }, 'Hello');
+  eq('{{target}} 取的是 targetNames 里那个名字', picked2.target, '英语');
+  eq('{{targetCode}} 自动是 EN', picked2.targetCode, 'EN');
+  const codeLiteral = buildVars({ settings: { targetLang: 'ZH-HANS', targetNames: {} }, vars: [] }, 'Hello');
+eq('老存档里没有 targetNames 时，target 回落到**内置中文名**（不是代码）', codeLiteral.target, '简体中文');
   check('DeepL 预设用的是 {{targetCode}}',
     /\{\{\s*targetCode\s*\}\}/.test(deeplCfg.request), deeplCfg.request.slice(0, 70));
   check('没有把语言写死在 target_lang 里',
@@ -4319,7 +4317,20 @@ await (async () => {
       return /OLD_CONFIG_NAMES/.test(src) && /OLD_OCR_NAMES/.test(src) &&
         src.includes("'builtin-baidu-ocr': '百度 OCR（高精度版）'") &&
         src.includes("'builtin-openai-vl': 'OpenAI 兼容（任意视觉模型）'") &&
-        /STORAGE_VERSION = 12/.test(src);
+        /STORAGE_VERSION = 13/.test(src);
+    })());
+
+  /* ---- v12 → v13：目标语言存代码，名字进 targetNames ---- */
+  check('v13：默认 targetLang 是代码、且有 targetNames 字段',
+    (() => {
+      const src = readFileSync(new URL('../lib/store.js', import.meta.url), 'utf8');
+      return /targetLang: 'ZH-HANS'/.test(src) && /targetNames: \{\}/.test(src);
+    })());
+  check('v13：迁移把老的名字留住（用户看到的一直是它）',
+    (() => {
+      const src = readFileSync(new URL('../lib/store.js', import.meta.url), 'utf8');
+      return /settings\.targetNames\[code\] = oldLang/.test(src) &&
+        /targetCodeOf\(oldLang/.test(src);
     })());
 }
 console.log('\n' + '='.repeat(46));

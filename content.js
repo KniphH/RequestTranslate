@@ -27,7 +27,8 @@
     theme: 'auto',
     showOriginal: true,
     // 顶栏那个「目标语言」下拉也改它（{{target}} / {{targetCode}} 都读这里）
-    targetLang: '简体中文',
+    targetLang: 'ZH-HANS',   // 语言代码
+    targetNames: {},         // code → 显示名（用户可改）
     maxChars: 8000
   };
   let configs = [];
@@ -1501,19 +1502,25 @@
   let targetLangs = [];
 
   function renderLangOptions() {
-    const cur = String(prefs.targetLang || '简体中文');
-    // 存档里的值不在候选里（手填的代码、老存档）：临时补一条顶上，**别**让下拉
-    // 显示成别的语言 —— 那才是真的误导。用户挑走别的之后它自然就没了。
+    const cur = String(prefs.targetLang || 'ZH-HANS');
+    /* 存档里存的是**语言代码**；下拉里显示的是名字（settings.targetNames[code]，
+       用户改过就用改过的）。不在候选里的代码（用户手填的）临时补一条顶上。 */
     const list = targetLangs.includes(cur) ? targetLangs.slice() : [cur].concat(targetLangs);
     langSelect.innerHTML = '';
-    for (const name of list) {
+    for (const code of list) {
       const o = document.createElement('option');
-      o.value = name;
-      o.textContent = RTPanelCore.langDisplayName(name, T);   // 存档值仍是中文名
+      o.value = code;
+      o.textContent = langDisplayOf(code);
       langSelect.appendChild(o);
     }
     langSelect.value = cur;
-    langSelect.title = T('panel_lang_with', '目标语言：') + RTPanelCore.langDisplayName(cur, T);
+    langSelect.title = T('panel_lang_with', '目标语言：') + langDisplayOf(cur);
+  }
+
+  /** 某语言代码在该显示成什么：用户改过的名字优先，其次内置名 */
+  function langDisplayOf(code) {
+    const names = (prefs.targetNames && typeof prefs.targetNames === 'object') ? prefs.targetNames : {};
+    return names[code] || RTPanelCore.langDisplayName(code, T);
   }
 
   /* ---- 翻译 ---- */

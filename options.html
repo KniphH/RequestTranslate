@@ -250,6 +250,11 @@
                  别在这儿手抄一份（加语言只改 lib/template.js，两处同步由 test-lib 第 22 节盯着） -->
             <select id="s-lang"></select>
             <input id="s-lang-other" type="text" placeholder="填语言名或代码，比如「粤语」/ YUE" data-i18n-ph="opt_ph_210" autocomplete="off" hidden>
+            <!-- 显示名：就是 {{target}} 的值。跟着界面语言自动变一次，之后用户随便改。 -->
+            <div class="lang-name-row">
+              <label for="s-lang-name" data-i18n="opt_lang_name_label">它的名字</label>
+              <input id="s-lang-name" type="text" autocomplete="off" placeholder="Simplified Chinese" data-i18n-ph="opt_lang_name_ph">
+            </div>
             <p class="hint" data-hint="set-lang">
               <span data-i18n="opt_lang_samehint">划词面板顶栏也有一个，两边是同一个值，想临时换一门语言不用特意回这儿。</span>
             </p>

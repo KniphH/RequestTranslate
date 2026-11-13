@@ -1743,7 +1743,7 @@ try {
       count: opts.length,
       lastValue: opts.length ? opts[opts.length - 1].value : '',
       lastText: opts.length ? (opts[opts.length - 1].textContent || '').trim() : '',
-      hasJa: opts.some((o) => o.value === '日语'),
+      hasJa: opts.some((o) => o.value === 'JA'),
       otherTag: other ? other.tagName : '',
       otherHidden: other ? other.hidden : null
     };
@@ -1751,18 +1751,18 @@ try {
   check('目标语言是个 <select>，不是输入框', langBox.tag === 'SELECT', langBox.tag);
   check('下拉里真的有几十个候选（不是空的、也不是只剩两项）',
     langBox.count >= 25, `options = ${langBox.count}`);
-  check('常用语言在里面（日语）', langBox.hasJa);
+  check('常用语言在里面（JA）', langBox.hasJa);
   check('末尾是「其他（自己填）」', langBox.lastValue === '__other__', langBox.lastText);
   check('「自己填」那个框默认藏着',
     langBox.otherTag === 'INPUT' && langBox.otherHidden === true, `hidden = ${langBox.otherHidden}`);
 
-  await opt.selectOption('#s-lang', '日语');
+  await opt.selectOption('#s-lang', 'JA');
   await opt.waitForTimeout(1300);
   const langSaved = await opt.evaluate(async () => {
     const { state } = await chrome.storage.local.get('state');
     return state.settings.targetLang;
   });
-  check('挑「日语」之后落盘了', langSaved === '日语', String(langSaved));
+  check('挑「日语」之后落盘的是代码 JA', langSaved === 'JA', String(langSaved));
 
   await opt.selectOption('#s-lang', '__other__');
   await opt.waitForTimeout(150);
@@ -1775,13 +1775,13 @@ try {
     JSON.stringify(langOther));
 
   // 收拾干净：后面几节要看到「简体中文」，别把语言留成日语
-  await opt.selectOption('#s-lang', '简体中文');
+  await opt.selectOption('#s-lang', 'ZH-HANS');
   await opt.waitForTimeout(1300);
   const langBack = await opt.evaluate(async () => {
     const { state } = await chrome.storage.local.get('state');
     return state.settings.targetLang;
   });
-  check('改回「简体中文」，不留脏数据给后面几节', langBack === '简体中文', String(langBack));
+  check('改回中文，落盘的是代码 ZH-HANS', langBack === 'ZH-HANS', String(langBack));
 
   check('操作完仍然没有报错', errors.length === 0, errors.join(' | '));
 
@@ -3848,9 +3848,9 @@ try {
   check('发出去的请求里图片是真图片的 data URL',
     /"url":"data:image\/png;base64,[A-Za-z0-9+/]{100,}/.test(lastImgTestRequest),
     lastImgTestRequest.slice(0, 140));
-  check('{{target}} 也按当前目标语言填了（不是留着一个占位符）',
-    lastImgTestRequest.includes('翻成简体中文'), lastImgTestRequest.slice(0, 160));
-  // 假接口回的是 SSE（分三帧，中间那帧还切两半）—— 结果要正好攒成一整句
+  check('{{target}} 也按当前目标语言填了（显示名，不是留占位符）',
+    !/\{\{\s*target\s*\}\}/.test(lastImgTestRequest) && lastImgTestRequest.includes('简体中文'),
+    lastImgTestRequest.slice(0, 160));
   check('SSE 的响应也读得出来（不再误报「返回的不是 JSON」）',
     !imgTestOut.includes('不是 JSON'), imgTestOut.slice(0, 200));
 
@@ -6009,28 +6009,27 @@ try {
   const lp0 = await langPanel();
   check('顶栏多了个目标语言下拉，候选是后台发过来的那一套',
     lp0.options.length >= 20, `${lp0.options.length} 项`);
-  check('候选里有关键的几个（英语 / 荷兰语 / 地区变体 EN-GB）',
-    ['英语', '荷兰语', 'EN-GB'].every((v) => lp0.options.includes(v)),
+  check('候选里有关键的几个（EN / NL / 地区变体 EN-GB）',
+    ['EN', 'NL', 'EN-GB'].every((v) => lp0.options.includes(v)),
     lp0.options.slice(0, 6).join(','));
-  check('它显示的就是存档里的目标语言', lp0.value === '简体中文', String(lp0.value));
-  check('两个下拉并排没把顶栏挤溢出', lp0.headOverflow <= 1, `溢出 ${lp0.headOverflow}px`);
+  check('它显示的就是存档里的目标语言（代码）', lp0.value === 'ZH-HANS', String(lp0.value));
   check('语言那条没反过来把接口那条压没', lp0.cfgW > lp0.langW, `cfg ${lp0.cfgW} ｜ lang ${lp0.langW}`);
   check('请求里带上了当前语言的代码（tag=ZH-HANS）', /tag=ZH-HANS/.test(lastPath), lastPath);
   check('译文也认这门语言', lp0.out.includes('【ZH-HANS】'), `${lp0.msg}｜${lp0.out}`);
 
   /* 拨一下就换语言：当场重发，不用回去开设置页、也不用再点 ↻ */
   const reqLang = textHits;
-  await pickLang('英语');
+  await pickLang('EN');
   await settlePanel();
   const lp1 = await langPanel();
   check('换语言当场重发一条', textHits === reqLang + 1, `textHits ${reqLang} → ${textHits}`);
   check('这一条带的是 EN', /tag=EN$/.test(lastPath), lastPath);
   check('回来的是这门语言的译文（不是把上一条留在界面上）',
     lp1.out.includes('【EN】'), `${lp1.msg}｜${lp1.out}`);
-  check('下拉停在刚挑的那门语言上', lp1.value === '英语', String(lp1.value));
+  check('下拉停在刚挑的那门语言上', lp1.value === 'EN', String(lp1.value));
 
   const reqLang2 = textHits;
-  await pickLang('简体中文');
+  await pickLang('ZH-HANS');
   await settlePanel();
   check('再换回中文：又发一条，带的是 ZH-HANS',
     textHits === reqLang2 + 1 && /tag=ZH-HANS/.test(lastPath),

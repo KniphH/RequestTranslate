@@ -94,113 +94,113 @@
     "message": "提示",
     "description": "面板诊断行：标签与提示"
   },
-  "langname_00": {
-    "message": "简体中文",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
-  },
-  "langname_01": {
-    "message": "繁體中文",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
-  },
-  "langname_02": {
-    "message": "英语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
-  },
-  "langname_03": {
-    "message": "日语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
-  },
-  "langname_04": {
-    "message": "韩语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
-  },
-  "langname_05": {
-    "message": "法语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
-  },
-  "langname_06": {
-    "message": "德语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
-  },
-  "langname_07": {
-    "message": "西班牙语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
-  },
-  "langname_08": {
-    "message": "俄语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
-  },
-  "langname_09": {
-    "message": "葡萄牙语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
-  },
-  "langname_10": {
-    "message": "意大利语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
-  },
-  "langname_11": {
+  "langname_AR": {
     "message": "阿拉伯语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
   },
-  "langname_12": {
-    "message": "泰语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
-  },
-  "langname_13": {
-    "message": "越南语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
-  },
-  "langname_14": {
-    "message": "印尼语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
-  },
-  "langname_15": {
-    "message": "土耳其语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
-  },
-  "langname_16": {
-    "message": "荷兰语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
-  },
-  "langname_17": {
-    "message": "波兰语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
-  },
-  "langname_18": {
-    "message": "乌克兰语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
-  },
-  "langname_19": {
+  "langname_CS": {
     "message": "捷克语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
   },
-  "langname_20": {
-    "message": "瑞典语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
-  },
-  "langname_21": {
-    "message": "挪威语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
-  },
-  "langname_22": {
+  "langname_DA": {
     "message": "丹麦语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
   },
-  "langname_23": {
-    "message": "芬兰语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  "langname_DE": {
+    "message": "德语",
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
   },
-  "langname_24": {
+  "langname_EL": {
     "message": "希腊语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
   },
-  "langname_25": {
+  "langname_EN": {
+    "message": "英语",
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
+  },
+  "langname_ES": {
+    "message": "西班牙语",
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
+  },
+  "langname_FI": {
+    "message": "芬兰语",
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
+  },
+  "langname_FR": {
+    "message": "法语",
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
+  },
+  "langname_HU": {
     "message": "匈牙利语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
   },
-  "langname_26": {
+  "langname_ID": {
+    "message": "印尼语",
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
+  },
+  "langname_IT": {
+    "message": "意大利语",
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
+  },
+  "langname_JA": {
+    "message": "日语",
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
+  },
+  "langname_KO": {
+    "message": "韩语",
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
+  },
+  "langname_NB": {
+    "message": "挪威语",
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
+  },
+  "langname_NL": {
+    "message": "荷兰语",
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
+  },
+  "langname_PL": {
+    "message": "波兰语",
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
+  },
+  "langname_PT": {
+    "message": "葡萄牙语",
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
+  },
+  "langname_RO": {
     "message": "罗马尼亚语",
-    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
+  },
+  "langname_RU": {
+    "message": "俄语",
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
+  },
+  "langname_SV": {
+    "message": "瑞典语",
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
+  },
+  "langname_TH": {
+    "message": "泰语",
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
+  },
+  "langname_TR": {
+    "message": "土耳其语",
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
+  },
+  "langname_UK": {
+    "message": "乌克兰语",
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
+  },
+  "langname_VI": {
+    "message": "越南语",
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
+  },
+  "langname_ZH_HANS": {
+    "message": "简体中文",
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
+  },
+  "langname_ZH_HANT": {
+    "message": "繁體中文",
+    "description": "目标语言的显示名（切语言时用来重置 targetNames）"
   },
   "menuOcrClipboard": {
     "message": "翻译剪切板中的截图",
@@ -487,6 +487,18 @@
   "opt_label_path": {
     "message": "响应提取路径（留空自动识别）",
     "description": "设置页 JS 动态文案"
+  },
+  "opt_lang_name_label": {
+    "message": "它的名字",
+    "description": "目标语言：显示名编辑"
+  },
+  "opt_lang_name_ph": {
+    "message": "Simplified Chinese",
+    "description": "目标语言：显示名编辑"
+  },
+  "opt_lang_other": {
+    "message": "其他（自己填）",
+    "description": "目标语言：显示名编辑"
   },
   "opt_lang_samehint": {
     "message": "和面板顶栏那个是同一个值。",

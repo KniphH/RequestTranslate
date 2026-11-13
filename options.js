@@ -41,7 +41,7 @@ import { uid, allRequests, requestChain, requestTemplateFor } from './lib/reques
 import { runRequest, previewRequest } from './lib/engine.js';
 import { encryptExport, decryptExport, isEncryptedExport } from './lib/crypto.js';
 import { ADAPTERS } from './lib/adapters.js';
-import { BUILTIN_VAR_HINTS, VAR_HINT_KEYS, TARGET_PRESETS, langDisplayName, isSecretVar, modelCandidates, modelVarFor } from './lib/template.js';
+import { BUILTIN_VAR_HINTS, VAR_HINT_KEYS, TARGET_PRESETS, defaultTargetNames, langDisplayName, isSecretVar, modelCandidates, modelVarFor } from './lib/template.js';
 import {
   toDataUrl,
   pickImageMime,
@@ -107,6 +107,7 @@ const els = {
   btnPanelCssClear: $('#btn-panelcss-clear'),
   passDialog: $('#pass-dialog'),
   langSelect: $('#s-lang'),
+  langName: $('#s-lang-name'),
   langOther: $('#s-lang-other'),
 
   // OCR
@@ -3664,6 +3665,18 @@ async function bindUiLang() {
     const r = await api.downloadPack(code);
     sel.disabled = false;
     if (r.ok) {
+      /* 换了界面语言 → 目标语言的名字**整份重新生成**（kniph 2026-11-13：
+         「替换语言相当于给所有 code 修改了一次」，用户之前手改的会被覆盖）。
+         下次打开设置页时按新语言包里那套名字填满。 */
+      try {
+        const newPack = api.currentPack && api.currentPack();
+        const packStrings = (newPack && newPack.strings) || {};
+        const tOfPack = (k) => (packStrings[k] || k);
+        state.settings.targetNames = defaultTargetNames(tOfPack);
+        await saveState(state);
+      } catch {
+        /* 重置失败不该挡住切语言本身 */
+      }
       say(T('opt_ui_lang_ok_pre', '已装好') + ' ' + r.count + ' ' + T('opt_ui_lang_ok_post', '条，正在重载…'));
       setTimeout(() => location.reload(), 600);
     } else {
@@ -3903,11 +3916,18 @@ const LANG_OTHER = '__other__';
 
 /** 选项：常用语言名 + 几个地区变体 + 末尾的「其他」 */
 function fillTargetLangOptions() {
-  for (const name of TARGET_PRESETS) {
-    // value = 中文名（存档不变），text = 当前语言下的显示名
-    els.langSelect.appendChild(newOption(name, langDisplayName(name, T)));
+  /* value = **语言代码**（存档里存的就是它），text = 当前界面语言下的名字。
+     名字改了（用户在下面那个框里手改）不影响 value —— 身份和显示分开。 */
+  for (const code of TARGET_PRESETS) {
+    els.langSelect.appendChild(newOption(code, targetDisplayOf(code)));
   }
-  els.langSelect.appendChild(newOption(LANG_OTHER, '其他（自己填）'));
+  els.langSelect.appendChild(newOption(LANG_OTHER, T('opt_lang_other', '其他（自己填）')));
+}
+
+/** 某个代码现在该显示成什么：优先用户改过的名字，没有就用内置的 */
+function targetDisplayOf(code) {
+  const names = (state.settings && state.settings.targetNames) || {};
+  return names[code] || langDisplayName(code, T);
 }
 
 function newOption(value, text) {
@@ -3928,11 +3948,34 @@ function renderTargetLang() {
     els.langSelect.value = cur || TARGET_PRESETS[0];
     els.langOther.hidden = true;
   }
+  /* 下拉里那一项的显示名可能是用户改过的 —— 重画一次让它跟上 */
+  const sel = els.langSelect.value;
+  for (const opt of els.langSelect.options) {
+    if (opt.value !== LANG_OTHER) opt.textContent = targetDisplayOf(opt.value);
+  }
+  /* 「它的名字」那个框：直接摊当前语言的显示名，改了就写回 targetNames */
+  if (els.langName) els.langName.value = cur ? targetDisplayOf(cur) : '';
 }
 
 function setTargetLang(value) {
   state.settings.targetLang = value;
   panelTouched.add('targetLang'); // 面板顶栏那个下拉也写它，页面动过就以页面为准
+  scheduleSave();
+  renderTargetLang();   // 换语言后名字框要跟着换
+  updatePreview();
+}
+
+/** 改「它的名字」：只动 targetNames，不动 targetLang */
+function setTargetName(value) {
+  const code = String(state.settings.targetLang || '');
+  if (!code) return;
+  const v = String(value || '').trim();
+  if (!state.settings.targetNames) state.settings.targetNames = {};
+  if (v) state.settings.targetNames[code] = v;
+  else delete state.settings.targetNames[code];   // 清空 = 回到内置名
+  /* 下拉里那一项的文字要立刻跟上（不然改了名字、下拉还显示旧的） */
+  const cur = [...els.langSelect.options].find((o) => o.value === code);
+  if (cur) cur.textContent = v || langDisplayName(code, T);
   scheduleSave();
   updatePreview();
 }
@@ -3942,8 +3985,6 @@ function bindTargetLang() {
     if (els.langSelect.value === LANG_OTHER) {
       els.langOther.hidden = false;
       els.langOther.focus();
-      // 框里还留着上次填的就接着用；空着先不动存档 ——
-      // 等用户打第一个字再改（下面那个监听），免得 {{target}} 变成空串
       const kept = els.langOther.value.trim();
       if (kept) setTargetLang(kept);
       return;
@@ -3957,6 +3998,10 @@ function bindTargetLang() {
     const v = els.langOther.value.trim();
     if (v) setTargetLang(v);
   });
+
+  if (els.langName) {
+    els.langName.addEventListener('input', () => setTargetName(els.langName.value));
+  }
 }
 
 window.addEventListener('beforeunload', () => {

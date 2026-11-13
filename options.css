@@ -1370,3 +1370,21 @@ button.block { width: 100%; }
 .ui-lang-row { display: flex; gap: 8px; align-items: center; }
 .ui-lang-row select { flex: 1; min-width: 0; }
 .ui-lang-row button { flex: none; white-space: nowrap; }
+
+/* 「它的名字」那行：紧跟在目标语言下拉下面，一眼看出改的是哪个语言的名字 */
+.lang-name-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+.lang-name-row label {
+  font-size: 12px;
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+.lang-name-row input {
+  min-width: 0;
+  font-size: 13px;
+}
