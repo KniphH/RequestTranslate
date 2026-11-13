@@ -2158,9 +2158,11 @@ function renderOcrEditor() {
   }
 
   els.oName.value = p.name || '';
-  // 备注只摊一行（多了省略），全文挂在 title 上 —— 让它换行就会把下面的请求块顶下去
-  els.oNote.textContent = p.note || '';
-  els.oNote.title = p.note || '';
+  /* note 是内置供应商数据，但它是给人看的一句话 —— 界面切成英文时留着中文很扎眼。
+     所以每条带一个 noteKey，有就走查表（查不到回退 p.note 原文）。 */
+  const noteText = p.noteKey ? T(p.noteKey, p.note || '') : (p.note || '');
+  els.oNote.textContent = noteText;
+  els.oNote.title = noteText;
   // 主请求 + 后备，和配置栏同一套块（blockHtml 的 ocr 变体）
   renderOcrBlocks(p);
 
@@ -2376,6 +2378,10 @@ function bindOcr() {
     const f = els.ocrTestImg.files && els.ocrTestImg.files[0];
     ocrTestFile = f || null;
     els.ocrTestResult.hidden = true; // 换图了就把上次的结果收起来
+
+    /* 文件名自己写：原生的「未选择任何文件」跟着浏览器语言走，data-i18n 管不到 */
+    const nameEl = $('#ocr-test-img-name');
+    if (nameEl) nameEl.textContent = f ? f.name : T('opt_no_file', '未选择文件');
   });
 }
 

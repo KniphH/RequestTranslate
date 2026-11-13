@@ -34,6 +34,66 @@
     "message": "翻译选中的文字",
     "description": "快捷键设置页里那条命令的名字"
   },
+  "diag_bytes": {
+    "message": "响应大小",
+    "description": "面板诊断行：标签与提示"
+  },
+  "diag_chunks": {
+    "message": "分片",
+    "description": "面板诊断行：标签与提示"
+  },
+  "diag_err": {
+    "message": "错误",
+    "description": "面板诊断行：标签与提示"
+  },
+  "diag_first": {
+    "message": "首字",
+    "description": "面板诊断行：标签与提示"
+  },
+  "diag_first_hint": {
+    "message": "第一个译文分片出现的时间，你等待的就是它",
+    "description": "面板诊断行：标签与提示"
+  },
+  "diag_missing": {
+    "message": "缺失变量",
+    "description": "面板诊断行：标签与提示"
+  },
+  "diag_mode": {
+    "message": "响应格式",
+    "description": "面板诊断行：标签与提示"
+  },
+  "diag_model": {
+    "message": "模型",
+    "description": "面板诊断行：标签与提示"
+  },
+  "diag_model_hint": {
+    "message": "这条请求里写的模型名（读的是请求体 / 地址，不是猜的）",
+    "description": "面板诊断行：标签与提示"
+  },
+  "diag_path": {
+    "message": "命中路径",
+    "description": "面板诊断行：标签与提示"
+  },
+  "diag_think": {
+    "message": "模型思考",
+    "description": "面板诊断行：标签与提示"
+  },
+  "diag_think_off": {
+    "message": "无（直接作答）",
+    "description": "面板诊断行：标签与提示"
+  },
+  "diag_think_on": {
+    "message": " 字 —— 思考没关掉，翻译场景把 reasoning_effort 设成 \"none\" 会快很多",
+    "description": "面板诊断行：标签与提示"
+  },
+  "diag_total": {
+    "message": "总耗时",
+    "description": "面板诊断行：标签与提示"
+  },
+  "diag_warn": {
+    "message": "提示",
+    "description": "面板诊断行：标签与提示"
+  },
   "menuOcrClipboard": {
     "message": "翻译剪切板中的截图",
     "description": "右键菜单：剪贴板截图"
@@ -45,6 +105,18 @@
   "menuTranslate": {
     "message": "用 RequestTranslate 翻译选中内容",
     "description": "右键菜单：翻译选中文字"
+  },
+  "ocr_note_baidu": {
+    "message": "个人认证每月 1000 次免费。access_token 用 API Key + Secret Key 去官方鉴权接口换，30 天过期，过期重换一个再粘进 URL。",
+    "description": "OCR 内置供应商的备注"
+  },
+  "ocr_note_openai_vl": {
+    "message": "任何按 OpenAI 格式收图的接口：改地址和模型名就行，Key 在「变量」页签的 apiKey 里填。",
+    "description": "OCR 内置供应商的备注"
+  },
+  "ocr_note_siliconflow": {
+    "message": "DeepSeek-OCR 在硅基流动上免费。Key 在「变量」页签的 apiKey 里填，和翻译配置共用。",
+    "description": "OCR 内置供应商的备注"
   },
   "ocr_preview_summary_img": {
     "message": "这次会发出去的请求（示例图 · Key 已打码）",
@@ -380,6 +452,10 @@
     "message": "新配置",
     "description": "设置页：测试面板/诊断/配置操作"
   },
+  "opt_no_file": {
+    "message": "未选择文件",
+    "description": "OCR 测试：选图按钮与文件名"
+  },
   "opt_no_request": {
     "message": "（还没写请求模板）",
     "description": "设置页：测试面板/诊断/配置操作"
@@ -435,6 +511,10 @@
   "opt_ph_ocrname": {
     "message": "例如：硅基流动",
     "description": "设置页 JS 动态文案"
+  },
+  "opt_pick_file": {
+    "message": "选择文件",
+    "description": "OCR 测试：选图按钮与文件名"
   },
   "opt_row_actual": {
     "message": "实际请求",
@@ -1126,6 +1206,10 @@
     "message": "（没有配置）",
     "description": "配置下拉在一条配置都没有时的占位项"
   },
+  "panel_pin_title": {
+    "message": "固定面板位置",
+    "description": "面板图钉：固定位置"
+  },
   "panel_retry": {
     "message": "重试",
     "description": "单条重试按钮文字"
@@ -1181,6 +1265,10 @@
   "panel_stop_title": {
     "message": "停止朗读",
     "description": "朗读按钮的 title（正在播放时）"
+  },
+  "panel_unpin_title": {
+    "message": "已固定，点一下改回跟着选区",
+    "description": "面板图钉：固定位置"
   },
   "panel_waiting": {
     "message": "等待结果…",

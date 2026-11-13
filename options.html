@@ -123,7 +123,12 @@
         <div class="field" id="o-test-field">
           <label for="ocr-test-img" id="o-test-label" data-i18n="opt_set_012">测试</label>
           <div class="test-row">
-            <input id="ocr-test-img" type="file" accept="image/*">
+            <!-- 原生的「选择文件 / 未选择任何文件」是**浏览器 UI**，跟着浏览器语言走，
+                 data-i18n 管不到（kniph 2026-11-13 报的）。所以 input 藏起来，
+                 自己画一个 label 当按钮，文件名也自己写。 -->
+            <input id="ocr-test-img" type="file" accept="image/*" hidden>
+            <label for="ocr-test-img" class="pick-file" id="ocr-test-img-label" data-i18n="opt_pick_file">选择文件</label>
+            <span class="pick-file-name" id="ocr-test-img-name" data-i18n="opt_no_file">未选择文件</span>
             <button id="btn-ocr-test" class="primary" data-i18n="opt_set_012">测试</button>
           </div>
           <p class="hint" id="ocr-test-hint" data-hint="ocr-test" data-i18n-html="opt_hint_ocr_test">

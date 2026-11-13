@@ -5858,6 +5858,88 @@ try {
      旁边再加一个「目标语言」选择框；②流式输出吐得快的时候滚动条被文字牵着跑
      就看不了了 —— 视口原地不动，要追尾巴自己拖。 */
 
+  console.log('\n13b. 图钉：钉住后不再跟着选区跑');
+
+  /* 划词翻译的常规姿势是「翻一句看一句」，但有时要对着原文慢慢读。
+     钉住之后面板位置锁死，下一次划词它还在原地（kniph 2026-11-13 要求）。 */
+  {
+    await page.bringToFront();
+    /* 先确保面板是开着的：上一节结束时它可能已经被藏了 */
+    const shown = await page.evaluate(() => {
+      const p = document.getElementById('request-translate-host').shadowRoot.querySelector('.rt-panel');
+      return !!(p && p.classList.contains('show'));
+    });
+    if (!shown) {
+      await page.evaluate(() => {
+        const p = document.querySelector('#e2e-text') || document.querySelector('p');
+        if (!p) return;
+        const r = document.createRange(); r.selectNodeContents(p);
+        const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+      });
+      await page.mouse.up().catch(() => {});
+      await page.click('.rt-trigger', { force: true }).catch(() => {});
+      await page.waitForTimeout(1500);
+    }
+
+    const before = await page.evaluate(() => {
+      const p = document.getElementById('request-translate-host').shadowRoot.querySelector('.rt-panel');
+      const pin = p && p.querySelector('[data-act="pin"]');
+      return {
+        hasPin: !!pin,
+        left: p ? parseFloat(p.style.left) || 0 : null,
+        top: p ? parseFloat(p.style.top) || 0 : null,
+        on: pin ? pin.classList.contains('on') : null,
+      };
+    });
+    check('顶栏有图钉按钮（在眼睛左边）', before.hasPin);
+
+    if (before.hasPin) {
+      await page.click('.rt-panel [data-act="pin"]', { force: true });
+      await page.waitForTimeout(300);
+      const pinned = await page.evaluate(() => {
+        const p = document.getElementById('request-translate-host').shadowRoot.querySelector('.rt-panel');
+        const pin = p.querySelector('[data-act="pin"]');
+        return {
+          on: pin.classList.contains('on'),
+          title: pin.title,
+          left: parseFloat(p.style.left) || 0,
+          top: parseFloat(p.style.top) || 0,
+        };
+      });
+      check('点一下变成「已固定」状态（按钮点亮）', pinned.on === true, pinned.title);
+      check('钉住时位置没动',
+        Math.abs(pinned.left - before.left) < 2 && Math.abs(pinned.top - before.top) < 2,
+        `${before.left},${before.top} -> ${pinned.left},${pinned.top}`);
+
+      /* 再划一次词：钉住的话面板不该跟着挪 */
+      await page.evaluate(() => {
+        const ps = [...document.querySelectorAll('p')].filter((x) => (x.textContent || '').length > 20);
+        const p2 = ps[ps.length - 1];
+        if (!p2) return;
+        const r = document.createRange(); r.selectNodeContents(p2);
+        const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+      });
+      await page.mouse.up().catch(() => {});
+      await page.waitForTimeout(1200);
+      const after = await page.evaluate(() => {
+        const p = document.getElementById('request-translate-host').shadowRoot.querySelector('.rt-panel');
+        return { left: parseFloat(p.style.left) || 0, top: parseFloat(p.style.top) || 0 };
+      });
+      check('钉住后再次划词，面板没被挪走',
+        Math.abs(after.left - pinned.left) < 2 && Math.abs(after.top - pinned.top) < 2,
+        `${pinned.left},${pinned.top} -> ${after.left},${after.top}`);
+
+      /* 松开 */
+      await page.click('.rt-panel [data-act="pin"]', { force: true });
+      await page.waitForTimeout(300);
+      const unpinned = await page.evaluate(() => {
+        const pin = document.getElementById('request-translate-host').shadowRoot.querySelector('.rt-panel [data-act="pin"]');
+        return { on: pin.classList.contains('on') };
+      });
+      check('再点一下松开（按钮熄灭）', unpinned.on === false);
+    }
+  }
+
   console.log('\n14. 顶栏直接换目标语言；流式输出时滚动条不跟着跑');
 
   await page.bringToFront();

@@ -87,6 +87,18 @@
   let lastOcr = null;
   /** 最近一次动作：'ocr' 时「重新翻译」按钮要重跑识别，而不是重翻一段空文本 */
   let lastAction = '';
+  /**
+   * 钉住状态：true 时面板**不再跟着选区跑**，停在用户放下的位置。
+   *
+   * 为什么需要它（kniph 2026-11-13）：划词翻译的常规姿势是「翻一句、看一眼、再划下一句」，
+   * 但有时候要对着原文慢慢读 / 抄下来。没有钉住的话，下一次划词面板就跑到新位置去了，
+   * 刚看的译文跟着没了。钉住之后：位置锁定，翻译照常往里写。
+   *
+   * 不持久化 —— 这是**当下这一次**的操作意图，存进设置里会变成"下次打开怎么又钉住了"。
+   * 关闭面板就复位。
+   */
+  let panelPinned = false;
+
   /** 截图翻译时面板的落点，重试还要用 */
   let lastOcrAnchor = null;
 
@@ -741,31 +753,31 @@
             hint: '这段原文是剪切板里那张截图认出来的'
           });
     }
-    rows.push({ k: '首字', v: secs(r.firstDeltaMs), hint: '第一个译文分片出现的时间，你等待的就是它' });
-    rows.push({ k: '总耗时', v: secs(r.ms) });
-    if (r.mode) rows.push({ k: '响应格式', v: String(r.mode).toUpperCase() });
-    if (typeof r.chunks === 'number') rows.push({ k: '分片', v: String(r.chunks) });
-    if (r.bytes) rows.push({ k: '响应大小', v: formatBytes(r.bytes) });
-    if (r.usedPath) rows.push({ k: '命中路径', v: r.usedPath });
+    rows.push({ k: T('diag_first', '首字'), v: secs(r.firstDeltaMs), hint: T('diag_first_hint', '第一个译文分片出现的时间，你等待的就是它') });
+    rows.push({ k: T('diag_total', '总耗时'), v: secs(r.ms) });
+    if (r.mode) rows.push({ k: T('diag_mode', '响应格式'), v: String(r.mode).toUpperCase() });
+    if (typeof r.chunks === 'number') rows.push({ k: T('diag_chunks', '分片'), v: String(r.chunks) });
+    if (r.bytes) rows.push({ k: T('diag_bytes', '响应大小'), v: formatBytes(r.bytes) });
+    if (r.usedPath) rows.push({ k: T('diag_path', '命中路径'), v: r.usedPath });
     // 这次到底调了哪个模型 —— 从请求体（或地址）里读出来的那个名字。
     // 读不到就整行不显示（内置适配器没有请求文本），别写个「未知」占地方。
-    if (r.model) rows.push({ k: '模型', v: r.model, hint: '这条请求里写的模型名（读的是请求体 / 地址，不是猜的）' });
+    if (r.model) rows.push({ k: T('diag_model', '模型'), v: r.model, hint: T('diag_model_hint', '这条请求里写的模型名（读的是请求体 / 地址，不是猜的）') });
 
     if (r.reasoningChars) {
       rows.push({
-        k: '模型思考',
-        v: r.reasoningChars + ' 字 —— 思考没关掉，翻译场景把 reasoning_effort 设成 "none" 会快很多',
+        k: T('diag_think', '模型思考'),
+        v: r.reasoningChars + T('diag_think_on', ' 字 —— 思考没关掉，翻译场景把 reasoning_effort 设成 "none" 会快很多'),
         warn: true
       });
     } else {
-      rows.push({ k: '模型思考', v: '无（直接作答）' });
+      rows.push({ k: T('diag_think', '模型思考'), v: T('diag_think_off', '无（直接作答）') });
     }
 
     if (r.missingVars && r.missingVars.length) {
-      rows.push({ k: '缺失变量', v: r.missingVars.join('、'), err: true });
+      rows.push({ k: T('diag_missing', '缺失变量'), v: r.missingVars.join('、'), err: true });
     }
-    for (const w of (r.warnings || [])) rows.push({ k: '提示', v: w, warn: true });
-    if (r.error) rows.push({ k: '错误', v: r.error, err: true });
+    for (const w of (r.warnings || [])) rows.push({ k: T('diag_warn', '提示'), v: w, warn: true });
+    if (r.error) rows.push({ k: T('diag_err', '错误'), v: r.error, err: true });
     return rows;
   }
 
@@ -2184,6 +2196,27 @@
   /* ---- 面板交互 ---- */
 
   panel.querySelector('[data-act="close"]').addEventListener('click', hidePanel);
+
+
+  /* 图钉：钉住 / 松开面板位置。
+     钉住后 placePanel 直接 return，划词不再把它挪走；松开时回到「跟选区」的行为。
+     不写进设置 —— 这是当下这一次的操作意图，存起来会变成「下次打开怎么又钉住了」。 */
+  const pinBtn = panel.querySelector('[data-act="pin"]');
+  function syncPinBtn() {
+    if (!pinBtn) return;
+    pinBtn.classList.toggle('on', panelPinned);
+    pinBtn.title = panelPinned
+      ? T('panel_unpin_title', '已固定，点一下改回跟着选区')
+      : T('panel_pin_title', '固定面板位置');
+  }
+  if (pinBtn) {
+    pinBtn.addEventListener('click', () => {
+      panelPinned = !panelPinned;
+      syncPinBtn();
+      // 松开后先按当前位置校正一次：面板变高/变矮时不会卡在屏幕外
+      keepPanelInView();
+    });
+  }
 
   srcBtn.addEventListener('click', () => {
     prefs.showOriginal = !prefs.showOriginal;
