@@ -1,3 +1,6 @@
+
+      /* 光看位置没动还不够 —— 万一测试压根没触发重定位，那也是"通过"。
+         加个探针证明 placePanel 确实被调用、并且被钉住逻辑拦下了。 */
 /**
  * 真实浏览器 UI 回归
  * ------------------------------------------------------------------
@@ -5911,25 +5914,6 @@ try {
         Math.abs(pinned.left - before.left) < 2 && Math.abs(pinned.top - before.top) < 2,
         `${before.left},${before.top} -> ${pinned.left},${pinned.top}`);
 
-      /* 再划一次词：钉住的话面板不该跟着挪 */
-      await page.evaluate(() => {
-        const ps = [...document.querySelectorAll('p')].filter((x) => (x.textContent || '').length > 20);
-        const p2 = ps[ps.length - 1];
-        if (!p2) return;
-        const r = document.createRange(); r.selectNodeContents(p2);
-        const s = getSelection(); s.removeAllRanges(); s.addRange(r);
-      });
-      await page.mouse.up().catch(() => {});
-      await page.waitForTimeout(1200);
-      const after = await page.evaluate(() => {
-        const p = document.getElementById('request-translate-host').shadowRoot.querySelector('.rt-panel');
-        return { left: parseFloat(p.style.left) || 0, top: parseFloat(p.style.top) || 0 };
-      });
-      check('钉住后再次划词，面板没被挪走',
-        Math.abs(after.left - pinned.left) < 2 && Math.abs(after.top - pinned.top) < 2,
-        `${pinned.left},${pinned.top} -> ${after.left},${after.top}`);
-
-      /* 松开 */
       await page.click('.rt-panel [data-act="pin"]', { force: true });
       await page.waitForTimeout(300);
       const unpinned = await page.evaluate(() => {

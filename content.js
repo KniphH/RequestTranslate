@@ -463,6 +463,11 @@
     // 存一份副本：锚点是 DOMRect（活在页面里），下次缩放要拿它重算位置
     if (anchor) lastAnchor = copyRect(anchor);
 
+
+    /* 钉住时**一律不重定位**：用户已经把面板放在想放的地方了。
+       注意这里只拦 placePanel（位置计算），**不拦 keepPanelInView** ——
+       面板变高/变矮时仍要被拉回视口，否则会卡在屏幕外。 */
+    if (panelPinned) return;
     const k = 1 / zoom;
     const w = panelWidth();
     const rw = w * k;          // 反向缩放后面板在页面 CSS 像素里占多宽
@@ -523,6 +528,8 @@
 
   function hidePanel() {
     panel.classList.remove('show');
+    /* 关闭就松开图钉：下次划词该跟着选区走（这是绝大多数时候想要的行为）。 */
+    if (panelPinned) { panelPinned = false; syncPinBtn(); }
     /* 藏起来就等于用户不要这个结果了 —— 明确告诉后台停手。
        后台只在收到新的 translate 时才 abort，这里藏了面板、请求还在跑完（OCR 那种慢的能跑几十秒）。 */
     if (port) {
