@@ -1509,11 +1509,11 @@
     for (const name of list) {
       const o = document.createElement('option');
       o.value = name;
-      o.textContent = name;
+      o.textContent = RTPanelCore.langDisplayName(name, T);   // 存档值仍是中文名
       langSelect.appendChild(o);
     }
     langSelect.value = cur;
-    langSelect.title = T('panel_lang_with', '目标语言：$1$').replace('$1$', cur);
+    langSelect.title = T('panel_lang_with', '目标语言：') + RTPanelCore.langDisplayName(cur, T);
   }
 
   /* ---- 翻译 ---- */
@@ -2580,7 +2580,7 @@
     const v = langSelect.value;
     if (v === prefs.targetLang) return;
     prefs.targetLang = v;
-    langSelect.title = '目标语言：' + v;
+    langSelect.title = T('panel_lang_with', '目标语言：') + RTPanelCore.langDisplayName(v, T);
     // 缓存里每一条都是上一门语言的译文，全作废
     resultCache.clear();
     // **必须等写下去再发请求**：后台是从存档里读目标语言来渲染 <{{target}}> 的

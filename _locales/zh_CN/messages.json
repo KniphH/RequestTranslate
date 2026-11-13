@@ -94,6 +94,114 @@
     "message": "提示",
     "description": "面板诊断行：标签与提示"
   },
+  "langname_00": {
+    "message": "简体中文",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_01": {
+    "message": "繁體中文",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_02": {
+    "message": "英语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_03": {
+    "message": "日语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_04": {
+    "message": "韩语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_05": {
+    "message": "法语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_06": {
+    "message": "德语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_07": {
+    "message": "西班牙语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_08": {
+    "message": "俄语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_09": {
+    "message": "葡萄牙语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_10": {
+    "message": "意大利语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_11": {
+    "message": "阿拉伯语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_12": {
+    "message": "泰语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_13": {
+    "message": "越南语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_14": {
+    "message": "印尼语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_15": {
+    "message": "土耳其语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_16": {
+    "message": "荷兰语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_17": {
+    "message": "波兰语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_18": {
+    "message": "乌克兰语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_19": {
+    "message": "捷克语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_20": {
+    "message": "瑞典语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_21": {
+    "message": "挪威语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_22": {
+    "message": "丹麦语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_23": {
+    "message": "芬兰语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_24": {
+    "message": "希腊语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_25": {
+    "message": "匈牙利语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
+  "langname_26": {
+    "message": "罗马尼亚语",
+    "description": "目标语言名（显示用，存档里存的仍是中文名）"
+  },
   "menuOcrClipboard": {
     "message": "翻译剪切板中的截图",
     "description": "右键菜单：剪贴板截图"
@@ -196,8 +304,8 @@
     "description": "占位符/响应格式标签的说明"
   },
   "opt_chip_targetcode": {
-    "message": "映射成接口代码（ZH-HANS / JA）。换服务改末尾的 #@lang 表。",
-    "description": "占位符/响应格式标签的说明"
+    "message": "映射成接口要的代码，内置是 DeepL 的 language code（ZH-HANS / JA）。换服务就在请求文本里写 #@lang 表，键写语言代码",
+    "description": "占位符 {{targetCode}} 的说明"
   },
   "opt_chip_text": {
     "message": "选中/待翻译的文本",
@@ -1343,8 +1451,8 @@
     "description": "内置变量的说明（变量页签那张表）"
   },
   "varhint_targetcode": {
-    "message": "映射成接口代码（ZH-HANS / JA）。",
-    "description": "内置变量的说明（变量页签那张表）"
+    "message": "映射成接口代码，内置是 DeepL 的 language code。",
+    "description": "变量表里 targetCode 的说明"
   },
   "varhint_targetlang": {
     "message": "同 {{target}}",

@@ -2411,8 +2411,25 @@ section('18. 目标语言：下拉挑语言，接口要的代码自动转');
   ));
   eq('示范表没列到的语言（韩语）落回内置兜底，还是 KO',
     JSON.parse(ko.request.body).target_lang, 'KO');
-  check('DeepL 预设自己带了一张 #@lang 表示范（用户照着改就行）',
-    /#@lang/.test(deeplCfg.request) && /#[ \t]*简体中文[ \t]*=[ \t]*ZH-HANS/.test(deeplCfg.request));
+  check('DeepL 预设自己带了一张 #@lang 表示范（键是语言代码，不是语言名）',
+    /#@lang/.test(deeplCfg.request) && /#[ \t]*ZH-HANS[ \t]*=/.test(deeplCfg.request) &&
+      !/#[ \t]*简体中文[ \t]*=/.test(deeplCfg.request));
+
+  /* #@lang 的键从「语言名」改成「语言代码」之后，**老配置必须还认** ——
+     用户存量的模板里写的是 `# 简体中文 = zh`，不兼容的话他们换服务时全都会静默失效。 */
+  check('#@lang 兼容老写法：键写语言名也认（存量配置不能失效）',
+    (() => {
+      const tpl = (table) => 'curl https://x/?to={{targetCode}}\n\n#@lang\n' + table;
+      const run = (table, lang) => {
+        const r = renderTemplate(tpl(table), { target: lang, text: 'hi' });
+        const m = String(r.text).match(/\?to=([^\s]+)/);
+        return m ? m[1] : '';
+      };
+      return run('# 简体中文 = zh', '简体中文') === 'zh' &&
+             run('# ZH-HANS = zh', '简体中文') === 'zh' &&
+             run('# EN = en', '英语') === 'en' &&
+             run('# en = en', '英语') === 'en';   // 大小写不敏感
+    })());
 }
 
 /* ------------------------------------------------------------------ */

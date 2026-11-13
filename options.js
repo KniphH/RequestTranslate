@@ -41,7 +41,7 @@ import { uid, allRequests, requestChain, requestTemplateFor } from './lib/reques
 import { runRequest, previewRequest } from './lib/engine.js';
 import { encryptExport, decryptExport, isEncryptedExport } from './lib/crypto.js';
 import { ADAPTERS } from './lib/adapters.js';
-import { BUILTIN_VAR_HINTS, VAR_HINT_KEYS, TARGET_PRESETS, isSecretVar, modelCandidates, modelVarFor } from './lib/template.js';
+import { BUILTIN_VAR_HINTS, VAR_HINT_KEYS, TARGET_PRESETS, langDisplayName, isSecretVar, modelCandidates, modelVarFor } from './lib/template.js';
 import {
   toDataUrl,
   pickImageMime,
@@ -854,7 +854,7 @@ const CHIPS = [
   {
     ins: '{{targetCode}}',
     k: 'opt_chip_targetcode',
-    t: '映射成接口要的代码 ZH-HANS / JA，给 DeepL 这类只认代码的接口用。换服务就在请求文本里写一张 #@lang 表改掉（README 有现成的表）'
+    t: '映射成接口要的代码，内置是 DeepL 的 language code。换服务就在请求文本里写 #@lang 表，键写语言代码'
   },
   { ins: '{{image}}', t: '截图翻译直传模式下的图片（data URL）；普通翻译时是空串', k: 'opt_chip_image' },
   {
@@ -3904,7 +3904,8 @@ const LANG_OTHER = '__other__';
 /** 选项：常用语言名 + 几个地区变体 + 末尾的「其他」 */
 function fillTargetLangOptions() {
   for (const name of TARGET_PRESETS) {
-    els.langSelect.appendChild(newOption(name, name));
+    // value = 中文名（存档不变），text = 当前语言下的显示名
+    els.langSelect.appendChild(newOption(name, langDisplayName(name, T)));
   }
   els.langSelect.appendChild(newOption(LANG_OTHER, '其他（自己填）'));
 }
