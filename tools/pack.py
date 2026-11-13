@@ -131,6 +131,32 @@ def strip_sources(files):
         print(r.stderr)
         sys.exit("剥注释失败（或剥坏了语法），没有打包。")
     print(r.stderr.strip())  # 「剥注释：277,765 → 181,051 字节…」
+
+    # 第二步：用 esbuild 把 .js 再压一遍（变量名缩短 + 去死代码）。
+    # 只压 JS —— CSS/HTML 剥注释就够了，esbuild 对它们没有额外收益。
+    # lib/panel-core.js 在脚本里被排除（内嵌 CSS 太多，压了反而更大）。
+    # 没装 esbuild 时脚本自己 exit 0 并输出 skipped，这里照常往下走。
+    r2 = subprocess.run(
+        ["node", str(ROOT / "tools" / "esbuild-minify.mjs"), str(tmp)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if r2.returncode != 0:
+        print(r2.stdout)
+        print(r2.stderr)
+        sys.exit("esbuild 压缩失败（或压坏了语法），没有打包。")
+    try:
+        info = json.loads(r2.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        info = {"skipped": True, "reason": "输出解析不了"}
+    if info.get("skipped"):
+        print("  esbuild: 跳过 (%s)" % info.get("reason", ""))
+    else:
+        saved = info["before"] - info["after"]
+        print("  esbuild: {:,} -> {:,} 字节 (省 {:,})".format(info["before"], info["after"], saved))
+
     return tmp
 
 

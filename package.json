@@ -17,5 +17,8 @@
     "pack": "python tools/pack.py && python tools/verify-pack.py",
     "verify:pack": "python tools/verify-pack.py",
     "pack:crx": "python tools/pack.py --crx"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
   }
 }

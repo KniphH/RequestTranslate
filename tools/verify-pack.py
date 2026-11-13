@@ -63,7 +63,13 @@ def main():
                 problems.append(f"{n} 语法错：{first[1] if len(first) > 1 else first[:1]}")
         print(f"  语法：{sum(1 for n in names if n.endswith('.js'))} 个 js 全过 node --check")
 
-        # 2. 行号守恒
+        # 2. 行号守恒（**只在没跑 esbuild 时有意义**）
+        #    剥注释不吞行，所以行数该和仓库一致；但 esbuild 会把多行压成单行，
+        #    那时行号天然对不上。判据改成「有没有被压过」：
+        #      压过 -> 行数必然少，不判；
+        #      没压 -> 必须一致（这条仍然钉着「剥注释没吞行」）。
+        minified = 0
+        line_bad = []
         for n in names:
             if not n.endswith((".js", ".css", ".html")):
                 continue
@@ -72,9 +78,17 @@ def main():
                 continue
             a = z.read(n).decode("utf-8").count("\n")
             b = src.read_text(encoding="utf-8").count("\n")
-            if a != b:
-                problems.append(f"{n} 行号不一致：包里 {a} 行 / 仓库 {b} 行")
-        print("  行号：包里每个文件的行数都和仓库一致")
+            if a < b:
+                minified += 1        # 被压过（行变少是预期）
+            elif a != b:
+                line_bad.append(f"{n} 行号不一致：包里 {a} 行 / 仓库 {b} 行")
+        problems.extend(line_bad)
+        if line_bad:
+            print("  行号：发现 %d 处不一致" % len(line_bad))
+        elif minified:
+            print("  行号：%d 个文件被 esbuild 压缩过（行号不再守恒，符合预期）" % minified)
+        else:
+            print("  行号：包里每个文件的行数都和仓库一致")
 
         # 3. **最强的一条**：把包里每个文本文件**再剥一遍**，结果必须**逐字相同**。
 #    这一条同时盖住两种坏：
