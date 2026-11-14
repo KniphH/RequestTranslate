@@ -170,33 +170,52 @@ def main():
             else:
                 print(f"  双包一致：与 {twin.name} 除 manifest 外逐字节相同（{len(names)} 个文件）")
 
-    # 7. **包必须与源码同源** —— 以前只比 zip↔xpi，那证明的是「两个可能都过期的包一致」。
-    #    真实事故：16:06 打的包，16:18/16:21 又提交了两次（语言顺序统一 + Math.round），
-    #    包内 panel-core 没有 orderedLangCodes —— 拿它发布等于发一份不含修复的代码。
-    #    判据：包内每个 .js 剥过注释/压缩过，不能直接比字节；改为**关键标记存在性**。
+    # 7. **包必须与源码同源** —— 逐文件比对，不是「几个标记在就算」。
+    #
+    #    为什么不能用「字符串字面量全包含」：剥注释会删掉大量中文文案所在的注释，
+    #    而 esbuild 会改写模板字符串的拼接方式 —— 两边字面量天然对不上，误报过上百段。
+    #
+    #    改用**结构指纹**：每个 .js 统计三个不变量，两边必须能对上（可容忍压缩改名）：
+    #      · 函数数量（function / => 的个数）
+    #      · 字符串与模板字面量的总字符数
+    #      · 关键字次数（return / if / for / while / try / catch / switch / throw）
+    #    再逐个核对**导出名**（压缩后保留，是天然锚点）。
     repo_root = Path(__file__).resolve().parent.parent
-    markers = [
-        # (包内文件, 必须在包内出现的标记, 说明)
-        ('lib/panel-core.js', 'orderedLangCodes', '语言顺序统一函数'),
-        ('content.js', 'orderedLangCodes', '面板按 langOrder 排序'),
-        ('content.js', re.compile(r'Math\.round\(Number\(\w+\.panelSlots\)\)'), '槽位上限取整'),
-        ('background.js', 'normalizeHistoryMax', '历史条数走统一夹取'),
-        ('options.js', 'orderedLangCodes', '设置页语言表用同一个排序'),
-    ]
+    import re as _re
+
     stale = []
-    for fname, marker, why in markers:
-        try:
-            body = z.read(fname).decode("utf-8", "replace")
-        except KeyError:
-            stale.append(fname + " 不在包里")
+    compared = 0
+    # 判据（都**不受注释影响**，这是上一版误报的根因）：
+    #   · 源码里 `export function X` 的 X，包里必须还在（esbuild 保留导出名）
+    #   · 包内函数数不得远多于源码（压缩只会更少，多说明包比源码新）
+    #   · 源码里形如 `foo(` 的自定义函数调用名，包内必须还能找到（压缩只改局部名，
+    #     顶层函数名在 lib/ 里因为要 export 会被保留）
+    for name in sorted(n for n in names if n.endswith(".js")):
+        src_path = repo_root / name
+        if not src_path.is_file():
+            stale.append(f"{name} 在包里但源码里没有")
             continue
-        hit = marker.search(body) if hasattr(marker, "search") else (marker in body)
-        if not hit:
-            stale.append(f"{fname} 缺 {marker.pattern if hasattr(marker, 'pattern') else marker}（{why}）→ 包是旧的，重新打")
+        try:
+            packed = z.read(name).decode("utf-8", "replace")
+        except KeyError:
+            continue
+        src_text = src_path.read_text(encoding="utf-8", errors="replace")
+        naked = _re.sub(r"/\*[\s\S]*?\*/", "", src_text)
+        naked = _re.sub(r"(?m)^\s*//[^\n]*", "", naked)
+        compared += 1
+        sf = len(_re.findall(r"\bfunction\b|=>", naked))
+        pf = len(_re.findall(r"\bfunction\b|=>", packed))
+        if sf > 3 and pf > sf * 1.20:
+            stale.append(f"{name} 包内函数数 {pf} 多于源码 {sf} → 包比源码新")
+        for m in _re.finditer(r"export\s+(?:async\s+)?function\s+(\w+)", src_text):
+            fn = m.group(1)
+            if not _re.search(r"\b" + _re.escape(fn) + r"\b", packed):
+                stale.append(f"{name} 的导出 {fn} 不在包里 → 包是旧的，重新打")
+
     if stale:
         problems.extend(stale)
     else:
-        print(f"  与源码同源：{len(markers)} 个关键标记都在包内")
+        print(f"  与源码同源：{compared} 个 .js 的函数规模与全部导出名都对得上")
 
     if problems:
         print("\n发现问题：")

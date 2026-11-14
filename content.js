@@ -1048,18 +1048,25 @@
     const hit = configs.find((c) => c.id === configId);
     leaveBusy();
     resetDiag();
-    /* 占位符和 .empty 成对：单槽时显示「点 ↻ 翻译」，多槽时由 renderSlots 画每槽的空态。
-       以前先 remove(empty) 再写 dataset —— 占位根本不显示。 */
+    /* **清 DOM 也要清槽状态**：只清 DOM 的话，下次 renderSlots() 会把
+       slots[0].text 里的旧译文又搬回来（第七版 §2⑦）。 */
+    for (const sl of slots) {
+      if (!sl) continue;
+      sl.text = '';
+      sl.error = '';
+      sl.state = 'idle';
+      sl.result = null;
+    setDot('');
+    setStatus(hit ? `已切到「${hit.name}」，点 ↻ 翻译` : '点 ↻ 翻译');
+    }
     if (slots.length <= 1) {
       outBox.textContent = '';
       outBox.dataset.placeholder = '点 ↻ 翻译';
-      outBox.classList.add('empty');
+      outBox.classList.add('empty');   // 和上面那句必须成对
     } else {
       outBox.classList.remove('empty');
       renderSlots();
     }
-    setDot('');
-    setStatus(hit ? `已切到「${hit.name}」，点 ↻ 翻译` : '点 ↻ 翻译');
   }
 
   /* 吃一份配置列表：面板顶栏下拉用的 `configs`（带 img 标记）和图片模式专用的
