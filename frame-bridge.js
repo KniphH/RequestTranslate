@@ -79,8 +79,12 @@
         break;
       }
     }
+    /* **``fr`` 可能是 null**：iframe 在消息发出后被移除、或者消息来自 srcdoc 中转，
+       那一刻 querySelectorAll 已经找不到对应的 frame。
+       以前直接 fr.left → TypeError，整条桥接链从这层断掉（上面几层全收不到选区）。 */
+    if (!fr) return;
     /* 只记 left/top —— 消费侧按层累加偏移量，right/bottom 是视口绝对值，累加会翻倍。 */
     const trail = [...(m.trail || []), { left: fr.left, top: fr.top }];
     send({ ...m, trail });
-  });
-})();
+    });
+  })();

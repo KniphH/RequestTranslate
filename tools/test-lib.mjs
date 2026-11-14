@@ -4423,6 +4423,50 @@ await (async () => {
         /targetCodeOf\(oldLang/.test(src);
     })());
 }
+
+  /* ---- 第六版 P1 修完后的防回归断言 ---- */
+
+  /* 占位文案：CSS 是 `.rt-out.empty::before`，所以写 placeholder 时必须同时有 empty */
+  const contentSrc2 = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
+  const pcSrc3 = readFileSync(new URL('../lib/panel-core.js', import.meta.url), 'utf8');
+  check('占位文案的 CSS 依赖 .empty（改时序就会失效）',
+    /\.rt-out\.empty::before/.test(pcSrc3) && /content:\s*attr\(data-placeholder\)/.test(pcSrc3));
+  check('enterBusy 写 placeholder 后立刻加 empty（不是先 remove）',
+    /dataset\.placeholder = placeholder;[\s\S]{0,80}classList\.add\('empty'\)/.test(contentSrc2));
+  check('showNoCachedResult 同样是 placeholder + empty 成对',
+    /dataset\.placeholder = '点 ↻ 翻译';[\s\S]{0,80}classList\.add\('empty'\)/.test(contentSrc2));
+
+  /* done/fatal 的 if (!sl)：别的槽可能还在飞，不能无条件 leaveBusy */
+  check('if (!sl) 分支不再无条件 leaveBusy（要 allSettled）',
+    (contentSrc2.match(/if \(allSettled\(\)\) leaveBusy\(\);/g) || []).length >= 2 &&
+      !/if \(!sl\) \{\s*\/\/[^\n]*\n\s*leaveBusy\(\);/.test(contentSrc2));
+
+  /* frame-bridge：fr 为 null 时必须提前 return，否则 fr.left 抛 TypeError */
+  const fbSrc = readFileSync(new URL('../frame-bridge.js', import.meta.url), 'utf8');
+  check('frame-bridge 在找不到 iframe 时提前 return（不硬取 fr.left）',
+    /if \(!fr\) return;/.test(fbSrc));
+
+  /* runTest 重入闸必须在 await 之前 */
+  const optSrc3 = readFileSync(new URL('../options.js', import.meta.url), 'utf8');
+  /* runTest 重入闸必须在真正的 await 之前 —— 注释里也出现了 await persist 字样，
+     所以先剥注释再定位，否则会被自己的说明文字骗过去。 */
+  check('runTest 禁用按钮在 await 之前（重入闸不再有窗口）',
+    (() => {
+      const fnRaw = optSrc3.slice(optSrc3.indexOf('async function runTest()'), optSrc3.indexOf('function requestBlockHtml'));
+      const fn = fnRaw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+      const a = fn.indexOf('btn.disabled = true');
+      const b = fn.indexOf('await persist');
+      return a >= 0 && b > a;
+    })());
+  check('runTest 有 finally 保证按钮恢复',
+    (() => {
+      const fn = optSrc3.slice(optSrc3.indexOf('async function runTest()'), optSrc3.indexOf('function requestBlockHtml'));
+      return /finally \{[\s\S]{0,200}btn\.disabled = false/.test(fn);
+    })());
+
+  /* CSS 变量：用了的必须有定义（或有 JS 动态设置），拼错会静默失效 */
+  check('panel-core 里没有拼错的 --rt-fg / --rt-fg-dim（应为 --rt-text*）',
+    !/var\(--rt-fg/.test(pcSrc3));
 console.log('\n' + '='.repeat(46));
 console.log(`通过 ${passed} 项，失败 ${failed} 项`);
 console.log('='.repeat(46));

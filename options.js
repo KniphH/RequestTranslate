@@ -1498,21 +1498,23 @@ function updatePreview() {
  * （一条请求可能要发好几回），两种都明说数字是什么，别让人自己猜。
  */
 async function runTest() {
-  /* Enter 路径不经过按钮的 disabled 检查 —— 测试跑着的时候再按 Enter 会并发第二条链，
-     两个结果交替往同一块里写。按钮本身就是最现成的重入闸。 */
-  if ($('#btn-test').disabled) return;
-  collectEditor();
-  await persist(false);
-
-  const cfg = currentConfig();
-  if (!cfg) return;
-
-  const text = els.testText.value.trim() || 'Hello, world!';
-  const chain = requestChain(cfg);
+  /* Enter 路径不经过按钮的 disabled 检查 —— 测试跑着的时候再按 Enter 会并发第二条链。
+     **重入闸必须落在 await 之前**：以前禁用写在 `await persist()` 之后，
+     那个窗口里按 Enter 照样起第二条链。 */
   const btn = $('#btn-test');
+  if (btn.disabled) return;
   btn.disabled = true;
   btn.textContent = T('opt_sending', '发送中…');
 
+  try {
+    collectEditor();
+    await persist(false);
+
+    const cfg = currentConfig();
+    if (!cfg) return;
+
+    const text = els.testText.value.trim() || 'Hello, world!';
+    const chain = requestChain(cfg);
   let vars;
   try {
     vars = buildVars(state, text, { url: location.href, title: T('opt_test_page', 'RequestTranslate 测试') });
@@ -1587,10 +1589,12 @@ async function runTest() {
     );
   }
 
-  btn.disabled = false;
-  btn.textContent = T('opt_send', '发送');
+  } finally {
+    /* 任何 early return 都要把按钮还回去，否则「发送中…」永久卡住 */
+    btn.disabled = false;
+    btn.textContent = T('opt_send', '发送');
+  }
 }
-
 /* 测试结果里的「实际请求」那一块。配置栏和 OCR 栏摊的是同一份东西 —— 一处排版，两边共用。
    **打码不在这儿做**：产生 result 的那一层（engine 的 runRequest、lib/ocr.js 的 runOcr /
    runImageTranslate）早就把 Authorization 换成展示版了，这里再打一遍会叠成两层后缀。

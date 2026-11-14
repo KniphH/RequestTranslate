@@ -634,14 +634,18 @@
   function enterBusy(placeholder, statusText, opts = {}) {
     if (opts.cancelDelta) cancelPendingDelta();
     busy = true;
-    // 尾巴上那排（复制/朗读/重试）随结果一起清掉 —— 忙碌时不给点（避免连点重试）
-    outBox.classList.remove('empty');
-    /* **多条对比时别清空结果区**（kniph 2026-10-17）：抹掉等于把别的条已经翻好的
-       译文一起清了、滚动位置也归零 —— 长长一屏每次重试都得重新翻着找。
-       交给 renderSlots 按槽渲染：要重试的那条显示「翻译中…」，其余原样留着。 */
+    /* **占位文案的时序**：CSS 是 `.rt-out.empty::before { content: attr(data-placeholder) }`，
+       所以「写 data-placeholder」和「加 empty」必须一起做。
+       以前先 remove(empty) 再写 dataset → 「等待结果…」根本不显示（空白一片）。
+
+       多条对比时**别清空结果区**（kniph 2026-10-17）：抹掉等于把别的条已经翻好的
+       译文一起清了、滚动位置也归零。交给 renderSlots 按槽渲染。 */
     if (slots.length <= 1) {
       outBox.textContent = '';
       outBox.dataset.placeholder = placeholder;
+      outBox.classList.add('empty');
+    } else {
+      outBox.classList.remove('empty');
     }
     if (opts.clearSrc) {
       srcBox.textContent = '';
@@ -652,10 +656,6 @@
     setDot('on');
   }
 
-  /* 退出忙碌态的完整仪式：取消挂起的流式渲染。
-     曾经这组三连在 5 个函数里各手抄一遍（showFailure / renderResult / showNoCachedResult /
-     done 和 fatal 的兜底分支）＋ portGone 一个两行变体 —— 收口不彻底，改一处漏一处。
-     没有挂起渲染时 cancelPendingDelta 是空操作，portGone 里多调它也无害。 */
   function leaveBusy() {
     cancelPendingDelta();
     busy = false;
@@ -674,8 +674,10 @@
    */
   function showFailure(why, opts = {}) {
     leaveBusy();
-    outBox.classList.remove('empty');
+    /* 占位符和 .empty 必须成对（CSS 是 `.rt-out.empty::before`）—— 单槽但一条槽都没有时
+       才需要它；有槽的话 renderSlots 会画出 fail 块，那时不能留 empty。 */
     outBox.dataset.placeholder = opts.placeholder || T('panel_error_fallback', '出错了');
+    outBox.classList.remove('empty');
     /* **失败也走块渲染**（kniph 2026-10-17：单条和多条统一）。
        以前是 textContent='' 铺一句占位文字 —— 块没了、里面那排
        「复制 / 朗读 / 重试」也跟着没了，而失败态恰恰最需要「重试」。
@@ -1023,9 +1025,16 @@
     const hit = configs.find((c) => c.id === configId);
     leaveBusy();
     resetDiag();
-    outBox.classList.remove('empty');
-    outBox.textContent = '';
-    outBox.dataset.placeholder = '点 ↻ 翻译';
+    /* 占位符和 .empty 成对：单槽时显示「点 ↻ 翻译」，多槽时由 renderSlots 画每槽的空态。
+       以前先 remove(empty) 再写 dataset —— 占位根本不显示。 */
+    if (slots.length <= 1) {
+      outBox.textContent = '';
+      outBox.dataset.placeholder = '点 ↻ 翻译';
+      outBox.classList.add('empty');
+    } else {
+      outBox.classList.remove('empty');
+      renderSlots();
+    }
     setDot('');
     setStatus(hit ? `已切到「${hit.name}」，点 ↻ 翻译` : '点 ↻ 翻译');
   }
@@ -1147,8 +1156,10 @@
       // 归档按「发出这条请求时那条配置」——请求在飞的时候用户可能已经切走了
       rememberResult(msg.configId || pendingConfigId, r, lastOcr, lastAction, false);
       if (!sl) {
-        // 这条流已经不属于任何显示的槽（用户切走了、它被顶掉了）→ 只归档，别去动界面
-        leaveBusy();
+        // 这条流已经不属于任何显示的槽（用户切走了、它被顶掉了）→ 只归档，别去动界面。
+        // **别的槽可能还在飞**：不能无条件 leaveBusy，否则它们一起失去 busy 保护
+        // （portGone 不触发、防连点失效）。只有全都落定时才收尾。
+        if (allSettled()) leaveBusy();
         return;
       }
       sl.result = r;
@@ -1177,7 +1188,8 @@
       const sl = slotForMsg(msg);
       rememberResult(msg.configId || pendingConfigId, r, lastOcr, lastAction, true);
       if (!sl) {
-        leaveBusy();
+        // 同上：别的槽可能还在飞，不能无条件收尾。
+        if (allSettled()) leaveBusy();
         return;
       }
       sl.result = r;
