@@ -2003,6 +2003,10 @@ function renderOcrList() {
 
 /** 把一条供应商挪到新位置（`to` 是完整数组里、移除之后的坐标） */
 function moveOcrProvider(id, to) {
+  /* **先把编辑器里正在打的东西收回 state**：不收的话下面 persist() 会先
+     collectOcrEditor() 再写，而那次写用的是「回收时刻」的 state ——
+     和这里刚设好的 providers 顺序打架，表现为「拖完顺序一闪就弹回去」（实测复现）。 */
+  collectOcrEditor();
   const from = state.ocr.providers.findIndex((p) => p.id === id);
   if (from < 0) return false;
   const next = moveItem(state.ocr.providers, from, to);
@@ -2120,8 +2124,11 @@ function moveImageConfig(id, to) {
   const next = moveVisibleItem(state.configs, vis, from, to);
   if (next === state.configs) return false; // 原地没动
   state.configs = next;
-  // 同上：配置顺序变了，对比名单跟着重排（面板默认顺序 = 设置里的顺序）
+  /* 配置顺序变了（state.configs 是同一份数据）→ 两份对比名单重排 + 配置栏也重画。
+     以前只画了图片那份，文字配置栏的 DOM 停在老顺序上，
+     和存档不一致（e2e 的「配置栏跟着一起重排」当场抓住）。 */
   state.settings.slotConfigs = sortByConfigOrder(slotConfigIds());
+  state.settings.imageSlotConfigs = sortByConfigOrder(imgSlotConfigIds());
   renderConfigList();
   renderImageConfigList();
   persist();

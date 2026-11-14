@@ -4515,6 +4515,28 @@ await (async () => {
   check('pendingConfigId 有赋值（不是只读）',
     /pendingConfigId = picked;/.test(contentSrc2));
 
+  /* normalizeOcrState 必须**按存档顺序**重建，不能按内置顺序 ——
+     否则任何一次 loadState（SW 唤醒、另开一页）都会把用户拖好的顺序重置。
+     这条 bug 表现为「拖完顺序一闪就弹回去」，我查了六轮才定位。 */
+  check('normalizeOcrState 先按存档顺序排，再补新增的内置项',
+    (() => {
+      const s = readFileSync(new URL('../lib/ocr.js', import.meta.url), 'utf8');
+      const body = s.slice(s.indexOf('export function normalizeOcrState'));
+      const seg = body.slice(0, body.indexOf('return {'));
+      return /for \(const p of saved\) pushOne\(p\);[\s\S]{0,120}for \(const d of OCR_PROVIDERS\) pushOne\(d\)/.test(seg);
+    })());
+  check('normalizeOcrState 不再用 OCR_PROVIDERS 直接 map 重建（那会丢顺序）',
+    !/const providers = OCR_PROVIDERS\s*\n?\s*\.filter/.test(
+      readFileSync(new URL('../lib/ocr.js', import.meta.url), 'utf8')));
+
+  /* 三个 move* 在重排后都要同步两份对比名单 */
+  check('moveConfig / moveImageConfig 都重排两份名单',
+    (() => {
+      const s = optSrc3;
+      const count = (s.match(/state\.settings\.imageSlotConfigs = sortByConfigOrder/g) || []).length;
+      return count >= 2;
+    })());
+
   /* 设置页的「非合并导入」只换了 configs，slotConfigs 里还是旧 id —— 必须重跑归一化，
      否则面板一个槽都渲染不出来（第六版 §3 指出的悬空）。 */
   check('设置页导入后重跑 normalizeSlots（槽位不会悬空）',

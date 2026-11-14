@@ -2134,13 +2134,24 @@ try {
   check('被拖的那一行有反馈', mark.dragging === srcRow.id, mark.dragging || '(没有)');
 
   await opt.mouse.up();
-  /* persist 是 700ms debounce + 一次 storage 往返。1300ms 在慢机器上会踩线，
-     实测偶发；给到 2200ms，比「让它偶发红」划算。 */
-  await opt.waitForTimeout(2200);
+  /* **别用固定 sleep**：persist 是 700ms debounce + 一次 storage 往返，
+     慢机器上 2200ms 也会踩线，于是这条断言时红时绿 —— 那种「偶发」
+     掩盖的是「测试在赌时序」这个真问题。改成轮询到落盘为止（上限 8s）。 */
+  await opt
+    .waitForFunction(
+      async ({ first, rest }) => {
+        const { state } = await chrome.storage.local.get('state');
+        const saved = state.configs.map((c) => c.id);
+        return JSON.stringify(saved) === JSON.stringify([first, ...rest]);
+      },
+      { first: srcRow.id, rest: boxes.filter((b) => b.id !== srcRow.id).map((b) => b.id) },
+      { timeout: 8000 }
+    )
+    .catch(() => {});
   const afterDrag = await orderOf();
   check('拖到最前面之后顺序真的变了', afterDrag.dom[0] === srcRow.id, afterDrag.dom.slice(0, 3).join(','));
-  check('拖动后的顺序也落盘了', JSON.stringify(afterDrag.saved) === JSON.stringify(afterDrag.dom));
-
+  check('拖动后的顺序也落盘了', JSON.stringify(afterDrag.saved) === JSON.stringify(afterDrag.dom),
+    'dom=' + afterDrag.dom.slice(0,3).join(',') + '｜saved=' + afterDrag.saved.slice(0,3).join(','));
   const leftover = await opt.evaluate(
     () => document.querySelectorAll('#cfg-list .drop-before, #cfg-list .drop-after, #cfg-list .dragging').length
   );
@@ -3967,10 +3978,22 @@ try {
   check('拖供应商时也画「会插到这儿」的指示线', ocrMark.before === oDst.id, ocrMark.before || '(没有)');
   check('被拖的那条也有反馈', ocrMark.dragging === oSrc.id, ocrMark.dragging || '(没有)');
   await opt.mouse.up();
-  await opt.waitForTimeout(1300);
+  /* 同配置区那条：别赌固定 sleep，轮询到落盘为止。 */
+  await opt
+    .waitForFunction(
+      async ({ first, rest }) => {
+        const { state } = await chrome.storage.local.get('state');
+        const saved = state.ocr.providers.map((p) => p.id);
+        return JSON.stringify(saved) === JSON.stringify([first, ...rest]);
+      },
+      { first: oSrc.id, rest: ocrBefore.dom.filter((x) => x !== oSrc.id) },
+      { timeout: 8000 }
+    )
+    .catch(() => {});
   const ocrAfterDrag = await ocrOrder();
   check('拖到最前面之后供应商的顺序真的变了', ocrAfterDrag.dom[0] === oSrc.id, ocrAfterDrag.dom.join(','));
-  check('拖动后的顺序也落盘了', JSON.stringify(ocrAfterDrag.saved) === JSON.stringify(ocrAfterDrag.dom));
+  check('供应商拖动后的顺序也落盘了', JSON.stringify(ocrAfterDrag.saved) === JSON.stringify(ocrAfterDrag.dom),
+    'dom=' + ocrAfterDrag.dom.slice(0,3).join(',') + '｜saved=' + ocrAfterDrag.saved.slice(0,3).join(','));
   check('还是那几条，没多没少',
     ocrAfterDrag.dom.length === ocrBefore.dom.length, `${ocrBefore.dom.length} → ${ocrAfterDrag.dom.length}`);
   const ocrLeftover = await opt.evaluate(

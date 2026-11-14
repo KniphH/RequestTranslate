@@ -47,6 +47,16 @@ RequestTranslate is a selection-translation browser extension. **The developer d
 ### How this extension handles data
 
 - **Translation requests**: The text you select (and, for screenshot translation, the image in your clipboard) is sent to **the translation endpoint you configure yourself** (e.g. your own model gateway or any OpenAI-compatible service). Requests go directly from the extension to the address you entered; the developer never sees them and no intermediary server is involved.
+
+- **Built-in bilibili Index-Translate channel**: The extension ships one free translation config that
+  uses bilibili's public endpoint (`index-translate.bilibili.com`); it needs no API key. It is only
+  used if you select it. Only the text you asked to translate is sent — nothing else, and no
+  identifiers of yours.
+
+- **About request headers**: The bilibili channel only passes its abuse checks with a specific
+  `User-Agent` and `Origin`. The extension uses `declarativeNetRequest` to rewrite those two headers
+  **only for `index-translate.bilibili.com`** (a static rule, no other host is touched). No header of
+  any other site is read, recorded or modified.
 - **Template variables**: Request templates may reference `{{url}}` and `{{title}}` (the current page's URL and title). They are only included in a request if your template references them.
 - **OCR**: If you configure an OCR provider, screenshots are sent to that provider's endpoint. With "disable external OCR" enabled, the image goes directly into your own configured translation request.
 - **Local storage**: Configuration, API keys and settings are stored locally in the browser's `chrome.storage.local` and never synced to any account. Note that API keys are stored **in plain text** — do not share exported configuration files.
