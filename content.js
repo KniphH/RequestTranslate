@@ -1553,9 +1553,14 @@
 
   function renderLangOptions() {
     const cur = String(prefs.targetLang || 'ZH-HANS');
-    /* 存档里存的是**语言代码**；下拉里显示的是名字（settings.targetNames[code]，
-       用户改过就用改过的）。不在候选里的代码（用户手填的）临时补一条顶上。 */
-    const list = targetLangs.includes(cur) ? targetLangs.slice() : [cur].concat(targetLangs);
+    /* 顺序**跟设置页那张语言代码表走**（prefs.langOrder）—— 用户在表里上下移过，
+       面板下拉必须同序，否则两边看到的是两套排列。
+       表里没提到的（内置新语言 / 老存档）按内置顺序追加在后面。 */
+    const order = Array.isArray(prefs.langOrder) ? prefs.langOrder.filter(Boolean) : [];
+    const base = order.concat(targetLangs.filter((x) => !order.includes(x)));
+    /* 存档里存的是**语言代码**；显示名优先取用户改过的（settings.targetNames）。
+       当前值不在候选里（手填的代码）就临时补一条顶上。 */
+    const list = base.includes(cur) ? base : [cur].concat(base);
     langSelect.innerHTML = '';
     for (const code of list) {
       const o = document.createElement('option');
