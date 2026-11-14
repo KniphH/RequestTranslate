@@ -3044,9 +3044,9 @@ section('25. 管模型的变量填多行 = 换 model 重试（每个一行）');
     bg.includes('{ ...vars, [mkey]: model }') && !bg.includes('{ ...vars, model }'));
   check('每次开始试一个都把 model 名带给面板（statusText）',
     bg.includes('statusText') && bg.includes('type: \'start\''));
-  check('面板接住 statusText 并拼进状态行',
-    readFileSync(new URL('../content.js', import.meta.url), 'utf8')
-      .includes('请求中…${msg.statusText}'));
+  check('面板接住 statusText 并拼进状态行（走 i18n）',
+    /T\('panel_requesting_with'[^)]*\[msg\.statusText\]/.test(
+      readFileSync(new URL('../content.js', import.meta.url), 'utf8')));
 
   /* ---- 设置页那个「测试」也得逐个试 model（kniph 2026-10-14 报的）----
      原来只发第一个：第一个恰好挂了就报一片红，用户得出「这条配置坏了」——
@@ -4408,7 +4408,7 @@ await (async () => {
   check('ESM msg(): 同一条优先级链（下载包 → chrome.i18n → 兜底）',
     mBody.indexOf('pack[key]') >= 0 &&
       mBody.indexOf('chrome.i18n') > mBody.indexOf('pack[key]') &&
-      mBody.indexOf('return fallback') > mBody.indexOf('chrome.i18n'));
+      mBody.indexOf('out = fallback') > mBody.indexOf('chrome.i18n'));
       const plain = readFileSync(new URL('../lib/i18n.js', import.meta.url), 'utf8');
       return /^export /m.test(esm) && !/^export /m.test(plain) &&
         !/from ['"]\.\/i18n\.js['"]/.test(esm) && !/from ['"]\.\/i18n-msg\.js['"]/.test(plain);
@@ -4658,6 +4658,9 @@ await (async () => {
   const zhAll = JSON.parse(readFileSync(new URL('../_locales/zh_CN/messages.json', import.meta.url), 'utf8'));
   const zhKeys2 = Object.keys(zhAll).filter((k) => k !== 'extName' && k !== 'extDesc');
   const enKeys2 = Object.keys(JSON.parse(readFileSync(new URL('../i18n/en.json', import.meta.url), 'utf8')).strings);
+  /* 用 Set 查成员 —— 数组的 `k in arr` 查的是下标，以前就是这么误报的。 */
+  const enSet = new Set(enKeys2);
+  const zhSet = new Set(zhKeys2);
   const used2 = new Set();
   for (const f of ['options.html', 'options.js', 'content.js', 'popup.html', 'popup.js', 'background.js']) {
     const s = readFileSync(new URL('../' + f, import.meta.url), 'utf8');
@@ -4681,9 +4684,15 @@ await (async () => {
   console.log("     说明：SETTING_MAP 里 20 行是「有独立输入框的」，其余走别的 UI（语言表 / 槽位 / 说明开关）");
   /* key 覆盖关系必须成立：代码用到的 key 都该在 zh 包里 */
   /* 过滤模板变量（data-i18n="${h.htmlKey}" 这种）—— 它不是真 key */
-  const orphanKeys = [...used2].filter((k) => !k.includes('${') && !(k in zhAll));
+  const orphanKeys = [...used2].filter((k) => !k.includes('${') && !zhSet.has(k));
   console.log("");
   console.log(`  代码 key ⊂ zh 包   ${orphanKeys.length === 0 ? "是" : "否！缺 " + orphanKeys.slice(0, 5).join(", ")}`);
+  /* **英文覆盖也要验**（第十版指出：以前只断言「代码 key ⊂ zh 包」，
+     英文缺键会静默回落中文 —— 切了语言还是中文，很久都发现不了）。 */
+  const orphanEn = [...used2].filter((k) => !k.includes('${') && !enSet.has(k));
+  console.log(`  代码 key ⊂ en 包   ${orphanEn.length === 0 ? "是" : "否！缺 " + orphanEn.slice(0, 5).join(", ")}`);
+  check('代码里用到的 key 在英文包里也都有（不只是中文包）',
+    orphanEn.length === 0, orphanEn.slice(0, 6).join(', '));
 console.log(`通过 ${passed} 项，失败 ${failed} 项`);
 console.log('='.repeat(46));
 

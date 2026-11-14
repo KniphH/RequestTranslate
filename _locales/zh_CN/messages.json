@@ -1,9 +1,9 @@
 {
-  "extName": {
-    "message": "RequestTranslate · 请求式划词翻译"
-  },
   "extDesc": {
     "message": "划词翻译，但配置是你自己的 HTTP 请求。直接写 curl 或原始请求报文，可保存多个命名配置。"
+  },
+  "extName": {
+    "message": "RequestTranslate · 请求式划词翻译"
   },
   "adapter_bing_hint": {
     "message": "走 bing.com 网页版接口，首次多花约 0.5 秒。",
@@ -93,6 +93,10 @@
   "diag_warn": {
     "message": "提示",
     "description": "面板诊断行：标签与提示"
+  },
+  "dot_idle_tip": {
+    "message": "空闲",
+    "description": "面板状态行"
   },
   "langname_AR": {
     "message": "阿拉伯语",
@@ -1290,6 +1294,10 @@
       }
     }
   },
+  "panel_click_retry": {
+    "message": "点 ↻ 翻译",
+    "description": "面板状态行"
+  },
   "panel_close": {
     "message": "关闭 (Esc)",
     "description": "顶栏关闭按钮的 title"
@@ -1303,9 +1311,17 @@
       }
     }
   },
+  "panel_copied": {
+    "message": "已复制",
+    "description": "面板状态行"
+  },
   "panel_copy": {
     "message": "复制",
     "description": "每条结果下面的复制按钮文字"
+  },
+  "panel_copy_failed": {
+    "message": "复制失败",
+    "description": "面板状态行"
   },
   "panel_copy_title": {
     "message": "复制这条译文",
@@ -1314,6 +1330,10 @@
   "panel_error_fallback": {
     "message": "出错了",
     "description": "没有具体错误信息时的兜底文案"
+  },
+  "panel_ext_updated": {
+    "message": "扩展已更新，请刷新页面后重试",
+    "description": "面板状态行"
   },
   "panel_img_cfg_with": {
     "message": "图片接口：$1$",
@@ -1354,17 +1374,51 @@
     "message": "（没有配置）",
     "description": "配置下拉在一条配置都没有时的占位项"
   },
+  "panel_ocr_no_text": {
+    "message": "没识别出文字",
+    "description": "面板状态行"
+  },
   "panel_pin_title": {
     "message": "固定面板位置",
     "description": "面板图钉：固定位置"
   },
+  "panel_processing": {
+    "message": "处理中…",
+    "description": "面板状态行"
+  },
+  "panel_reconnect_interrupted": {
+    "message": "后台被系统回收过，这条请求中断了 —— 请重新翻译一次",
+    "description": "面板状态行"
+  },
+  "panel_requesting": {
+    "message": "请求中…",
+    "description": "面板状态行"
+  },
+  "panel_requesting_with": {
+    "message": "请求中…$1$",
+    "description": "面板状态行",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
   "panel_retry": {
-    "message": "重试",
-    "description": "单条重试按钮文字"
+    "message": "重新翻译",
+    "description": "面板状态行"
   },
   "panel_retry_title": {
     "message": "只重试这一条",
     "description": "单条重试按钮的 title"
+  },
+  "panel_slot_collapsed": {
+    "message": "已收起「$1$」（本次显示，不改设置里的默认组合）",
+    "description": "面板状态行",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
   },
   "panel_slot_remove": {
     "message": "不再显示这一条（只影响这次，不改设置里的默认组合）",
@@ -1413,6 +1467,37 @@
   "panel_stop_title": {
     "message": "停止朗读",
     "description": "朗读按钮的 title（正在播放时）"
+  },
+  "panel_switched_to": {
+    "message": "已切到「$1$」，点 ↻ 翻译",
+    "description": "面板状态行",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "panel_target_lang": {
+    "message": "目标语言：$1$",
+    "description": "面板状态行",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "panel_translating_n": {
+    "message": "翻译中…（$1$ 条）",
+    "description": "面板状态行",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "panel_tts_unsupported": {
+    "message": "这个浏览器不支持朗读",
+    "description": "面板状态行"
   },
   "panel_unpin_title": {
     "message": "已固定，点一下改回跟着选区",

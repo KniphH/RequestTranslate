@@ -257,7 +257,7 @@
     "panel_lang_with": "Target language: $1$",
     "panel_more_title": "Details",
     "panel_no_config": "(no config)",
-    "panel_retry": "Retry",
+    "panel_retry": "Translate again",
     "panel_retry_title": "Retry just this one",
     "panel_slot_remove": "Hide this result (this time only; defaults are untouched)",
     "panel_speak": "Speak",
@@ -366,6 +366,93 @@
     "opt_lang_map_add": "Add row",
     "opt_lang_map_code_ph": "New code, e.g. YUE",
     "opt_lang_map_name_ph": "What it displays as",
-    "opt_lang_map_dup": "That code is already in the table."
+    "opt_lang_map_dup": "That code is already in the table.",
+    "panel_reconnect_interrupted": "The background was recycled by the browser and this request was interrupted — please translate again.",
+    "panel_switched_to": "Switched to “$1$” — click ↻ to translate",
+    "panel_click_retry": "Click ↻ to translate",
+    "panel_requesting_with": "Requesting… $1$",
+    "panel_requesting": "Requesting…",
+    "panel_translating_n": "Translating… ($1$)",
+    "panel_processing": "Working…",
+    "panel_ocr_no_text": "No text recognised",
+    "panel_ext_updated": "The extension was updated — please reload the page and try again",
+    "panel_copied": "Copied",
+    "panel_copy_failed": "Copy failed",
+    "panel_slot_collapsed": "Collapsed “$1$” (this session only; your default combination is unchanged)",
+    "panel_tts_unsupported": "This browser does not support speech",
+    "panel_target_lang": "Target language: $1$",
+    "dot_idle_tip": "Idle"
+  },
+  "placeholders": {
+    "panel_switched_to": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "panel_requesting_with": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "panel_translating_n": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "panel_slot_collapsed": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "panel_target_lang": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "adapter_unknown": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "opt_chain": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "opt_compare": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "opt_tryall": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "panel_cfg_with": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "panel_compare_note": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "panel_img_cfg_with": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "panel_img_none": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "panel_lang_with": {
+      "1": {
+        "content": "$1"
+      }
+    }
   }
 }

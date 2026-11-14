@@ -946,7 +946,7 @@
     }
     resetDiag();
     renderSlots();
-    setStatus('后台被系统回收过，这条请求中断了 —— 请重新翻译一次', 'warn');
+      setStatus(T('panel_reconnect_interrupted', '后台被系统回收过，这条请求中断了 —— 请重新翻译一次'), 'warn');
     setDot('', T('dot_idle_tip', '空闲'));
   }
 
@@ -1128,7 +1128,7 @@
     /* 这两句**在 for 外面**：以前被误缩进到循环体内，
        等于清完最后一个槽才设一次。 */
     setDot('');
-    setStatus(hit ? '已切到「' + hit.name + '」，点 ↻ 翻译' : '点 ↻ 翻译');
+      setStatus(hit ? T('panel_switched_to', '已切到「$1$」，点 ↻ 翻译', [hit.name]) : T('panel_click_retry', '点 ↻ 翻译'));
   }
 
   /* 吃一份配置列表：面板顶栏下拉用的 `configs`（带 img 标记）和图片模式专用的
@@ -1176,7 +1176,7 @@
       // statusText（形如「（Qwen3-32B）」）。只有一个 model（或没写 {{model}}）时它是空串，
       // 状态就还是老样子「请求中…」，看不出一丝变化。
       if (slots.length <= 1) {
-        setStatus(msg.statusText ? `请求中…${msg.statusText}` : '请求中…');
+      setStatus(msg.statusText ? T('panel_requesting_with', '请求中…$1$', [msg.statusText]) : T('panel_requesting', '请求中…'));
         setDot('on');
         /* **不清旧译文**（和 translate() 里那条同一个规矩）：清空会让结果区
            瞬间变短、滚动位置被夹到 0。新译文一到就替换，中间那段「请求中…」
@@ -1185,7 +1185,7 @@
            旧译文又搬回来，而屏幕上本该是空的（第七版 §3 指出）。 */
         resetDiag();
       } else {
-        setStatus(`翻译中…（${slots.length} 条）`);
+      setStatus(T('panel_translating_n', '翻译中…（$1$ 条）', [String(slots.length)]));
         setDot('on');
         renderSlots();
       }
@@ -1205,7 +1205,7 @@
     /* ---- 截图 OCR 的三条消息（在翻译之前发生） ---- */
 
     if (msg.type === 'ocr-status') {
-      setStatus(msg.message || '处理中…');
+      setStatus(msg.message || T('panel_processing', '处理中…'));
       return;
     }
 
@@ -1217,7 +1217,7 @@
     if (msg.type === 'ocr-text') {
       const text = String(msg.text || '').trim();
       if (!text) {
-        setStatus('没识别出文字', 'err');
+      setStatus(T('panel_ocr_no_text', '没识别出文字'), 'err');
         setDot('err');
         leaveBusy();
         return;
@@ -1850,7 +1850,7 @@
   /** 端口连不上（扩展更新过、页面还是旧脚本）时的统一收场 */
   function portGone() {
     leaveBusy();
-    setStatus('扩展已更新，请刷新页面后重试', 'err');
+      setStatus(T('panel_ext_updated', '扩展已更新，请刷新页面后重试'), 'err');
     setDot('err');
   }
 
@@ -2419,7 +2419,7 @@
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
-      setStatus('已复制');
+      setStatus(T('panel_copied', '已复制'));
     } catch {
       // 有些页面剪贴板不可用，退回 execCommand
       const ta = document.createElement('textarea');
@@ -2427,7 +2427,7 @@
       ta.style.cssText = 'position:fixed;opacity:0;';
       document.body.appendChild(ta);
       ta.select();
-      try { document.execCommand('copy'); setStatus('已复制'); } catch { setStatus('复制失败', 'err'); }
+      try { document.execCommand('copy'); setStatus(T('panel_copied', '已复制')); } catch { setStatus(T('panel_copy_failed', '复制失败'), 'err'); }
       ta.remove();
     }
   }
@@ -2465,7 +2465,7 @@
           showNoCachedResult(only ? only.configId : '');
         }
       }
-      setStatus('已收起「' + goneName + '」（本次显示，不改设置里的默认组合）');
+      setStatus(T('panel_slot_collapsed', '已收起「$1$」（本次显示，不改设置里的默认组合）', [goneName]));
       return;
     }
 
@@ -2533,7 +2533,7 @@
   function toggleSpeak(cid, text) {
     const synth = window.speechSynthesis;
     if (!synth) {
-      setStatus('这个浏览器不支持朗读', 'err');
+      setStatus(T('panel_tts_unsupported', '这个浏览器不支持朗读'), 'err');
       return;
     }
     // 正在读同一条 → 停
@@ -2804,7 +2804,7 @@
       translate(currentText, shownConfigId(), lastOcr || undefined);
       return;
     }
-    setStatus('目标语言：' + v);
+      setStatus(T('panel_target_lang', '目标语言：$1$', [v]));
   });
 
   // 拖动
