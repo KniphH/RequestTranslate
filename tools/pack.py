@@ -399,7 +399,10 @@ def main():
 
     version = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))["version"]
     # 一定要 resolve 成绝对路径 —— Edge 的 --pack-extension 不认相对路径（直接退 22）
-    out = Path(args.out) if args.out else ROOT / "dist" / f"request-translate-{version}.zip"
+    # 输出名跟着 target 走 —— 以前 --target firefox 会把火狐形态写进 Chromium 命名的 zip，
+    # 两个包混在一起分不清（通读 §3D）。
+    suffix = "-firefox" if args.target == "firefox" else ""
+    out = Path(args.out) if args.out else ROOT / "dist" / f"request-translate-{version}{suffix}.zip"
     out = out.resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
 

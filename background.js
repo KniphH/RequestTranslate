@@ -462,9 +462,11 @@ chrome.runtime.onConnect.addListener((port) => {
     if (msg.type === 'translate') {
       /* 一次翻译可以同时跑几条配置（面板的对比槽位）：configIds 有值就用它；
          没有就退回单条 configId —— 老路径就是一个元素的数组，行为一个字节不变。 */
-      const ids = Array.isArray(msg.configIds) && msg.configIds.length
-        ? msg.configIds.map((x) => String(x || ''))
-        : [String(msg.configId || '')];
+      /* **必须去重**：runCtrls 以 id 为 key —— 同一 id 进来两次，后一个 controller
+         会顶掉前一个，先完成那次 delete 又把仍在跑的那条摘走，新批次 abort 不到它。 */
+      const ids = [...new Set((Array.isArray(msg.configIds) && msg.configIds.length
+        ? msg.configIds
+        : [msg.configId]).map((x) => String(x || '')))].filter(Boolean);
 
       // 新批次开跑：旧批次连它正在飞的请求一起作废（abort + 批次号判废，两道都要 ——
       // abort 是让请求早点停，批次号是保证极窄窗口里漏回来的包也进不来）
@@ -539,6 +541,9 @@ chrome.runtime.onConnect.addListener((port) => {
             const bits = [label, model].filter(Boolean).join(' · ');
             const statusText = bits ? `（${bits}）` : '';
 
+            /* 批次已过期 / 这条被 abort —— 别再播「开始」，
+               否则面板会为一条作废的请求点亮「正在翻译」。 */
+            if (!alive()) break;
             safePost({
               type: 'start',
               configId: cid,

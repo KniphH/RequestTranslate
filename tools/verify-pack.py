@@ -147,12 +147,11 @@ def main():
         problems.append("xpi 里不该有 service_worker（火狐不认）")
     if zpath.suffix == ".zip" and has_sc:
         problems.append("zip 里不该有 scripts（Edge 商店会拒）")
-    # 只在真的合法时才吹「形态正确」—— 检查在打印之前，否则坏包也会印一句「正确」（实测踩到）
-    bad_before = len(problems)
-    if len(problems) == bad_before:
+    # 形态检查的结论**并进 problems**（以前 `bad_before == len(problems)` 是恒真自比较，
+    # 坏包也照样印「形态正确」—— 通读 §3D 抓到的）。
+    if not problems:
         form = "scripts" if has_sc else "service_worker"
         print(f"  background：{form} + type:module（{zpath.suffix} 形态正确）")
-
     # 6. 同名 zip 与 xpi 必须「除 manifest 外逐文件一致」—— 防「只重打了一个包」。
     #    真实事故：T1 合并 CSS 后只重打了 zip，xpi 还留旧源码（panel-core 少 15 KB、
     #    content.js 还带内联 CSS 大块）。拿那种 xpi 传 AMO，提交的代码和仓库对不上。
