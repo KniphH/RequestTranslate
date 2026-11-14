@@ -4741,6 +4741,22 @@ await (async () => {
     nestedLines.length ? '嵌套在 L' + nestedLines.slice(0, 5).join(', ') : '');
 }
 
+/* **i18n 的 msg() 不能被同名参数遮蔽**（2026-11-15 实际栽过）：
+   background.js 里 `port.onMessage.addListener(async (msg) => {` 的参数就叫 msg，
+   而我同时 `import { msg } from './lib/i18n-msg.js'` —— 调用 msg('bg_xxx') 实际执行的是
+   消息对象本身，抛 TypeError，整个 OCR 处理器直接崩，面板永远停在「正在读取剪切板…」。
+   check-globals 抓不到（msg 确实「有定义」），e2e 抓到 25 条红。 */
+{
+  const bgSrc = readFileSync(new URL('../background.js', import.meta.url), 'utf8');
+  const importLine = bgSrc.split('\n').find((l) => l.includes('i18n-msg.js')) || '';
+  const importedName = (importLine.match(/import\s*\{\s*msg(?:\s+as\s+(\w+))?/) || [])[1] || 'msg';
+  /* 这个文件里所有回调参数叫 msg 的地方，都会遮蔽同名 import */
+  const shadows = /addListener\(\s*async\s*\(\s*msg\b|function\s*\w+\s*\(\s*msg\b/.test(bgSrc);
+  check('background.js 里 i18n 的 msg 没被同名参数遮蔽',
+    !(shadows && importedName === 'msg'),
+    shadows ? '有回调参数叫 msg，import 必须改名（如 msg as tMsg）' : '');
+}
+
 console.log('\n' + '='.repeat(46));
 console.log(`通过 ${passed} 项，失败 ${failed} 项`);
 console.log('='.repeat(46));

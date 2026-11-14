@@ -1,9 +1,9 @@
 {
-  "extName": {
-    "message": "RequestTranslate · 请求式划词翻译"
-  },
   "extDesc": {
     "message": "划词翻译，但配置是你自己的 HTTP 请求。直接写 curl 或原始请求报文，可保存多个命名配置。"
+  },
+  "extName": {
+    "message": "RequestTranslate · 请求式划词翻译"
   },
   "adapter_bing_hint": {
     "message": "走 bing.com 网页版接口，首次多花约 0.5 秒。",
@@ -16,6 +16,31 @@
   "adapter_unknown": {
     "message": "没有名为 $1$ 的内置适配器",
     "description": "内置适配器的显示名/说明",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bg_no_config": {
+    "message": "没有任何可用配置，请先到设置页新建一条",
+    "description": "后台"
+  },
+  "bg_no_image_template": {
+    "message": "这条配置没填「图片请求模板」，没法带图翻译",
+    "description": "后台"
+  },
+  "bg_no_ocr_provider": {
+    "message": "还没有配置 OCR 供应商，去设置页的「OCR」里加一条",
+    "description": "后台"
+  },
+  "bg_reading_clipboard": {
+    "message": "正在读取剪切板…",
+    "description": "后台"
+  },
+  "bg_recognizing": {
+    "message": "正在识别截图（$1$）…",
+    "description": "后台",
     "placeholders": {
       "1": {
         "content": "$1"

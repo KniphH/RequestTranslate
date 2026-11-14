@@ -28,7 +28,7 @@ import {
 } from './lib/ocr.js';
 import { NO_IMAGE_MESSAGE, CLIPBOARD_UNAVAILABLE_MESSAGE } from './lib/clipboard.js';
 import { readClipboardImage as readClipboardInPage, errText as clipErrText } from './lib/clipboard-read.js';
-import { msg, invalidateI18nCache } from './lib/i18n-msg.js';
+import { msg as tMsg, invalidateI18nCache } from './lib/i18n-msg.js';
 // 顶栏那个「目标语言」下拉的候选。页面那边 import 不了模块，只能这样捎过去，
 // 免得在 content.js 里手抄一份 —— 加了语言两处就对不上了。
 import { TARGET_PRESETS } from './lib/template.js';
@@ -209,7 +209,7 @@ async function ensureOffscreen() {
       await chrome.offscreen.createDocument({
         url: OFFSCREEN_PATH,
         reasons: ['CLIPBOARD'],
-        justification: '读取剪切板里的截图，交给 OCR 模型识别成文字'
+      justification: '读取剪切板里的截图，交给 OCR 模型识别成文字'   // 权限提示，必须是扩展所在语言的原文
       });
     } catch (err) {
       // 已经有一个开着了（正常情况下不会走到这儿，就当复用）
@@ -391,7 +391,7 @@ chrome.runtime.onConnect.addListener((port) => {
       const toModel = state.ocr.disabled === true;
       const provider = toModel ? null : activeOcrProvider(state.ocr);
       if (!toModel && !provider) {
-        safePost({ type: 'ocr-error', message: '还没有配置 OCR 供应商，去设置页的「OCR」里加一条' });
+        safePost({ type: 'ocr-error', message: await tMsg('bg_no_ocr_provider', '还没有配置 OCR 供应商，去设置页的「OCR」里加一条') });
         return;
       }
 
@@ -403,7 +403,7 @@ chrome.runtime.onConnect.addListener((port) => {
       } else if (msg.reuse && lastShot) {
         shot = lastShot;
       } else {
-        safePost({ type: 'ocr-status', message: '正在读取剪切板…' });
+        safePost({ type: 'ocr-status', message: await tMsg('bg_reading_clipboard', '正在读取剪切板…') });
         try {
           shot = await readClipboardImage();
         } catch (err) {
@@ -429,7 +429,7 @@ chrome.runtime.onConnect.addListener((port) => {
         return;
       }
 
-      safePost({ type: 'ocr-status', message: `正在识别截图（${provider.name}）…` });
+      safePost({ type: 'ocr-status', message: await tMsg('bg_recognizing', '正在识别截图（$1$）…', [provider.name]) });
 
       let out;
       try {
@@ -491,7 +491,7 @@ chrome.runtime.onConnect.addListener((port) => {
            是「一律用 imageConfigId」（单条）还是「每槽用自己的 cid」（多槽）。 */
         const config = pickRequestConfig(state, wantId, !!(msg.context && msg.context.image), ids.length > 1);
         if (!config) {
-          safePost({ type: 'fatal', configId: wantId, message: '没有任何可用配置，请先到设置页新建一条' });
+      safePost({ type: 'fatal', configId: wantId, message: await tMsg('bg_no_config', '没有任何可用配置，请先到设置页新建一条') });
           return;
         }
         /* 注意：这条路径还没 set 进 runCtrls，不需要清理（见下面 set 的位置）。 */
@@ -517,7 +517,7 @@ chrome.runtime.onConnect.addListener((port) => {
           ? requestChain(config).filter((it) => String(it.imageRequest || '').trim())
           : requestChain(config);
         if (hasImage && !runnable.length) {
-          safePost({ type: 'fatal', configId: cid, message: '这条配置没填「图片请求模板」，没法带图翻译' });
+        safePost({ type: 'fatal', configId: cid, message: await tMsg('bg_no_image_template', '这条配置没填「图片请求模板」，没法带图翻译') });
           runCtrls.delete(cid);
           return;
         }

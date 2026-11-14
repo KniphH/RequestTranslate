@@ -500,7 +500,12 @@
     "opt_n_items": "$1$ item(s)",
     "opt_copy_this_translation": "Copy this translation",
     "opt_no_translation": "no translation",
-    "opt_failed_prefix": "Failed: "
+    "opt_failed_prefix": "Failed: ",
+    "bg_no_ocr_provider": "No OCR provider configured — add one on the OCR tab in settings",
+    "bg_reading_clipboard": "Reading the clipboard…",
+    "bg_recognizing": "Recognising screenshot ($1$)…",
+    "bg_no_config": "No usable config — create one in settings first",
+    "bg_no_image_template": "This config has no image request template, so it cannot translate images"
   },
   "placeholders": {
     "panel_switched_to": {
@@ -711,6 +716,11 @@
       }
     },
     "opt_n_items": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "bg_recognizing": {
       "1": {
         "content": "$1"
       }
