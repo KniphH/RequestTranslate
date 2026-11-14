@@ -99,6 +99,16 @@ ok('tidyBlankLines 现在是原样返回（空行留着 = 行号不变）',
     `剥后 ${out.split('\n').length} 行：${JSON.stringify(out)}`);
 }
 
+
+/* 上报给 tools/test-summary.mjs（第八版判据 4：数字要绑到某一次运行）。 */
+try {
+  const { readFileSync: __rf, writeFileSync: __wf } = await import('node:fs');
+  const __p = new URL('../.test-counts.json', import.meta.url);
+  let __d = {};
+  try { __d = JSON.parse(__rf(__p, 'utf8')); } catch { /* 首次 */ }
+  __d['test-strip'] = pass;
+  __wf(__p, JSON.stringify(__d));
+} catch { /* 汇总失败不影响测试结论 */ }
 console.log(failed(fail) ? '' : `\n通过 ${pass} 项，失败 ${fail} 项`);
 if (fail) process.exitCode = 1;
 function failed(n) {

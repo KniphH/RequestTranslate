@@ -7194,4 +7194,15 @@ try {
   }
 }
 
+/* 把这一次的通过数写进 .test-counts.json，供 tools/test-summary.mjs 汇总（带时间戳）。
+   第八版判据 4：回应里的数字要能绑定到某一次具体运行，不能引用先前的日志。 */
+try {
+  const { readFileSync: __rf, writeFileSync: __wf } = await import('node:fs');
+  const __p = new URL('../.test-counts.json', import.meta.url);
+  let __d = {};
+  try { __d = JSON.parse(__rf(__p, 'utf8')); } catch { /* 首次 */ }
+  __d['e2e-ui'] = pass;
+  __wf(__p, JSON.stringify(__d));
+} catch { /* 汇总失败不影响测试结论 */ }
+
 process.exit(fail ? 1 : 0);

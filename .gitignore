@@ -23,3 +23,6 @@ tools/addassert.mjs
 
 # Chrome / Edge 打包与 DNR 编译产物（会反复生成，每次让 git status 变脏）
 _metadata/
+
+# 测试汇总的临时计数（tools/test-summary.mjs 用）
+.test-counts.json
