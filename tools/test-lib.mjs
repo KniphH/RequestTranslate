@@ -4693,6 +4693,56 @@ await (async () => {
   console.log(`  代码 key ⊂ en 包   ${orphanEn.length === 0 ? "是" : "否！缺 " + orphanEn.slice(0, 5).join(", ")}`);
   check('代码里用到的 key 在英文包里也都有（不只是中文包）',
     orphanEn.length === 0, orphanEn.slice(0, 6).join(', '));
+
+/* ---- check 不许嵌套（第九版 §2 P2）----
+   两条 check 嵌在另一条的实参里时，它们靠副作用执行、失败信息也会错位。
+   这种写法语法完全合法，肉眼很难看出来，所以用逐字符扫描钉住。
+   扫描要正确跳过字符串 / 模板 / 正则 / 注释 —— 否则会被源码里的 'check(' 骗到。 */
+{
+  const selfSrc = readFileSync(new URL(import.meta.url), 'utf8');
+  const isReStart = (st, p) => {
+    let k = p - 1;
+    while (k >= 0 && /\s/.test(st[k])) k -= 1;
+    return k < 0 || '=(,:[!&|?{};'.includes(st[k]);
+  };
+  const ranges = [];
+  let p = 0;
+  while (p < selfSrc.length) {
+    const at = selfSrc.indexOf('check(', p);
+    if (at < 0) break;
+    let d = 0, j = at + 5, q = null, lc = false, bc = false, rg = false;
+    while (j < selfSrc.length) {
+      const c = selfSrc[j], n2 = selfSrc[j + 1];
+      if (c === '\n') { lc = false; j += 1; continue; }
+      if (lc) { j += 1; continue; }
+      if (bc) { if (c === '*' && n2 === '/') { bc = false; j += 2; continue; } j += 1; continue; }
+      if (q) { if (c === '\\') { j += 2; continue; } if (c === q) q = null; j += 1; continue; }
+      if (rg) { if (c === '\\') { j += 2; continue; } if (c === '/') rg = false; j += 1; continue; }
+      if (c === '/' && n2 === '/') { lc = true; j += 2; continue; }
+      if (c === '/' && n2 === '*') { bc = true; j += 2; continue; }
+      if (c === '/' && isReStart(selfSrc, j)) { rg = true; j += 1; continue; }
+      if (c === "'" || c === '"' || c === '`') { q = c; j += 1; continue; }
+      if (c === '(') d += 1;
+      else if (c === ')') { d -= 1; if (!d) break; }
+      j += 1;
+    }
+    ranges.push({ from: at, to: j });
+    p = j + 1;
+  }
+  const nestedLines = [];
+  for (const a of ranges) {
+    for (const b of ranges) {
+      if (a !== b && b.from > a.from && b.to < a.to) {
+        nestedLines.push(selfSrc.slice(0, a.from).split('\n').length);
+      }
+    }
+  }
+  check('test-lib 自身没有嵌套的 check 调用',
+    nestedLines.length === 0,
+    nestedLines.length ? '嵌套在 L' + nestedLines.slice(0, 5).join(', ') : '');
+}
+
+console.log('\n' + '='.repeat(46));
 console.log(`通过 ${passed} 项，失败 ${failed} 项`);
 console.log('='.repeat(46));
 

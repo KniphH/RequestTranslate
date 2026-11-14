@@ -381,7 +381,17 @@
     "panel_slot_collapsed": "Collapsed “$1$” (this session only; your default combination is unchanged)",
     "panel_tts_unsupported": "This browser does not support speech",
     "panel_target_lang": "Target language: $1$",
-    "dot_idle_tip": "Idle"
+    "dot_idle_tip": "Idle",
+    "popup_copied": "Copied",
+    "popup_waiting_input": "Waiting for input…",
+    "popup_need_text": "Enter some text first",
+    "popup_no_config": "No usable config",
+    "popup_translating": "Translating…",
+    "popup_reasoning": "reasoning",
+    "popup_no_result": "No result",
+    "popup_failed": "Failed",
+    "popup_translate": "Translate",
+    "popup_init_failed": "Initialisation failed: "
   },
   "placeholders": {
     "panel_switched_to": {

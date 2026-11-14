@@ -175,14 +175,14 @@ $('#btn-copy').addEventListener('click', async () => {
   const text = out.classList.contains('empty') ? '' : out.textContent;
   if (!text) return;
   await navigator.clipboard.writeText(text);
-  setStatus('已复制');
+  setStatus(uiText('popup_copied'));
   setTimeout(() => setStatus(''), 1500);
 });
 
 $('#btn-clear').addEventListener('click', () => {
   if (controller) controller.abort();
   txt.value = '';
-  setOut('等待输入…', true);
+  setOut(uiText('popup_waiting_input'), true);
   setStatus('');
   txt.focus();
 });
@@ -193,13 +193,13 @@ $('#link-options').addEventListener('click', () => chrome.runtime.openOptionsPag
 async function run() {
   const text = txt.value.trim();
   if (!text) {
-    setStatus('先输入点内容', true);
+    setStatus(uiText('popup_need_text'), true);
     return;
   }
 
   const cfg = getConfig(state, sel.value);
   if (!cfg) {
-    setStatus('没有可用配置', true);
+    setStatus(uiText('popup_no_config'), true);
     return;
   }
 
@@ -211,7 +211,7 @@ async function run() {
 
   try {
   goBtn.disabled = true;
-  goBtn.textContent = '翻译中…';
+  goBtn.textContent = uiText('popup_translating');
   setStatus('');
   setOut('', true);
   out.dataset.placeholder = '';
@@ -244,22 +244,22 @@ async function run() {
     if (result.status) bits.push('HTTP ' + result.status);
     bits.push((result.ms / 1000).toFixed(1) + 's');
     if (result.usedPath) bits.push(result.usedPath);
-    if (result.reasoningChars) bits.push('思考' + ' ' + result.reasoningChars + ' ' + '字');
+    if (result.reasoningChars) bits.push(uiText('popup_reasoning') + ' ' + result.reasoningChars);
     else if (result.warnings && result.warnings.length) bits.push(result.warnings[0]);
     setStatus(bits.join(' · '));
   } else {
-    setOut(result.error || '没有拿到结果', true);
-    setStatus('失败', true);
+    setOut(result.error || uiText('popup_no_result'), true);
+    setStatus(uiText('popup_failed'), true);
   }
   } finally {
     /* runRequest 抛异常时按钮会永久禁用 —— 必须兜住 */
     if (myRun === runSeq) {
       goBtn.disabled = false;
-      goBtn.textContent = '翻译';
+    goBtn.textContent = uiText('popup_translate');
     }
   }
 }
 
 init().catch((err) => {
-  setStatus('初始化失败：' + (err && err.message), true);
+  setStatus(uiText('popup_init_failed') + (err && err.message), true);
 });

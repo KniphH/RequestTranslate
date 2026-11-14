@@ -1,9 +1,9 @@
 {
-  "extDesc": {
-    "message": "划词翻译，但配置是你自己的 HTTP 请求。直接写 curl 或原始请求报文，可保存多个命名配置。"
-  },
   "extName": {
     "message": "RequestTranslate · 请求式划词翻译"
+  },
+  "extDesc": {
+    "message": "划词翻译，但配置是你自己的 HTTP 请求。直接写 curl 或原始请求报文，可保存多个命名配置。"
   },
   "adapter_bing_hint": {
     "message": "走 bing.com 网页版接口，首次多花约 0.5 秒。",
@@ -1506,6 +1506,46 @@
   "panel_waiting": {
     "message": "等待结果…",
     "description": "结果区空态占位符"
+  },
+  "popup_copied": {
+    "message": "已复制",
+    "description": "popup"
+  },
+  "popup_failed": {
+    "message": "失败",
+    "description": "popup"
+  },
+  "popup_init_failed": {
+    "message": "初始化失败：",
+    "description": "popup"
+  },
+  "popup_need_text": {
+    "message": "先输入点内容",
+    "description": "popup"
+  },
+  "popup_no_config": {
+    "message": "没有可用配置",
+    "description": "popup"
+  },
+  "popup_no_result": {
+    "message": "没有拿到结果",
+    "description": "popup"
+  },
+  "popup_reasoning": {
+    "message": "思考",
+    "description": "popup"
+  },
+  "popup_translate": {
+    "message": "翻译",
+    "description": "popup"
+  },
+  "popup_translating": {
+    "message": "翻译中…",
+    "description": "popup"
+  },
+  "popup_waiting_input": {
+    "message": "等待输入…",
+    "description": "popup"
   },
   "trigger_dot_err": {
     "message": "翻译失败",
