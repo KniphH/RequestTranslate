@@ -70,7 +70,9 @@ curl https://api.ant-ling.com/v1/chat/completions \
 两边的功能一样。权限也是一套：读取剪贴板、在所有页面上划词、访问你要翻译的接口。
 
 不装商店版也可以：下载 release 里的包解压，Edge / Chrome 走「加载解压缩的扩展」，
-Firefox 用 `about:debugging` → 「临时载入附加组件」选 `manifest.json`（重启浏览器会失效）。
+Firefox 装正式版去 [Firefox Add-ons](https://addons.mozilla.org/firefox/addon/requesttranslate/)；
+想临时试：`about:debugging` → 「临时载入附加组件」 —— **要选 xpi 解压后那份 `manifest.json`**，
+仓库里那份只有 `service_worker`（Chromium 形态），火狐不认（重启浏览器会失效）。
 
 ---
 
