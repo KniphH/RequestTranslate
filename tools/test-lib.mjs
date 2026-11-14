@@ -4469,6 +4469,14 @@ await (async () => {
   check('panel-core 里没有拼错的 --rt-fg / --rt-fg-dim（应为 --rt-text*）',
     !/var\(--rt-fg/.test(pcSrc3));
 
+  /* 设置页的「非合并导入」只换了 configs，slotConfigs 里还是旧 id —— 必须重跑归一化，
+     否则面板一个槽都渲染不出来（第六版 §3 指出的悬空）。 */
+  check('设置页导入后重跑 normalizeSlots（槽位不会悬空）',
+    /state = \{ \.\.\.state, \.\.\.parsed, configs: picked\.configs \};[\s\S]{0,400}normalizeSlots\(state\.settings, state\.configs\)/.test(optSrc3));
+  check('normalizeSlots 从 store 导出并 import 进设置页',
+    /export function normalizeSlots/.test(readFileSync(new URL('../lib/store.js', import.meta.url), 'utf8')) &&
+      /\n  normalizeSlots,/.test(optSrc3));
+
   /* ---- 口径自检（第六版 §4③：数字由脚本打印，不许手写）----
      这几项以前我全是手写进文档的，而且**全部对不上**（1063 写成 1043、
      19 写成 18、20 写成 25、265 写成 157）。现在让脚本自己报。 */

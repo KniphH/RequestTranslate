@@ -16,7 +16,8 @@ import {
   canTranslateImage,
   PANEL_OWNED_SETTING_KEYS,
   adoptPanelOwned,
-  getConfig
+  getConfig,
+  normalizeSlots,
 } from './lib/store.js';
 
 /* 两个样式表都由 lib/panel-core.js 提供（普通脚本、挂在 window.RTPanelCore 上，
@@ -3835,6 +3836,11 @@ function bindImportExport() {
         const myPanelCss = (state.settings && state.settings.panelCss) || '';
         state = { ...state, ...parsed, configs: picked.configs };
         if (state.settings) state.settings.panelCss = myPanelCss;
+        /* **导入后必须重跑归一化**：新配置的 id 和旧的完全不同，
+           而 slotConfigs / imageSlotConfigs 里存的还是旧 id ——
+           不归一化的话面板一个槽都渲染不出来（列表悬空）。
+           normalizeSlots 会去重、滤掉不存在的、按 panelSlots 截断。 */
+        normalizeSlots(state.settings, state.configs);
       }
       editingId = state.activeConfigId = state.configs[0].id;
       editingOcrId = state.ocr.activeId;
