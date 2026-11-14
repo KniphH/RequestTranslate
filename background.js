@@ -612,7 +612,14 @@ chrome.runtime.onConnect.addListener((port) => {
           }
         }
 
-        runCtrls.delete(cid);
+        /* **appendHistory 是 await，期间批次可能已作废**（用户又划了一次 / 关掉面板）。
+           不在这里再判一次的话，一条过期的 done 会打进新一轮的界面里 ——
+           并发 4 槽时这段窗口被 storage 排队进一步放大（第八版 §1 P1-3）。 */
+        if (!alive()) return;
+
+        /* **只摘自己那个 controller**：同 cid 可能已被新批次重建，
+           无条件 delete 会把新批次刚建的摘掉，之后 abort 不到它。 */
+        if (runCtrls.get(cid) === ctrl) runCtrls.delete(cid);
         safePost({ type: 'done', configId: cid, result: { ...result, raw: undefined } });
       };
 

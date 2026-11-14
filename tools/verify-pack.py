@@ -203,15 +203,25 @@ def main():
         naked = _re.sub(r"/\*[\s\S]*?\*/", "", src_text)
         naked = _re.sub(r"(?m)^\s*//[^\n]*", "", naked)
         compared += 1
+        compared += 1
         sf = len(_re.findall(r"\bfunction\b|=>", naked))
         pf = len(_re.findall(r"\bfunction\b|=>", packed))
-        if sf > 3 and pf > sf * 1.20:
-            stale.append(f"{name} 包内函数数 {pf} 多于源码 {sf} → 包比源码新")
-        for m in _re.finditer(r"export\s+(?:async\s+)?function\s+(\w+)", src_text):
+        # **双向都要判**（第八版 §2 P0-2）：
+        #   包内更多 → 包比源码新（源码落后了）
+        #   包内更少 → **包是旧的**（这才是这个检查存在的理由，以前不抓）
+        # 压缩会常量折叠 / 删死代码，所以「包内少一点」是正常的；
+        # 判据取「源码规模 >= 包内规模」且差距不超过 25%：
+        # 差距超了说明包缺了整段逻辑。
+        if sf > 3:
+            if pf > sf * 1.20:
+                stale.append(f"{name} 包内函数数 {pf} 多于源码 {sf} → 包比源码新")
+            elif sf > pf * 1.25:
+                stale.append(f"{name} 包内函数数 {pf} 少于源码 {sf}（差 {round((1 - pf / sf) * 100)}%）→ 包是旧的，重新打")
+        # 导出锚点：**function 和 const 都要**（全仓有几十个 export const）
+        for m in _re.finditer(r"export\s+(?:async\s+)?(?:function|const|let|class)\s+(\w+)", src_text):
             fn = m.group(1)
             if not _re.search(r"\b" + _re.escape(fn) + r"\b", packed):
                 stale.append(f"{name} 的导出 {fn} 不在包里 → 包是旧的，重新打")
-
     if stale:
         problems.extend(stale)
     else:

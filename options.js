@@ -2932,7 +2932,9 @@ function renderPanelPreview() {
         o.textContent = c.name;
         cfgSel.appendChild(o);
       }
-      const wantId = s.activeConfigId || (list[0] && list[0].id) || "";
+      /* **activeConfigId 在 state 顶层，不在 settings 里** —— 写成 s.activeConfigId
+         恒 undefined，预览的配置下拉永远停在第一条（第八版 §2 指出，第六版修过一次又回归）。 */
+      const wantId = state.activeConfigId || (list[0] && list[0].id) || "";
       cfgSel.value = wantId;
       const cur = list.find((c) => c.id === wantId) || list[0];
       cfgSel.title = "翻译接口：" + cur.name;

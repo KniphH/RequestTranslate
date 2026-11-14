@@ -210,21 +210,25 @@ def make_zip(files, out, stripped=None, target="chromium"):
                 bg.pop("service_worker", None)
                 bg["scripts"] = ["background.js"]
                 m["background"] = bg
-            # 火狐不认的 Chromium 专用字段也一并去掉（第七版 §3 指出）。
-            #   minimum_chrome_version —— Firefox 会当成未知键，AMO 校验会警告
-            #   permissions 里的 offscreen —— Firefox 没有这个 API，留着是无效声明
-            #   declarative_net_request —— Firefox 支持 DNR 但字段形态不同（且我们只
-            #                              用它给 Chromium 收紧 referrer），去掉更安全
+            # 按目标浏览器裁掉对方不认的字段（第八版 §1 指出：双向都不干净）
+            #   firefox : minimum_chrome_version / declarative_net_request 字段、
+            #             permissions 里的 offscreen 和 declarativeNetRequest
+            #             —— 后两个剥了字段却留着权限，等于声明了一个不存在的能力
+            #   chromium: browser_specific_settings（gecko 专有键）
             if target == "firefox":
                 m.pop("minimum_chrome_version", None)
                 m.pop("declarative_net_request", None)
                 perms = m.get("permissions")
                 if isinstance(perms, list):
-                    m["permissions"] = [x for x in perms if x != "offscreen"]
-            elif bg.get("scripts"):
-                # 兜底：万一仓库里又被人加回双字段，出 chromium 包时也裁掉
-                bg.pop("scripts", None)
-                m["background"] = bg
+                    m["permissions"] = [
+                        x for x in perms if x not in ("offscreen", "declarativeNetRequest")
+                    ]
+            else:
+                m.pop("browser_specific_settings", None)
+                if bg.get("scripts"):
+                    # 兜底：万一仓库里又被人加回双字段，出 chromium 包时也裁掉
+                    bg.pop("scripts", None)
+                    m["background"] = bg
             z.writestr(name, json.dumps(m, ensure_ascii=False, indent=2) + "\n")
     if out.read_bytes()[:2] != b"PK":
         sys.exit("写出来的不是 zip（魔数不对）！")

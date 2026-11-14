@@ -1,112 +1,97 @@
-# 全项目代码通读分析 · 第七版（2026-11-14 傍晚）
+# 全项目代码通读分析 · 第八版（2026-11-14 深夜）
 
 > **本版动笔前再次完整重读全部代码**：三路独立逐文件通读（content/面板组、options/popup 组、
-> lib/后台/工具组），我自己逐条比 `file:line`、复跑 e2e、重算数字口径。不用上一版结论代替重读。
+> lib/后台/工具组），我自己逐条比 `file:line`、复跑 e2e、**实跑同源检查抓旧包**。不用上一版结论代替重读。
 >
-> 基线：`manifest.json` **1.3.2**，**HEAD `51a94db`、工作区干净**（回应里写的 `61c034d` 是上一提交）。
-> 实测 `test-lib` **1075/0**、`test-engine` 89/0、`test-strip` 19/0、`check-globals` 22 文件、
-> `check-dom` 通过；**e2e 我复跑 = 557/0**；`dist/request-translate-1.3.2.zip` 18:32 生成、
-> 内含 `normalizeSlots`（代码层与 HEAD 同源）。
-> 对应回应：`CODE-REVIEW-RESPONSE-2026-11-13.md` **第十二版**（第十、十一版修了第六版的 3 P0 + 5 P1）。
+> 基线：`manifest.json` **1.3.2**，**HEAD `bc15199`、工作区干净**。
+> 实测 `test-lib` **1087/0**、`test-engine` 89/0、`test-strip` 19/0、`check-globals` 22 文件、
+> `check-dom` 通过；**e2e 我复跑 = 557/0**（回应声称属实；其日志里 21:16 那次 556/1 是修 OCR 顺序前的中间态）。
+> 对应回应：`CODE-REVIEW-RESPONSE-2026-11-13.md` **第十三版**（第七版 P1 7 项 + P2 9 项 + 一条自省）。
 
-## 1. 第十二版声称验收
+## 1. 第十三版声称验收
 
-| 声称 | 验收 | 证据 |
-| --- | --- | --- |
-| 导入后槽位悬空已修 | ✅ **已解决** | `lib/store.js:281 export function normalizeSlots`；`options.js:20` import、`:3843` 在整份替换分支调用 |
-| 孤儿注释「核查为 0 处」 | ⚠️ **旧行号确实被覆盖，但新孤儿仍在** | `content.js:271-272`（讲「单条模式尾部操作条」却接 `mount()`）、`:113-122` 的钉住说明被插进了 `panelClosedByUser`、`:1396-1402` 与 `:1403-1417` **两块 JSDoc 叠在同一个 `renderSlots`**、`:1446`/`:1474-1479` 连续空行；`panel-core.js:123-129` 的 `slotHtml` 注释被 `slotStatus` 隔断 |
-| 口径自检（脚本打印，照抄进文档） | ✅ 脚本能打印，**但口径不透明** | `test-lib.mjs:4496-4501` 打印 1075/365/365/265/25；同一件事三种数：回应 **265**、我本版实测 **288**（含双引号/全部文件）、上一版报告 **157**——差别全在统计正则与扫描范围；「25 键」不含 `langOrder`/`imageSlotConfigs`（`store.js:207-250` 缺、`options.js:4112` 写、`store.js:292` 归一化） |
-| `verify-pack` 与源码同源（5 个标记） | ⚠️ **是 5 个字符串标记，不是逐文件哈希** | `verify-pack.py:178-199` 自注释「改为关键标记存在性」；只查 `orderedLangCodes`×3、`Math.round(...panelSlots)`、`normalizeHistoryMax`。**store/engine/ocr/popup/options.css 无任何标记**；包内 `content.js` 的函数名已被 esbuild 压掉（`imageFingerprint` 不存在），这类改动根本当不了标记 |
-| e2e 环境缺失 `exit(1)` | ✅ **已解决**（提示无效） | `e2e-ui.mjs:76-85` 两处 `exit(1)`；但 `:78` 提示「设置 E2E_BROWSER」，全仓只此一处出现、代码从不读它 |
-| `TRIGGER_CSS` 删除 / `cacheKey` 多段采样 | ✅ 已落地 | `content.js` 已无该声明；`05081c5` 的多段采样在包内（`\x01img|` 标记在） |
-| 两处下拉作废回滚 | ⚠️ **语言那处等于没修** | 见 §2 ⑤ |
-| `loadPack` 不过 `validatePack`（保留分歧） | ⚠️ 理由基本成立，**漏了第二读取口** | 唯一写入口确是 `downloadPack`；但 `i18n-msg.js:18-28 getDownloaded()` 供右键菜单标题用，同样不校验、四道上限全失效。回应没覆盖这条 |
-
-## 2. 第六版列项的现状（①~⑧）
-
-| # | 项 | 状态 | 证据 |
+| 项 | 声称 | 验收 | 证据 |
 | --- | --- | --- | --- |
-| ① | `TRIGGER_CSS` 死代码 | ✅ **已解决** | 只在注释里出现（137/212/781），样式唯一来源 `panel-core.js:267-327` |
-| ② | 占位文案时序 | ⚠️ **部分**：`enterBusy`(667-668)、`showNoCachedResult`(1053-1055) 已改成「先写 placeholder 再加 empty」✅；**`showFailure` 仍是死代码**——`701` 写 `dataset.placeholder` → `702` `classList.remove('empty')`，`.rt-out.empty::before`(panel-core:560) 永不生效，失败时结果区一片空白 | `content.js:697-725` |
-| ③ | `frame-bridge` `fr` 空引用 | ✅ **已解决** | `frame-bridge.js:85 if (!fr) return;`（消息整条丢弃，桥接链会断但不崩） |
-| ④ | CSS 变量 `--rt-fg` / `--rt-fg-dim` | ✅ **已解决** | 全仓已无该引用；定义的是 `--rt-text`(353/401)、`--rt-text-dim`(354/402) |
-| ⑤ | 下拉作废回滚 | ⚠️ **配置半解决、语言未解决** | 配置：`:2633` 快照 → `:2661-2667` 回滚三件事，但（a）时序逆向——A 挂起时 B 以 A 改过的状态为基线执行完，A 恢复时用旧快照把 **B 的改动整份抹掉**；（b）`slots.slice()` 浅拷贝，槽对象已被就地改写回不去；（c）不还原下拉显示。语言：`:2691` 先 `prefs.targetLang = v`，`:2694` 才拍快照 → `:2703` 回滚成空操作 |
-| ⑥ | `done`/`fatal` 的 `if (!sl)` | ✅ **已解决**（另有残留） | `:1180-1186`、`:1212-1216` 改为 `if (allSettled()) leaveBusy();`；但 `:2673-2674` cfgSelect 命中缓存、`:1048` `showNoCachedResult` 仍无条件 `leaveBusy()` |
-| ⑦ | `showFailure` 多槽 / `showNoCachedResult` 清空 | ⚠️ **部分** | `showFailure:719-721` 多槽仍只 `renderSlots()` 重画旧内容、不落槽；`showNoCachedResult:1056-1058` 改为 `renderSlots()` 但**不重置槽状态/文本**——旧译文还在屏上，状态栏却写「点 ↻ 翻译」；单槽路径清 DOM 但不清 `slots[0].text`，下次 `renderSlots()` 会把旧译文搬回 |
-| ⑧ | 注释与代码不符 | ⚠️ **部分** | `renderResult`(986-1006) 已改对 ✅；**`renderSlotResult` JSDoc(1448-1453) 仍说「这里没有分支」**而代码 `:1462-1472` 恰有 if/else；`trigger-styles.js:5/12` 仍宣称导出 `TRIGGER_CSS`、content.js 抄了一份 CSS |
+| P1-1 导入被旧存档顶回 | 闭 | ✅ **已解决** | `options.js:3872-3875` 导入时把 `PANEL_OWNED_SETTING_KEYS` 全标 `panelTouched`；`store.js:845-859` 按 `skip` 跳过（含 `imageConfigId` 分支） |
+| P1-2 图片多槽 N-1 busy | 闭 | ✅ 实现，⚠️ **兜底仍会撞** | `store.js:399-419` multiSlot 落地；但 `getConfig` 找不到退 `configs[0]`、图片单条退 `imageConfigId` → 两个请求同 `cid`；`runCtrls` 以 `cid` 为键（`background.js:500`），后写覆盖、`delete` 不校验归属 |
+| P1-3 done 判废窗口 | 闭（「前后都有 alive」） | ❌ **未闭环** | `background.js:594` 只有一道 `alive()`；`:605 await appendHistory` 之后到 `:616 safePost(done)` **无再判**。并发 4 槽时窗口被 storage 排队放大 |
+| P1-4 pendingConfigId | 闭 | ✅ 已赋值 | `content.js:1687 pendingConfigId = picked`；但后台恒带 configId，兜底分支实际不可达（属死兜底，无害） |
+| P1-5 失败/无缓存无提示 | 闭 | ✅ **已解决** | `showFailure:714-717`、`showNoCachedResult:1062-1065`、`enterBusy:665-668` 三处都改成「先写 dataset 再加 empty」 |
+| P1-6 popup 接 i18n | 部分：语言列表已改 orderedLangCodes | ❌ **语言列表未改** | `popup.js:113` 仍是 `TARGET_PRESETS.slice()`，`popup.js` 全文无 `orderedLangCodes`；文案 i18n 也确实没做（回应自认部分） |
+| P1-7 菜单标题死键 | 闭 | ✅ **已解决** | `background.js:65/69` 接 `msg()` |
+| P2 同源检查 | 改「函数规模 + 导出名」，并「亲手造旧包验证能抓」 | ❌ **方向反了，旧包永远通过** | 见 §2 P0-2 |
+| P2 口径自检 | 每数带口径 + 「代码 key ⊂ zh 包」断言 | ✅ 已落地 | `test-lib.mjs:4567-4574`，实测打印「代码 key ⊂ zh 包 是」 |
+| P2 esbuild 行号文档 | 改成实事求是 | ⚠️ 部分 | `pack.py:13-17`、`DEVELOPMENT.md:439` 改了；`verify-pack.py:6` 仍写「行数必须一模一样」、`ROADMAP.md:90` 仍承诺行号对齐 |
+| P2 Firefox 字段剥离 | 剥 minimum_chrome_version / DNR / offscreen | ⚠️ **双向都不干净** | xpi：字段剥了，但 **`declarativeNetRequest` 权限仍在**、`ua-rules.json` 仍打进包、内置 bilibili 配置与 `PRIVACY.md:15` 仍宣称靠 DNR 补头（火狐上必被风控拦）；zip：反而带 `browser_specific_settings`（gecko，Chromium 未知键） |
+| P2 use strict 位置 | 移到 IIFE 首语句 | ✅ 已解决 | `panel-core.js:24`、`i18n.js:16` |
+| P2 死代码清理 | 6 个 `</p>`、3 个死 CSS、`var st`、start 清 DOM | ⚠️ 部分 | `options.js:2802-2806` 旧 `shellHtml` 拼接（含 `</button>'`）仍在；`applyDelta` 多余空块(960-962)；`renderSlots` 双 JSDoc(1407-1428) 仍在；`slotHtml` 注释仍挂在 `slotStatus` 上 |
+| P2 isComposing / moveConfig | 已加 / 两份名单都重排 | ✅ 基本 | `options.js:1335`；`:687-688`、`:2130-2131` 两份都排；⚠️ 删除配置(`1323-1325`)只摘文字名单 |
+| P2 PRIVACY 中英 11 条 | 对齐 | ⚠️ 部分 | 英文 `:51-54` 少了「整张图也会发」「默认 Bing」两句，与中文 `:13` 不等价；「最后更新」仍写 11-08 |
 
-## 3. 本轮新发现（按严重度）
+## 2. 本轮最该先看的三条
 
-### P1 · 用户可感知
+### P0-1 OCR 自建供应商会被复制、越滚越多（本轮引入、**已进 1.3.2 包**）
 
-1. **导入的设置在落盘时被旧存档顶回**（新，本轮最实的一条）。导入后 `options.js:3855 await persist()` →
-   `persist` 里 `:3895 adoptPanelOwned(state, saved, panelTouched)`；该函数（`store.js:834-847`）对
-   「没动过的键」**一律取 `saved`**（= 导入前的存档）→ 导入包里的 `targetLang` / `showOriginal` /
-   `ocr.imageConfigId` 被静默改回旧值。`panelTouched` 为空时百分百发生。
-2. **图片模式多槽会 N-1 个槽永久 busy**：content 把一屏所有槽 id 发出去（`:1705-1709`），
-   而 `pickRequestConfig` 在 `hasImage` 时**无视 configId、一律回 `imageConfigId`**（`store.js:401`）→
-   同 cid 撞 Map（`background.js:494-496`），只有一条流能回包，其余槽永远「翻译中…」。
-3. **`done` 判废窗口仍在**：`background.js:595 alive()` → `:601 await appendHistory` → `:612 done`
-   无二次判废；`:611 runCtrls.delete(cid)` 还会摘掉新批次刚建的同 cid controller。
-4. **`pendingConfigId` 从未赋值**：`:77` 声明后，`05081c5` 删掉赋值，`:1179/1211` 的兜底归档是死分支。
-5. **失败/无缓存时没有提示**：`showFailure` 的占位是死代码（§2 ②）；`refreshShellText`(265-267)
-   只要 `empty` 就改写成「等待结果…」，会把「点 ↻ 翻译」冲掉。
-6. **popup 未接 i18n**（0 个 `data-i18n`，文案全硬编码）；语言列表取 `TARGET_PRESETS` 而非
-   `orderedLangCodes`（自定义顺序/新增语言丢失）；两个 change 整份 `saveState`，无 `adoptPanelOwned`。
-7. **右键菜单标题死键**：`background.js:62-67` 未给 `ocrMenuItem`/`shotMenuItem` 传 title，
-   `i18n/en.json:11-12` 的 key 全仓无人引用 → 英文界面菜单仍中文（疑似上一轮修完又被重构冲掉）。
+`lib/ocr.js:284` 起：`for (const p of saved) pushOne(p)` → `for (const d of OCR_PROVIDERS) pushOne(d)`
+→ **`for (const p of saved) { if (builtin) continue; providers.push(normalizeOcrProvider(p)) }`**。
+第三段把「用户自建的供应商」**又 push 一遍**（第二段的 `pushOne` 已经加过，第三段没有 `placed` 检查）。
+实测 `normalizeOcrState({providers:[my-own]})` → `my-own, 3×内置, my-own`；每次 `loadState` 再
+`persist` 就多一份，列表重复、排序/删除随之失真。**包内已含这段代码**（`BUILTIN_OCR_IDS.includes` 在包里）。
+测试为何全绿：`test-lib:1039` 只断言「最后一条 id 是 my-own」，重复项照样过；e2e 只覆盖内置供应商。
 
-### P2 · 工具、口径与卫生
+### P0-2 「与源码同源」的方向是反的 —— 旧包永远通过
 
-- **同源检查强度不足**（§1）：5 个标记 ≠ 逐文件同源；`verify-pack` 也不校验 manifest 引用的
-  资源是否存在（`ua-rules.json`/icons/`offscreen.html`/css 写错照样全绿），不验任何 `.json`。
-- **口径不自证**（§1）：265/288/157 三个数并存；「25 键」与 `DEFAULT_SETTINGS` 的真实覆盖面不符。
-- **esbuild 后行号不守恒**：包内 `background.js` 1 行、`content.js` 34 行；`pack.py:10-14` 与
-  `DEVELOPMENT.md:439` 仍承诺「报错栈行号对得上源码」。
-- **Firefox 包仍带 Chromium 字段**：`minimum_chrome_version`、`offscreen` 权限、`declarative_net_request`。
-- `panel-core.js:24-32` 的 `'use strict'` 在函数声明之后，不构成指令序言，整个 IIFE 实际非严格模式。
-- 死代码/注释残留：`options.js:2789-2793` 被行注释吞掉的旧骨架字符串、`options.html` 6 个多余 `</p>`、
-  无引用 CSS 类（`.pv-wrap`/`.pv-host`/`.lang-name-row`）、`panel-core.js:157-160` 的死赋值、
-  `content.js:1108-1113` 单槽 start 清空 DOM 却保留 `sl.text`（与 1714-1717 注释矛盾）。
-- 其他：测试框 Enter 不判 `isComposing`（中文输入法回车即发送）、`moveConfig` 只重排
-  `slotConfigs` 不重排 `imageSlotConfigs`、`PRIVACY.md` 英文版缺 bilibili/DNR 两段。
+`verify-pack.py:206-213` 唯一判断是 `if sf > 3 and pf > sf * 1.20: "包内函数数多于源码 → 包比源码新"`。
+也就是说它只抓「包比源码新」，**旧包（函数更少）永远不报**——而「包是旧的」恰恰是这检查存在的理由。
+实测拿 `dist/request-translate-1.3.1.zip` 对 HEAD：content 187→181、store 51→50，函数项 **0 条红**；
+5 条红全来自导出名。导出锚点又只认 `export function`，**漏 `export const`**（全仓 32 个）。
+「亲手造旧包验证」只在回应文字里，仓库无夹具/脚本，且只验了导出名那一侧，没验「函数更少」这一侧。
 
-## 4. 结清判据（第七版）
+### P1 两处「声称改了、实际没改」
 
-前六版的三道门禁（真行为断言 / 全量 / closed 清单）＋上一版三锚（同源 / e2e 不许空跑 / 数字取脚本）
-方向都对，但本轮证明**锚的强度也要写进判据**。补齐如下，缺一条就不算结清：
+- `popup.js:113` 仍是 `TARGET_PRESETS.slice()`（P1-6 声称已改 `orderedLangCodes`）。
+- `options.js:2935` 预览又读 `s.activeConfigId`（`s = state.settings`，该字段在 state 顶层）→ **恒 undefined**，
+  配置下拉永远停在第一条。这个坑第六版修过一次，本轮回归。
 
-1. **同源 = 逐文件哈希**：包内每个 `.js`（至少）与 `git show HEAD:<path>` 的剥注释/压缩等价形式比对；
-   不允许「5 个标记在就算同源」。
-2. **口径自检必须打印口径**：正则模式、扫描文件清单、以及「代码 key ⊂ 包 key」的断言；
-   文档数字只能抄脚本输出。三种数并存说明口径没定义。
-3. **回滚用深拷贝 + 单调序号 + 回滚后同步 DOM**：`slots.slice()` 不够（对象就地改写）；
-   语言快照必须拍在赋值**之前**；作废后要把 `cfgSelect.value`/标题一起还原。
-4. **导入 = 全量替换**：`persist` 前清空 `panelTouched` 或跳过 `adoptPanelOwned`，
-   否则导入包里的目标语言/显示原文/图片配置会被旧存档顶回。
-5. `showFailure` / `showNoCachedResult` 与 `enterBusy` 用同一个占位写法（先 dataset 再 add empty），
-   并补一条「失败态结果区有文案」的行为断言。
+其他未闭环：`$1$` 替换正则 `/\$(\d+)/g` 不消费尾部 `$`（装英文包后显示「链上共 3$ 条」）；
+`applyI18n` 二次调用冲掉动态标题；`persist` 无 try/catch、导入分支无 finally（`panelTouched` 可能永久残留）；
+合并导入不跑 `normalizeSlots` 且不补 `imageSlotConfigs`；`refreshShellText`(265-267) 把「点 ↻ 翻译」冲回
+「等待结果…」；`showNoCachedResult` 的 `setDot/setStatus` 误缩进在 for 循环体内；content 状态行仍大面积硬编码中文。
 
-**按此判据，可 closed**：①③④⑥、`TRIGGER_CSS`、`cacheKey` 采样、导入槽位归一化、`probed` 归位、
-`runTest` 重入、e2e `exit(1)`、口径自检脚本本体、`langFiles` 声明、popup `#lang`。
-**不可 closed**：②⑤⑦⑧、§3 全部 P1（尤其导入覆盖、图片多槽、done 窗口）、同源强度、口径定义。
+## 3. 结清判据（第八版）
 
-## 5. 已解决 / 别重复做
+前七版的门禁继续有效，本版只补「**方向性**」——一个检查只朝一个方向看，等于没看：
 
-- P0 注入链两端、`esc()` 引号、`code`/`meta.file`、DNR 收紧、PRIVACY 口径、`frame-bridge` trail、
-  同图重试缓存、`toggleSlot` 合并、`runOcrTest` 闸门、菜单标题接 `msg()`（但本轮疑似回归，见 §3.7）、
-  预览顶栏 `activeConfigId`、`verify-pack` 恒真断言、`e2e exit(1)`、`probed` 归位。
-- 1.3.2 双包形态正确且与 HEAD 代码同源、Firefox 已上架、T1~T6 收尾、CSS 合一——别当待办重新提。
+1. **同源必须双向**：既抓「包比源码新」也抓「包比源码旧」。最省事的做法：包内每个 `.js` 与
+   `git show HEAD:<path>` 的等价形式（剥注释/压缩后）**逐文件哈希**；做不到哈希就至少双向比函数数
+   （`abs(pf - sf) > 0` 即红），并把 `export const` 纳入锚点。
+2. **验证器要有夹具**：用一个**真旧包**（如 1.3.1）进 CI 跑一次，必须变红；否则「它能抓旧包」永远只是声称。
+3. **行为断言覆盖非默认数据**：自建供应商、自定义语言行、用户改过的槽位顺序——这些才是排序/归一化
+   逻辑最容易翻车的地方，只测内置项等于没测。
+4. **数字必须同一时点**：`test-lib` / `e2e` 的数字要一次跑出来一起贴；本轮「557/0 连跑两遍」出自
+   19:30 的日志，而 21:16 的日志是 556/1，两者中间又加了断言。
 
-## 6. 通读范围与版本记录
+**按此判据，可 closed**：P1-1、P1-5、P1-7、use strict、口径自检、isComposing、moveConfig、
+`showFailure` 占位、`pendingConfigId` 赋值、导入 panelTouched。
+**不可 closed**：P0-1（OCR 重复）、P0-2（同源方向）、P1-2 兜底、P1-3（done 判废）、P1-6（popup 语言列表）、
+esbuild 行号文档、Firefox 权限/文档、死代码、PRIVACY 英文。
 
-逐文件通读：`content.js`(2841) / `frame-bridge.js`(90) / `lib/panel-core.js`(775) / `panel-styles.js` /
-`trigger-styles.js`；`options.js` / `.html` / `.css` / `popup.*` / `offscreen.*`；
-`background.js` / `lib/` 全部 .js + `ua-rules.json` / `i18n/*.json` / `manifest.json` / `PRIVACY.md` /
+## 4. 已解决 / 别重复做
+
+- 注入链两端、`esc()`、`code`/`meta.file`、DNR 收紧、`frame-bridge` trail/`fr` 守卫、CSS 变量、
+  `TRIGGER_CSS` 删除、`cacheKey` 采样、`toggleSlot` 合并、`runOcrTest` 闸门、`probed` 归位、
+  `runTest` 重入、e2e `exit(1)`、OCR 顺序根因（顺序部分是对的，重复是新增的）。
+- 1.3.2 双包形态基本正确、Firefox 已上架、T1~T6 收尾、CSS 合一——别当待办重新提。
+
+## 5. 通读范围与版本记录
+
+逐文件通读：`content.js`(2865) / `frame-bridge.js`(90) / `lib/panel-core.js`(776) / `panel-styles.js` /
+`trigger-styles.js`；`options.js` / `.html` / `.css` / `popup.*` / `offscreen.*`；`background.js` /
+`lib/` 全部 .js + `ua-rules.json` / `i18n/*.json` / `manifest.json` / `PRIVACY.md` /
 `check-globals.mjs` / `check-dom.mjs` / `pack.py` / `verify-pack.py` / `esbuild-minify.mjs`；
-旁证 `test-lib.mjs` / `test-engine.mjs` / 两份回应文档 / 复跑 e2e。
+旁证 `test-lib.mjs` / 两份回应文档 / 复跑 e2e / 用 1.3.1 旧包实测同源检查。
 
-**版本记录**：v1 建清单 → v2 下调严重度 → v3 标 P0 收口 → v4 认错 #8 归因 → v5 验收第六版回应 →
-v6 验收第九版「七类交叉验证」、首提「验证工具也要被验」 → **v7（本版）**：完整重读，验收第十二版，
-把「锚的强度」写进结清判据（同源改哈希、口径写明、回滚深拷贝、导入跳过 adopt）。
+**版本记录**：v1 建清单 → v2 下调严重度 → v3 标 P0 收口 → v4 认错 #8 归因 → v5 验收第六版 →
+v6 首提「验证工具也要被验」 → v7 把锚的强度写进判据 → **v8（本版）**：完整重读，验收第十三版，
+新增「方向性」判据（同源双向、验证器要有夹具、断言要覆盖非默认数据）。
 **本轮未修改任何代码或配置**，只重写本分析文件与工作日志。

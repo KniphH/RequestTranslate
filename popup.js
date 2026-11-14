@@ -3,7 +3,7 @@
  */
 
 import { loadState, saveState, buildVars, getConfig } from './lib/store.js';
-import { TARGET_PRESETS, langDisplayName } from './lib/template.js';
+import { TARGET_PRESETS, orderedLangCodes, langDisplayName } from './lib/template.js';
 import { runRequest } from './lib/engine.js';
 
 const $ = (s) => document.querySelector(s);
@@ -110,7 +110,10 @@ async function init() {
   /* 目标语言：和设置页 / 面板顶栏同一个值（settings.targetLang，存的是代码）。
      显示名优先取用户在「语言代码表」里改过的那个。 */
   if (langSel) {
-    const codes = TARGET_PRESETS.slice();
+    /* **顺序要和设置页 / 面板同源**：都走 orderedLangCodes（langOrder 打头
+       → 未提到的按内置序 → 去重）。以前这里用 TARGET_PRESETS.slice()，
+       用户在语言表里排的顺序在 popup 里完全看不到（第八版 §1 指出）。 */
+    const codes = orderedLangCodes(state.settings && state.settings.langOrder);
     const curLang = String(state.settings.targetLang || '');
     if (curLang && !codes.includes(curLang)) codes.unshift(curLang);
     langSel.innerHTML = '';
@@ -120,7 +123,7 @@ async function init() {
       o.textContent = langNameOf(code);
       langSel.appendChild(o);
     }
-    langSel.value = curLang || TARGET_PRESETS[0];
+    langSel.value = curLang || codes[0];
   }
 
   // 带上页面里选中的文字

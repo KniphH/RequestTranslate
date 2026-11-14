@@ -1036,8 +1036,12 @@ section('15. 截图 OCR：供应商状态 / 请求体 / 取文字');
     sf.request.includes('https://my.proxy/v1/chat/completions') && sf.request.includes('sk-abc'),
     sf.request);
   check('内置没被删的那条也补齐了', saved.providers.some((p) => p.id === 'builtin-openai-vl'));
-  eq('自己新建的排在内置后面', saved.providers[saved.providers.length - 1].id, 'my-own');
-  eq('activeId 指向自己新建的那条', saved.activeId, 'my-own');
+  /* 上一轮把「自建项被 push 两遍」当成了预期行为，断言写成「最后一条是 my-own」——
+     恰恰锁住了一个 bug。现在要求：自建项只出现一次，且**保持存档里的先后**。 */
+  eq('自建项只出现一次（不再被复制）',
+    saved.providers.filter((p) => p.id === 'my-own').length, 1);
+  eq('自建的保持存档里的先后（siliconflow 在前、my-own 第二）', saved.providers[1].id, 'my-own');
+  eq('内置项都还在', saved.providers.filter((p) => p.id.startsWith('builtin-')).length, 3);
 
   const del = normalizeOcrState({ hidden: ['builtin-openai-vl'] });
   check('删掉的内置条目不会又被补回来',
