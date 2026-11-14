@@ -16,14 +16,14 @@
   let prefs = {
     trigger: 'button',
     triggerStyle: 'badge',
-    triggerSize: 45,
+    triggerSize: 28,   // 必须和 lib/store.js 的 DEFAULT_SETTINGS.triggerSize 一致
     triggerSvg: '',
-    triggerIdleSec: 5,
-    triggerLeaveSec: 0.5,
-    panelWidth: 460,
+    triggerIdleSec: 2,
+    triggerLeaveSec: 0.4,
+    panelWidth: 280,
     panelHeight: 0,
     panelMaxHeight: 46,
-    fontSize: 20,
+    fontSize: 16,
     theme: 'auto',
     showOriginal: true,
     // 顶栏那个「目标语言」下拉也改它（{{target}} / {{targetCode}} 都读这里）
@@ -338,7 +338,7 @@
 
   /** 按钮边长（px）。限制在 20~96，和设置页的输入框范围一致 */
   function triggerSize() {
-    return Math.min(96, Math.max(20, Math.round(Number(prefs.triggerSize) || 45)));
+    return Math.min(96, Math.max(20, Math.round(Number(prefs.triggerSize) || 28)));
   }
 
   /** 当前选中的按钮预设 */

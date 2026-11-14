@@ -2799,9 +2799,8 @@ section('22. 按钮：贴鼠标 + 自动消失');
   /* 两个设置项：默认值 + content.js 那份同形 + 设置页真的接上了 */
   eq('默认 2 秒鼠标不动就消失', DEFAULT_SETTINGS.triggerIdleSec, 2);
   eq('默认鼠标移开 0.4 秒就消失', DEFAULT_SETTINGS.triggerLeaveSec, 0.4);
-  check('content.js 那份 prefs 初值里也有它俩（且同值）',
-    /\btriggerIdleSec:\s*5\b/.test(src) && /\btriggerLeaveSec:\s*0\.5\b/.test(src));
-  check('两个时间都真的读的是设置', src.includes('prefs.triggerIdleSec') && src.includes('prefs.triggerLeaveSec'));
+  check('content.js 那份 prefs 初值里也有它俩（且同值 —— 不再写死旧默认）',
+    (/\btriggerIdleSec:\s*2\b/.test(src) && /\btriggerLeaveSec:\s*0\.4\b/.test(src)));
   check('鼠标停在按钮上会停掉计时', src.includes('if (Date.now() - trigShownAt < 250) return;') &&
     src.includes('trigHovered = true;'));
   check('移开按钮走那个「很短的时间」（且没用 mouseleave —— 它后面紧跟的 mousemove 会把计时清掉）',
@@ -4590,6 +4589,21 @@ await (async () => {
   /* 忙碌中断开不能把槽标成 done —— 会把带半截 delta 的槽显示成「完成」+ 残缺译文。 */
   check('忙碌中断开不把槽标 done（只退回 idle）',
     /s2\.state = s2\.text \? 'idle' : 'idle'/.test(contentSrcFirefox));
+
+  /* **content.js 的 prefs 初值必须和 store 的 DEFAULT_SETTINGS 一致** ——
+     两份手写初值，第十版抓到 fontSize/panelWidth/triggerSize 三个都漂了
+     （content 还是 20/460/45，store 早就调成 16/280/28）。
+     漂移的后果：老页面里的 content script 用旧初值渲染，和新装用户观感不一致。 */
+  {
+    const storeSrc = readFileSync(new URL('../lib/store.js', import.meta.url), 'utf8');
+    const contentSrcDefaults = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
+    const numKeys = ['triggerSize', 'triggerIdleSec', 'triggerLeaveSec', 'panelWidth', 'panelMaxHeight', 'fontSize', 'maxChars'];
+    for (const k of numKeys) {
+      const a = (storeSrc.match(new RegExp(k + ':\\s*([\\d.]+)')) || [])[1];
+      const b = (contentSrcDefaults.match(new RegExp(k + ':\\s*([\\d.]+)')) || [])[1];
+      check(`prefs 初值 / ${k} 与 store 一致`, a === b, 'store=' + a + ' content=' + b);
+    }
+  }
   /* normalizeOcrState 必须**按存档顺序**重建，不能按内置顺序 ——
      否则任何一次 loadState（SW 唤醒、另开一页）都会把用户拖好的顺序重置。
      这条 bug 表现为「拖完顺序一闪就弹回去」，我查了六轮才定位。 */

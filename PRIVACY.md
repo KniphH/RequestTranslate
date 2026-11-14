@@ -48,15 +48,19 @@ RequestTranslate is a selection-translation browser extension. **The developer d
 
 - **Translation requests**: The text you select (and, for screenshot translation, the image in your clipboard) is sent to **the endpoint of whichever config you have selected** — either an address you filled in yourself (your own model gateway, any OpenAI-compatible service), or the built-in bilibili free channel described below. Requests go directly from the extension to that address; the developer never sees them and no intermediary server is involved.
 
-- **Built-in bilibili Index-Translate channel**: The extension ships one free translation config that uses bilibili's public endpoint (`index-translate.bilibili.com`), with no API key needed. It is only used if you select it in the panel header or in settings. When it is selected, the text you asked to translate is sent to bilibili's servers and is subject to their privacy policy. **With "disable external OCR" enabled for screenshot translation, the entire screenshot is also sent to it.** **The default selection is the Bing channel** — bilibili is never used unless you switch to it. You can delete that config or simply never select it.
+- **Built-in bilibili Index-Translate channel**: The extension ships one free translation config that
   uses bilibili's public endpoint (`index-translate.bilibili.com`); it needs no API key. It is only
-  used if you select it. Only the text you asked to translate is sent — nothing else, and no
-  identifiers of yours.
+  used if you select it in the panel header or in settings. When it is selected, the text you asked
+  to translate is sent to bilibili's servers and is subject to their privacy policy.
+  **With "disable external OCR" enabled, the entire screenshot is also sent to it.**
+  **The default selection is the Bing channel** — bilibili is never used unless you switch to it.
 
-- **About request headers**: The bilibili channel only passes its abuse checks with a specific `User-Agent` and `Origin`. **Both are written directly into that config's request template** (open the config and you will see them), so behaviour is identical on Chromium and Firefox and does not depend on any browser-specific API. The extension also ships one `declarativeNetRequest` rule
-  (`lib/ua-rules.json`, **for `index-translate.bilibili.com` only**) as a fallback; it does not affect requests to any other site.
-  **only for `index-translate.bilibili.com`** (a static rule, no other host is touched). No header of
-  any other site is read, recorded or modified.
+- **About request headers**: The bilibili channel only passes its abuse checks with a specific
+  `User-Agent` and `Origin`. **Both are written directly into that config's request template** (open
+  the config and you will see them), so behaviour is identical on Chromium and Firefox and does not
+  depend on any browser-specific API. The extension also ships one `declarativeNetRequest` rule
+  (`lib/ua-rules.json`, **for `index-translate.bilibili.com` only**) as a fallback; it does not
+  affect requests to any other site.
 - **Template variables**: Request templates may reference `{{url}}` and `{{title}}` (the current page's URL and title). They are only included in a request if your template references them.
 - **OCR**: If you configure an OCR provider, screenshots are sent to that provider's endpoint. With "disable external OCR" enabled, the image goes directly into your own configured translation request.
 - **Local storage**: Configuration, API keys and settings are stored locally in the browser's `chrome.storage.local` and never synced to any account. Note that API keys are stored **in plain text** — do not share exported configuration files.
