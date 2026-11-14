@@ -2239,7 +2239,7 @@ function renderOcrPreview() {
     : currentOcrProvider();
   if (!p) {
     els.oPreview.textContent = off
-      ? '左边还没有能翻图的配置。去「配置」栏给能看图的那条填上「图片请求模板」，这里就会摊出来。'
+        ? T('opt_img_none_left', '左边还没有能翻图的配置。去「配置」栏给能看图的那条填上「图片请求模板」，这里就会摊出来。')
       : '';
     return;
   }
@@ -2264,7 +2264,7 @@ function renderOcrPreview() {
     const notes = [...(req.warnings || [])];
     if (req.style) notes.unshift(T('opt_style_prefix', '写法：') + (req.style === 'raw' ? T('opt_style_raw', '原始 HTTP 报文') : 'curl') + T('opt_style_auto', '（自动识别）'));
     if (/{{image(Base64|UrlEncoded)?}}/.test(String(item.request || ''))) {
-      notes.push('上面 {{image}} 的位置是一张假的示例图，真截图是一整段 data URL；「测试」跑完后的「实际请求」里是那一份真的');
+    notes.push(T('opt_note_fake_image', '上面 {{image}} 的位置是一张假的示例图，真截图是一整段 data URL；「测试」跑完后的「实际请求」里是那一份真的'));
     }
     const head = chain.length > 1 ? '—— ' + (item.main ? T('opt_main_req', '主请求') : (item.name || T('opt_fallback_word', '后备'))) + ' ——' : '';
     return head ? head + '\n' + formatPreview(req, notes) : formatPreview(req, notes);
@@ -3225,8 +3225,8 @@ function updateTriggerSvgMsg() {
       els.trigSvgMsg.hidden = false;
       els.trigSvgMsg.className = 'trig-svg-msg warn';
       els.trigSvgMsg.textContent =
-        '「自定义」还没填图标 —— 上面的卡片先空着，页面上的按钮用一个示例图标占位；' +
-        '粘一段自己的 SVG 进来，两边都会换成它。';
+    T('opt_custom_icon_empty', '「自定义」还没填图标 —— 上面的卡片先空着，页面上的按钮用一个示例图标占位；') +
+    T('opt_custom_icon_hint', '粘一段自己的 SVG 进来，两边都会换成它。');
     } else {
       els.trigSvgMsg.hidden = true;
       els.trigSvgMsg.textContent = '';
@@ -3237,8 +3237,8 @@ function updateTriggerSvgMsg() {
   els.trigSvgMsg.hidden = false;
   els.trigSvgMsg.className = 'trig-svg-msg' + (svg ? ' ok' : ' bad');
   els.trigSvgMsg.textContent = svg
-    ? '这段用上了'
-    : '这段没用上 —— ' + reason + '。改好之前按钮还是显示上面的预设。';
+      ? T('opt_icon_used', '这段用上了')
+      : T('opt_icon_not_used', '这段没用上 —— ') + reason + T('opt_icon_not_used_tail', '。改好之前按钮还是显示上面的预设。');
 }
 
 /* 预览活在自己的 shadow root 里，注入的是和真实按钮**同一份** TRIGGER_CSS ——

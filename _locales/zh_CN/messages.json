@@ -1,9 +1,9 @@
 {
-  "extDesc": {
-    "message": "划词翻译，但配置是你自己的 HTTP 请求。直接写 curl 或原始请求报文，可保存多个命名配置。"
-  },
   "extName": {
     "message": "RequestTranslate · 请求式划词翻译"
+  },
+  "extDesc": {
+    "message": "划词翻译，但配置是你自己的 HTTP 请求。直接写 curl 或原始请求报文，可保存多个命名配置。"
   },
   "adapter_bing_hint": {
     "message": "走 bing.com 网页版接口，首次多花约 0.5 秒。",
@@ -457,6 +457,14 @@
     "message": "复制译文",
     "description": "设置页"
   },
+  "opt_custom_icon_empty": {
+    "message": "「自定义」还没填图标 —— 上面的卡片先空着，页面上的按钮用一个示例图标占位；",
+    "description": "设置页"
+  },
+  "opt_custom_icon_hint": {
+    "message": "粘一段自己的 SVG 进来，两边都会换成它。",
+    "description": "设置页"
+  },
   "opt_default_lang_name": {
     "message": "简体中文",
     "description": "设置页"
@@ -657,12 +665,28 @@
     "message": "未设置",
     "description": "设置页：快捷键还没绑定时显示"
   },
+  "opt_icon_not_used": {
+    "message": "这段没用上 —— ",
+    "description": "设置页"
+  },
+  "opt_icon_not_used_tail": {
+    "message": "。改好之前按钮还是显示上面的预设。",
+    "description": "设置页"
+  },
+  "opt_icon_used": {
+    "message": "这段用上了",
+    "description": "设置页"
+  },
   "opt_img_badge": {
     "message": "这条填了「图片请求模板」，截图翻译时会走它（图片直传模式）",
     "description": "设置页 JS 动态文案"
   },
   "opt_img_configs": {
     "message": "图片配置",
+    "description": "设置页"
+  },
+  "opt_img_none_left": {
+    "message": "左边还没有能翻图的配置。去「配置」栏给能看图的那条填上「图片请求模板」，这里就会摊出来。",
     "description": "设置页"
   },
   "opt_imgtpl_hint": {
@@ -938,6 +962,10 @@
   },
   "opt_no_translation": {
     "message": "没有译文",
+    "description": "设置页"
+  },
+  "opt_note_fake_image": {
+    "message": "上面 {{image}} 的位置是一张假的示例图，真截图是一整段 data URL；「测试」跑完后的「实际请求」里是那一份真的",
     "description": "设置页"
   },
   "opt_ocr_configs": {

@@ -505,7 +505,14 @@
     "bg_reading_clipboard": "Reading the clipboard…",
     "bg_recognizing": "Recognising screenshot ($1$)…",
     "bg_no_config": "No usable config — create one in settings first",
-    "bg_no_image_template": "This config has no image request template, so it cannot translate images"
+    "bg_no_image_template": "This config has no image request template, so it cannot translate images",
+    "opt_img_none_left": "No image-capable config on the left yet. Fill in the image request template for a vision model on the Configs tab and it will show up here.",
+    "opt_note_fake_image": "The {{image}} above is a fake sample; a real screenshot is one long data URL. The actual request after running Test contains the real one.",
+    "opt_custom_icon_empty": "“Custom” has no icon yet — the card above stays empty and the on-page button uses a sample icon;",
+    "opt_custom_icon_hint": "paste your own SVG and both will switch to it.",
+    "opt_icon_used": "This SVG is in use",
+    "opt_icon_not_used": "This SVG is not used — ",
+    "opt_icon_not_used_tail": ". Until it is fixed the button keeps showing the preset above."
   },
   "placeholders": {
     "panel_switched_to": {

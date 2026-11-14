@@ -1600,9 +1600,8 @@
     } else if (imageConfigs.length) {
       cfgSelect.title = T('panel_img_cfg_with', '图片接口：$1$').replace('$1$', who);
     } else {
-      cfgSelect.title = T('panel_img_none',
-        '还没有任何配置填过「图片请求模板」——去设置页的「配置」栏给能看图的那条填上，' +
-        '它才会出现在这个列表里。现在用的是「$1$」').replace('$1$', who);
+      cfgSelect.title = T('panel_img_none', '还没有任何配置填过「图片请求模板」——去设置页的「配置」栏给能看图的那条填上，' +
+      '它才会出现在这个列表里。现在用的是「$1$」').replace('$1$', who);
     }
   }
 
