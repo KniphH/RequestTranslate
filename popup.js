@@ -3,11 +3,28 @@
  */
 
 import { loadState, saveState, buildVars, getConfig } from './lib/store.js';
+import { TARGET_PRESETS, langDisplayName } from './lib/template.js';
 import { runRequest } from './lib/engine.js';
 
 const $ = (s) => document.querySelector(s);
 
 const sel = $('#sel');
+const langSel = $('#lang');
+
+/** popup 没有 T()（那套只在 content/options 里有），直接问 chrome.i18n */
+function uiText(key) {
+  try {
+    return (chrome.i18n && chrome.i18n.getMessage(key)) || key;
+  } catch {
+    return key;
+  }
+}
+
+/** 语言代码在当前语言下该显示成什么（用户改过的名字优先） */
+function langNameOf(code) {
+  const names = (state && state.settings && state.settings.targetNames) || {};
+  return names[code] || langDisplayName(code, uiText);
+}
 const txt = $('#txt');
 const out = $('#out');
 const statusEl = $('#status');
@@ -15,6 +32,8 @@ const goBtn = $('#btn-go');
 
 let state = null;
 let controller = null;
+/** run 序号：连点两次时，旧那轮恢复后不许再写界面 */
+let runSeq = 0;
 
 function setStatus(text, isErr = false) {
   statusEl.textContent = text || '';
@@ -88,6 +107,22 @@ async function init() {
   }
   sel.value = state.activeConfigId;
 
+  /* 目标语言：和设置页 / 面板顶栏同一个值（settings.targetLang，存的是代码）。
+     显示名优先取用户在「语言代码表」里改过的那个。 */
+  if (langSel) {
+    const codes = TARGET_PRESETS.slice();
+    const curLang = String(state.settings.targetLang || '');
+    if (curLang && !codes.includes(curLang)) codes.unshift(curLang);
+    langSel.innerHTML = '';
+    for (const code of codes) {
+      const o = document.createElement('option');
+      o.value = code;
+      o.textContent = langNameOf(code);
+      langSel.appendChild(o);
+    }
+    langSel.value = curLang || TARGET_PRESETS[0];
+  }
+
   // 带上页面里选中的文字
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -115,6 +150,14 @@ sel.addEventListener('change', async () => {
   state.activeConfigId = sel.value;
   await saveState(state);
 });
+
+/* 目标语言：写回存档。后台每次发请求都重读设置，所以改完立刻生效。 */
+if (langSel) {
+  langSel.addEventListener('change', async () => {
+    state.settings.targetLang = langSel.value;
+    await saveState(state);
+  });
+}
 
 goBtn.addEventListener('click', run);
 
@@ -157,10 +200,13 @@ async function run() {
     return;
   }
 
+  /* 连点两次时，先发起那轮恢复后**不许**再写界面 —— 否则旧结果盖掉新一轮。 */
+  const myRun = ++runSeq;
   if (controller) controller.abort();
   controller = new AbortController();
   cancelStreamRender();
 
+  try {
   goBtn.disabled = true;
   goBtn.textContent = '翻译中…';
   setStatus('');
@@ -177,16 +223,17 @@ async function run() {
     responseMode: cfg.responseMode,
     signal: controller.signal,
     onDelta: (current) => {
-      queueOut(current);
+      /* 旧那轮的 delta 不许再写界面（连点时旧请求可能还在推流） */
+      if (myRun === runSeq) queueOut(current);
     }
   });
+
+    if (myRun !== runSeq) return;   // 期间又点了一次，这轮作废
 
   // done 与最后一个 delta 几乎同时到，挂起的那一帧必须先撤掉，
   // 否则它会用更旧的文本覆盖下面的最终结果
   cancelStreamRender();
 
-  goBtn.disabled = false;
-  goBtn.textContent = '翻译';
 
   if (result.text) {
     setOut(result.text);
@@ -200,6 +247,13 @@ async function run() {
   } else {
     setOut(result.error || '没有拿到结果', true);
     setStatus('失败', true);
+  }
+  } finally {
+    /* runRequest 抛异常时按钮会永久禁用 —— 必须兜住 */
+    if (myRun === runSeq) {
+      goBtn.disabled = false;
+      goBtn.textContent = '翻译';
+    }
   }
 }
 

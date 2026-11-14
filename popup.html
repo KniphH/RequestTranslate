@@ -84,6 +84,12 @@
     cursor: pointer;
   }
   select:focus { border-color: rgba(124,108,245,.65); }
+  /* 目标语言那条按内容定宽，别跟配置下拉抢地方（配置名通常更长） */
+  select.lang-sel {
+    flex: 0 1 auto;
+    min-width: 5.5em;
+    max-width: 7.5em;
+  }
   select option { background: var(--panel-2); }
 
   .icon-btn {
@@ -180,6 +186,7 @@
   <div class="head">
     <span class="logo">译</span>
     <select id="sel"></select>
+    <select id="lang" class="lang-sel" title="目标语言"></select>
     <button id="btn-open" class="icon-btn" title="打开设置">&#9881;</button>
   </div>
 
