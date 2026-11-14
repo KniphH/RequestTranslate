@@ -166,6 +166,14 @@ def strip_sources(files):
 def make_zip(files, out, stripped=None, target="chromium"):
     """写 zip。`stripped` 非空时用剥过注释的版本（那个目录里没有的文件照旧读源码）。"""
 
+    # **火狐包要丢掉 Chromium 专有的配套文件**（第九版 §1 指出）：
+    #   offscreen.html / offscreen.js —— 火狐的后台是事件页，自己有 DOM，不用 offscreen
+    #   lib/ua-rules.json           —— 只服务于 declarativeNetRequest（火狐包里已经卸掉）
+    # 留着它们等于让火狐包带 3 个永远不被加载的死文件，包体积和审核都白担。
+    if target == "firefox":
+        drop = {"offscreen.html", "offscreen.js", "lib/ua-rules.json"}
+        files = [f for f in files if f not in drop]
+
     def source(name):
         if stripped is not None:
             p = stripped / name

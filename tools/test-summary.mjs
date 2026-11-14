@@ -18,7 +18,7 @@ try {
   /* 没有就报「没上报」 */
 }
 
-const order = ['静态', 'test-lib', 'test-engine', 'test-strip', 'e2e-ui'];
+const order = ['test-lib', 'test-engine', 'test-strip', 'e2e-ui', 'pack-fixture'];
 const shown = order.filter((k) => data[k] != null).map((k) => k + ' ' + data[k]);
 const total = order.reduce((n, k) => n + (Number(data[k]) || 0), 0);
 const stamp = new Date().toLocaleString('sv-SE');

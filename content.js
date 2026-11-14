@@ -2684,9 +2684,11 @@
     // 翻过的 → 放回上次的结果，一个请求都不发；没翻过的 → 当场用这个配置翻一次
     const hit = resultCache.get(v);
     if (hit) {
-      // **必须走统一入口**：多条时直接 renderResult 会把块结构冲掉（缩成一个）
+      /* **必须走统一入口**：多条时直接 renderResult 会把块结构冲掉（缩成一个）。 */
       renderSlotResult(v, hit.r, hit.ocr, hit.action, hit.fatal);
-      leaveBusy();
+      /* **不要再无条件 leaveBusy**（第九版 §2 P1）：renderSlotResult 内部已经是
+         「settled 才 leaveBusy」，这里再补一句会把多槽里还在飞的其它条一起放掉 ——
+         与它自己的规则直接矛盾。 */
       return;
     }
     if (currentText || (lastOcr && lastOcr.image)) {

@@ -17,6 +17,17 @@
 
 import http from 'node:http';
 import fs from 'node:fs';
+
+/** 把 e2e 的通过数写进 .test-counts.json（tools/test-summary.mjs 用） */
+function writeCounts(n) {
+  try {
+    const p = new URL('../.test-counts.json', import.meta.url);
+    let d = {};
+    try { d = JSON.parse(readFileSync(p, 'utf8')); } catch { /* 首次 */ }
+    d['e2e-ui'] = n;
+    writeFileSync(p, JSON.stringify(d));
+  } catch { /* 汇总失败不影响结论 */ }
+}
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -72,18 +83,34 @@ const edge = findEdge();
 const chromium = edge ? loadChromium() : null;
 
 /* **环境缺失必须红，不能绿**：以前这里 exit(0)，新机器/CI 上会显示「全部通过」，
-   实际 UI 层一条都没跑 —— 那种绿比红更危险。要么装好依赖，要么明确失败。 */
-if (!edge) {
-  console.error('【UI 测试无法运行】没找到 Edge/Chrome。');
-  console.error('设置环境变量 E2E_BROWSER 指向 chrome.exe，或装一个 Edge。');
-  process.exit(1);
-}
-if (!chromium) {
-  console.error('【UI 测试无法运行】没找到 playwright-core。');
-  console.error('装一下：cd ~/.workbuddy/binaries/node/workspace && npm i playwright-core');
-  process.exit(1);
-}
+/* **环境不全 ≠ 测试失败**（第九版 §2 P0-1）：
+   以前这里 exit(1)，而 pack.py 打包前会跑 npm test —— 干净机器/CI 上
+   「缺 playwright-core」会让 `npm run pack` 必断，明明代码是对的。
 
+   现在分两档：
+     · 默认：SKIP + 醒目的警告（写明缺什么、怎么装）
+     · 环境变量 RT_REQUIRE_E2E=1 或 --require-e2e：升级为失败
+       （CI 上想「必须有 UI 覆盖」时用它）
+
+   注意 SKIP 不等于绿：警告行会明确写「UI 层 0 覆盖」，不会被误读成「全过」。 */
+const requireE2e = process.env.RT_REQUIRE_E2E === "1" || process.argv.includes("--require-e2e");
+
+function bail(why, how) {
+  const tag = requireE2e ? "失败" : "SKIP";
+  console.error("");
+  console.error("=".repeat(56));
+  console.error("【UI 测试 " + tag + "】" + why);
+  console.error("  " + how);
+  console.error("  ** UI 层 0 覆盖 —— 这不是「通过」**");
+  if (!requireE2e) console.error("  想让它必须跑：设 RT_REQUIRE_E2E=1 或加 --require-e2e");
+  console.error("=".repeat(56));
+  console.error("");
+  if (requireE2e) process.exit(1);
+  writeCounts(0);
+  process.exit(0);
+}
+if (!edge) bail("没找到 Edge/Chrome", "设 E2E_BROWSER 指向 chrome.exe，或装一个 Edge");
+if (!chromium) bail("没找到 playwright-core", "装一下：cd ~/.workbuddy/binaries/node/workspace && npm i playwright-core");
 /* ------------------------------------------------------------------ */
 /* 断言                                                                */
 /* ------------------------------------------------------------------ */
