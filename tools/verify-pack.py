@@ -11,6 +11,7 @@
     python tools/verify-pack.py dist/xxx.zip
 """
 
+import re
 import json
 import re
 import subprocess
@@ -168,6 +169,34 @@ def main():
                 )
             else:
                 print(f"  双包一致：与 {twin.name} 除 manifest 外逐字节相同（{len(names)} 个文件）")
+
+    # 7. **包必须与源码同源** —— 以前只比 zip↔xpi，那证明的是「两个可能都过期的包一致」。
+    #    真实事故：16:06 打的包，16:18/16:21 又提交了两次（语言顺序统一 + Math.round），
+    #    包内 panel-core 没有 orderedLangCodes —— 拿它发布等于发一份不含修复的代码。
+    #    判据：包内每个 .js 剥过注释/压缩过，不能直接比字节；改为**关键标记存在性**。
+    repo_root = Path(__file__).resolve().parent.parent
+    markers = [
+        # (包内文件, 必须在包内出现的标记, 说明)
+        ('lib/panel-core.js', 'orderedLangCodes', '语言顺序统一函数'),
+        ('content.js', 'orderedLangCodes', '面板按 langOrder 排序'),
+        ('content.js', re.compile(r'Math\.round\(Number\(\w+\.panelSlots\)\)'), '槽位上限取整'),
+        ('background.js', 'normalizeHistoryMax', '历史条数走统一夹取'),
+        ('options.js', 'orderedLangCodes', '设置页语言表用同一个排序'),
+    ]
+    stale = []
+    for fname, marker, why in markers:
+        try:
+            body = z.read(fname).decode("utf-8", "replace")
+        except KeyError:
+            stale.append(fname + " 不在包里")
+            continue
+        hit = marker.search(body) if hasattr(marker, "search") else (marker in body)
+        if not hit:
+            stale.append(f"{fname} 缺 {marker.pattern if hasattr(marker, 'pattern') else marker}（{why}）→ 包是旧的，重新打")
+    if stale:
+        problems.extend(stale)
+    else:
+        print(f"  与源码同源：{len(markers)} 个关键标记都在包内")
 
     if problems:
         print("\n发现问题：")

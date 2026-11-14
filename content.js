@@ -1232,7 +1232,7 @@
      持久列表存在 prefs.slotConfigs（跟着存档走，N 存在 prefs.panelSlots）。 */
   let slots = [];
 
-  const slotLimit = () => Math.max(1, Math.min(4, Number(prefs.panelSlots) || 1));
+  const slotLimit = () => Math.max(1, Math.min(4, Math.round(Number(prefs.panelSlots)) || 1));
 
   /* 槽位在「文字」和「图片直传」两屏各用各的池子 / 名单：
      图片那屏的池子是「填了图片请求模板的配置」（= imageConfigs），

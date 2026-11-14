@@ -4362,6 +4362,21 @@ await (async () => {
   check('lib/i18n-msg.js 是 ESM，lib/i18n.js 是普通脚本（两者不能互相 import）',
     (() => {
       const esm = readFileSync(new URL('../lib/i18n-msg.js', import.meta.url), 'utf8');
+  /* i18n-msg.js 头注释说「和 i18n.js 的 t() 同一套优先级，test-lib 有断言钉住」——
+     以前只有「两者不能互相 import」，没有优先级那条。补上：两边都必须是
+     「下载包 → chrome.i18n → 兜底」这个顺序。 */
+  const plainI18n = readFileSync(new URL('../lib/i18n.js', import.meta.url), 'utf8');
+  const esmI18n = readFileSync(new URL('../lib/i18n-msg.js', import.meta.url), 'utf8');
+  const tBody = plainI18n.slice(plainI18n.indexOf('function t('), plainI18n.indexOf('function substitute('));
+  const mBody = esmI18n.slice(esmI18n.indexOf('export async function msg('));
+  check('plain t(): 先查下载包，再问 chrome.i18n，最后回落 key',
+    tBody.indexOf('pack.strings[key]') >= 0 &&
+      tBody.indexOf('chrome.i18n') > tBody.indexOf('pack.strings[key]') &&
+      tBody.indexOf('return key') > tBody.indexOf('chrome.i18n'));
+  check('ESM msg(): 同一条优先级链（下载包 → chrome.i18n → 兜底）',
+    mBody.indexOf('pack[key]') >= 0 &&
+      mBody.indexOf('chrome.i18n') > mBody.indexOf('pack[key]') &&
+      mBody.indexOf('return fallback') > mBody.indexOf('chrome.i18n'));
       const plain = readFileSync(new URL('../lib/i18n.js', import.meta.url), 'utf8');
       return /^export /m.test(esm) && !/^export /m.test(plain) &&
         !/from ['"]\.\/i18n\.js['"]/.test(esm) && !/from ['"]\.\/i18n-msg\.js['"]/.test(plain);

@@ -14,7 +14,7 @@
  *              ｜ { type:'ocr-image', dataUrl, bytes }（「禁用外置 OCR」时的直传）
  */
 
-import { loadState, pickRequestConfig, canTranslateImage, buildVars } from './lib/store.js';
+import { loadState, pickRequestConfig, canTranslateImage, normalizeHistoryMax, buildVars } from './lib/store.js';
 import { requestTemplateFor, requestChain } from './lib/requests.js';
 import { modelCandidates, modelVarFor } from './lib/template.js';
 import { runRequest } from './lib/engine.js';
@@ -593,7 +593,10 @@ chrome.runtime.onConnect.addListener((port) => {
            **必须走 appendHistory 排队**（原因见那个函数的注释）：一次对比会并发跑
            2~4 条配置，而写入是「读 → 改 → 写」的读改写，不排队就会互相覆盖。 */
         if (result && result.text) {
-          const max = Math.max(0, Number(state.settings.historyMax) || 0);
+          /* 夹取规则统一走 store 的 normalizeHistoryMax —— 以前这里自己写
+             Math.max(0, Number(...)) ，既没有 200 上限也不取整：填 500 会真存 500 条，
+             而 store 读回时只留 200 —— 写进去的和留下来的对不上，还白占 storage。 */
+          const max = normalizeHistoryMax({ historyMax: state.settings.historyMax }).historyMax;
           if (max > 0) {
             await appendHistory({
               src: text.slice(0, 2000),

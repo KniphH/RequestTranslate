@@ -153,14 +153,20 @@ const els = {
   imgcfgTestHint: $('#imgcfg-test-hint')
 };
 
+/**
+ * HTML 转义。**五个字符都转**（含单引号）—— 和 lib/panel-core.js 的 esc() 同一口径。
+ *
+ * 当前所有属性拼接都用双引号，转单引号不是必需的；但两个转义函数口径不一致的话，
+ * 以后谁把某个属性改成单引号包就会漏。统一成一样，少一个需要记的约束。
+ */
 function escapeHtml(s) {
   return String(s ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
-
 /* ---- 启动 ---- */
 
 init().catch((err) => {
@@ -3155,9 +3161,6 @@ async function onHistoryAction(e) {
     } catch (err) {
       flashButton(btn, '失败：' + String(err && err.message || err).slice(0, 24), oldText, 2600);
     } finally {
-      /* 探测过了（成功或失败都算）—— 不置位的话每次 focus/click 都重跑一遍
-         fetchIndex + verifyIndex（20×2 个 HEAD），和 PRIVACY 里「不换语言就永远不联网」冲突。 */
-      probed = true;
       btn.disabled = false;
       if (btn.textContent !== oldText) btn.textContent = oldText;
     }
@@ -3659,6 +3662,10 @@ async function bindUiLang() {
     } catch {
       say(T('opt_ui_lang_offline', '取不到语言清单（离线或被挡），先用内置中文。'), true);
     } finally {
+      /* 探测过了（成功或失败都算）—— 这里必须置位，否则每次 focus/mousedown/click
+         都会重跑 fetchIndex + verifyIndex（20×2 个 HEAD），和 PRIVACY 里
+         「不换语言就永远不联网」直接冲突。 */
+      probed = true;
       probing = false;
     }
   };

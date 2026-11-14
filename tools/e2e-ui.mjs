@@ -71,14 +71,17 @@ function loadChromium() {
 const edge = findEdge();
 const chromium = edge ? loadChromium() : null;
 
+/* **环境缺失必须红，不能绿**：以前这里 exit(0)，新机器/CI 上会显示「全部通过」，
+   实际 UI 层一条都没跑 —— 那种绿比红更危险。要么装好依赖，要么明确失败。 */
 if (!edge) {
-  console.log('没找到 Edge，跳过 UI 测试。');
-  process.exit(0);
+  console.error('【UI 测试无法运行】没找到 Edge/Chrome。');
+  console.error('设置环境变量 E2E_BROWSER 指向 chrome.exe，或装一个 Edge。');
+  process.exit(1);
 }
 if (!chromium) {
-  console.log('没找到 playwright-core，跳过 UI 测试。');
-  console.log('装一下：cd ~/.workbuddy/binaries/node/workspace && npm i playwright-core');
-  process.exit(0);
+  console.error('【UI 测试无法运行】没找到 playwright-core。');
+  console.error('装一下：cd ~/.workbuddy/binaries/node/workspace && npm i playwright-core');
+  process.exit(1);
 }
 
 /* ------------------------------------------------------------------ */
