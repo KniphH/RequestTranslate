@@ -955,11 +955,8 @@
     pendingDelta = null;
 
     /* 文本的**真相源是各个槽的 s.text**（delta 消息先写槽，再叫这一声重画）。
-       单条和多条**走同一个渲染**（kniph 2026-10-17）—— 块头就是配置名，
-       单条也要看得见用的是哪条。 */
-    {
-      renderSlots();
-    }
+       单条和多条**走同一个渲染** —— 块头就是配置名，单条也要看得见用的是哪条。 */
+    renderSlots();
     // 译文一段段变长，面板也跟着长高，底部可能顶出视口 —— 拉回来
     keepPanelInView();
   }
@@ -1056,17 +1053,21 @@
       sl.error = '';
       sl.state = 'idle';
       sl.result = null;
-    setDot('');
-    setStatus(hit ? `已切到「${hit.name}」，点 ↻ 翻译` : '点 ↻ 翻译');
     }
+    /* 占位符和 .empty 成对（CSS 是 .rt-out.empty::before）。
+       单槽显示「点 ↻ 翻译」，多槽交给 renderSlots 画每槽的空态。 */
     if (slots.length <= 1) {
       outBox.textContent = '';
       outBox.dataset.placeholder = '点 ↻ 翻译';
-      outBox.classList.add('empty');   // 和上面那句必须成对
+      outBox.classList.add('empty');
     } else {
       outBox.classList.remove('empty');
       renderSlots();
     }
+    /* 这两句**在 for 外面**：以前被误缩进到循环体内，
+       等于清完最后一个槽才设一次。 */
+    setDot('');
+    setStatus(hit ? '已切到「' + hit.name + '」，点 ↻ 翻译' : '点 ↻ 翻译');
   }
 
   /* 吃一份配置列表：面板顶栏下拉用的 `configs`（带 img 标记）和图片模式专用的
@@ -1404,13 +1405,6 @@
     return `${ok} 条拿到译文，${bad} 条失败`;
   }
 
-  /**
-   * 按槽渲染结果区（**每条一块，块头就是配置名**）。
-   *
-   * 原来单条走另一条老路（纯文本铺满），代价是**看不见用的是哪个配置**。
-   * kniph 2026-10-17：单条也走这里就行 —— 块结构本来就有名字，
-   * 「不隐藏」就好，不需要另做一套显示。
-   */
   /**
    * 重画结果区。
    *

@@ -2799,11 +2799,10 @@ function renderPanelPreview() {
     const panel = document.createElement("div");
     panel.className = "rt-panel";
     panel.id = "rt-panel";
-    panel.innerHTML = RTPanelCore.shellHtml();   // 骨架在 lib/panel-core.js，与网页共用同一份</button>' +
-      "</div></div>" +
-      '<div class="rt-body"><div class="rt-src"></div><div class="rt-out"></div></div>' +
-      '<div class="rt-foot"><span class="rt-msg">HTTP 200 · 0.8s</span></div>' +
-      '<div class="rt-diag" hidden></div>';
+    /* 骨架只有一份：lib/panel-core.js 的 shellHtml()，和网页上完全同源。
+       这里以前残留着旧骨架的字符串碎片（`</button>' + ...` 那几行），
+       语法上被上一句吞掉所以一直没报错 —— 纯死代码，已删（第八版 §1 指出）。 */
+    panel.innerHTML = RTPanelCore.shellHtml();
     shadow.appendChild(panel);
 
     /* 真面板在网页上是 fixed 弹层；预览也照做 —— 不再塞进框里、不再 transform 缩放。
@@ -3833,7 +3832,6 @@ function bindImportExport() {
         const byName = new Map(state.configs.map((c) => [c.name, c]));
         for (const c of picked.configs) byName.set(c.name, c);
         state.configs = [...byName.values()];
-        // 配置数变多时槽位也要有个底，否则新进来的那些「有但没显示」
         /* 配置数变多时槽位也要有个底。**真相源是 state.settings.slotConfigs**
            （不是 state.slotConfigs）—— 原来写成后者恒为 undefined，整块永不执行。
            上限也别硬编码 4，跟着 panelSlots 走。 */
@@ -3844,6 +3842,9 @@ function bindImportExport() {
             state.settings.slotConfigs.push(c.id);
           }
         }
+        /* 合并导入同样要补图片那份名单，并重跑一次归一化 ——
+           否则新进来的配置在图片那一屏「有但没显示」（第八版 §2 指出）。 */
+        normalizeSlots(state.settings, state.configs);
       } else {
         /* **导入别人的配置时不带他的自定义 CSS**：panelCss 会被原样注入
            shadow <style>，能 url() / @import 外连 —— 用户点「导入」时
@@ -3918,7 +3919,15 @@ async function persist(showStatus = true) {
   } catch {
     /* 读不到就按本地的写，和以前一样 */
   }
-  await saveState(state);
+  /* **写盘也要兜住**：存储配额满 / 隐私模式禁写时 saveState 会抛，
+     而 persist 的调用方有二三十处，很多没有 try/catch ——
+     一个未捕获的 rejection 会把整条交互链断在那儿（第八版 §2 指出）。 */
+  try {
+    await saveState(state);
+  } catch (err) {
+    setSaveStatus('保存失败：' + String((err && err.message) || err).slice(0, 60), true);
+    return;
+  }
   if (mySave !== saveSeq) return;   // 落盘后才变旧：不闪「已保存」，免得误导
   if (showStatus) flashSaved();
 }
