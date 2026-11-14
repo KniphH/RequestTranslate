@@ -80,6 +80,8 @@ let state = null;
 let editingId = '';
 let editingOcrId = '';
 let saveTimer = null;
+/** 保存序号：async persist 会交错，落盘前比对，过期放弃 */
+let saveSeq = 0;
 /** 这次会话里**用户在设置页改过**的那几个「面板也会写」的键（见 adoptPanelOwned） */
 const panelTouched = new Set();
 /** OCR 测试要用的那张本地图片（没选就用剪切板里的） */
@@ -431,9 +433,23 @@ function imgSlotConfigIds() {
  * 和 toggleSlotConfig 同形，只有两点不同：名单存在 `imageSlotConfigs`、
  * 上限仍跟着「面板显示条数」。重画的是图片配置那个列表。
  */
-function toggleImgSlotConfig(id, opts) {
+/**
+ * 亮/灭一条对比配置。**文字和图片两份名单共用这一套**。
+ *
+ * 以前是两份手抄（toggleSlotConfig / toggleImgSlotConfig），已分叉三处：
+ * 排序（sortByConfigOrder vs order.indexOf）、保存（persist vs scheduleSave）、
+ * 状态提示（有无）—— 正是「加语言那次静默回退」的同类代价。
+ *
+ * @param {"text"|"image"} kind  哪一份名单
+ * @param {string} id             配置 id
+ * @param {object} [opts]
+ * @param {boolean} [opts.force]  明确要亮(true)/灭(false)；不给就切换
+ * @param {boolean} [opts.redraw] 默认重画；左键那条路传 false 避免闪
+ */
+function toggleSlot(kind, id, opts) {
   const redraw = !(opts && opts.redraw === false);
-  const cur = imgSlotConfigIds();
+  const isImg = kind === 'image';
+  const cur = isImg ? imgSlotConfigIds() : slotConfigIds();
   const max = clampSlots(state.settings.panelSlots);
   const has = cur.includes(id);
   const force = opts && typeof opts.force === 'boolean' ? opts.force : !has;
@@ -441,41 +457,26 @@ function toggleImgSlotConfig(id, opts) {
   if (force) {
     if (has) return;
     next = [...cur, id];
-    if (next.length > max) next = next.slice(next.length - max);
+    if (next.length > max) next = next.slice(next.length - max);   // 顶掉最早那条
   } else {
     if (!has) return;
     next = cur.filter((x) => x !== id);
   }
-  // 顺序按配置列表排（和文字那份同一个规矩：面板默认顺序要跟设置一致）
-  const order = state.configs.map((c) => c.id);
-  next.sort((a, b) => order.indexOf(a) - order.indexOf(b));
-  state.settings.imageSlotConfigs = next;
-  scheduleSave();
-  if (redraw) renderImageConfigList();
+  next = sortByConfigOrder(next);   // 面板默认顺序要跟设置页列表一致
+  if (isImg) state.settings.imageSlotConfigs = next;
+  else state.settings.slotConfigs = next;
+  if (isImg) renderImageConfigList();
+  else if (redraw) renderConfigList();
+  persist(false);
+  if (!isImg) {
+    setSaveStatus(next.length
+      ? T('opt_compare', '对比 $1$ 条', [String(next.length)])
+      : T('opt_compare_cleared', '对比已清空'));
+  }
 }
 
-function toggleSlotConfig(id, opts) {
-  const redraw = !(opts && opts.redraw === false);
-  const cur = slotConfigIds();
-  const max = clampSlots(state.settings.panelSlots);
-  const has = cur.includes(id);
-  // opts 里 force 明确给值就用它（右键取消传 false）；否则按「点一下切换」来
-  const force = opts && typeof opts.force === 'boolean' ? opts.force : !has;
-  let next;
-  if (force) {
-    if (has) return;
-    next = [...cur, id];
-    if (next.length > max) next = next.slice(next.length - max); // 顶掉最早那条
-  } else {
-    if (!has) return;
-    next = cur.filter((x) => x !== id);
-  }
-  state.settings.slotConfigs = sortByConfigOrder(next);
-  // 左键那条路紧随其后会 selectConfig() 重画（传 redraw:false 就不在这里画，避免闪）
-  if (redraw) renderConfigList();
-  persist(false);
-  setSaveStatus(next.length ? T('opt_compare', '对比 $1$ 条', [String(next.length)]) : T('opt_compare_cleared', '对比已清空'));
-}
+function toggleImgSlotConfig(id, opts) { toggleSlot('image', id, opts); }
+function toggleSlotConfig(id, opts) { toggleSlot('text', id, opts); }
 
 /** 把一组配置 id 按**设置页列表的当前顺序**排好（面板默认顺序靠它和设置一致） */
 function sortByConfigOrder(ids) {
@@ -2457,6 +2458,13 @@ async function fileImage(file) {
 }
 
 async function runOcrTest() {
+  const btn0 = els.ocrTestBtn;
+  if (btn0.disabled) return;   // 重入闸（Enter / 连点）
+  /* **必须在 await 之前禁用**：下面 collectOcrEditor + await persist 期间按钮要是能点，
+     双击就会起两轮，两个结果交替写 #ocr-test-result。 */
+  btn0.disabled = true;
+  btn0.textContent = '测试中…';
+  try {
   /* 两块活儿共用一个按钮：
        * 平时——测当前这条 OCR 供应商（走 runOcr）；
        * 勾了「禁用外置 OCR」——测左边选中的那条**图片配置**的图片请求模板（走 runImageTranslate），
@@ -2480,7 +2488,6 @@ async function runOcrTest() {
   const btn = els.ocrTestBtn;
   /* 剪切板读取可能花几百毫秒 —— 拿到图之前就禁用，双击不会并发两轮测试 */
   btn.disabled = true;
-  btn.textContent = '测试中…';
   const box = els.ocrTestResult;
   box.hidden = false;
 
@@ -2499,7 +2506,6 @@ async function runOcrTest() {
   }
 
   const srcLabel = shot.source + ' · ' + formatBytes(shot.bytes);
-  btn.disabled = true;
   btn.textContent = off ? '翻译中…' : '识别中…';
   box.innerHTML =
     '<div class="result-head"><span class="badge">请求中…</span>' +
@@ -2527,8 +2533,12 @@ async function runOcrTest() {
     err,
     textTitle: off ? '译文' : '识别到的文字'
   });
+  } finally {
+    /* 任何一条 early return 都要把按钮还回去，否则「测试中…」永久卡住 */
+    btn0.disabled = false;
+    btn0.textContent = '测试';
+  }
 }
-
 function renderOcrTestResult({ name, srcLabel, r, err, textTitle = '识别到的文字' }) {
   const status = err ? (err.status || '失败') : r.status;
   const ms = err ? err.ms : r.ms;
@@ -3800,17 +3810,24 @@ function bindImportExport() {
         for (const c of picked.configs) byName.set(c.name, c);
         state.configs = [...byName.values()];
         // 配置数变多时槽位也要有个底，否则新进来的那些「有但没显示」
-        if (Array.isArray(state.slotConfigs)) {
-          for (const c of picked.configs) {
-            if (!state.slotConfigs.includes(c.id) && state.slotConfigs.length < 4) {
-              state.slotConfigs.push(c.id);
-            }
+        /* 配置数变多时槽位也要有个底。**真相源是 state.settings.slotConfigs**
+           （不是 state.slotConfigs）—— 原来写成后者恒为 undefined，整块永不执行。
+           上限也别硬编码 4，跟着 panelSlots 走。 */
+        if (!Array.isArray(state.settings.slotConfigs)) state.settings.slotConfigs = [];
+        const slotMax = clampSlots(state.settings.panelSlots);
+        for (const c of picked.configs) {
+          if (!state.settings.slotConfigs.includes(c.id) && state.settings.slotConfigs.length < slotMax) {
+            state.settings.slotConfigs.push(c.id);
           }
         }
       } else {
+        /* **导入别人的配置时不带他的自定义 CSS**：panelCss 会被原样注入
+           shadow <style>，能 url() / @import 外连 —— 用户点「导入」时
+           并不知道自己在同意一段可外连的样式。我们自己那份留着。 */
+        const myPanelCss = (state.settings && state.settings.panelCss) || '';
         state = { ...state, ...parsed, configs: picked.configs };
+        if (state.settings) state.settings.panelCss = myPanelCss;
       }
-
       editingId = state.activeConfigId = state.configs[0].id;
       editingOcrId = state.ocr.activeId;
       // 先按新 state 重画，再落盘 —— persist() 会把编辑器里的值收回去，
@@ -3847,24 +3864,28 @@ function flushEditor() {
 }
 
 async function persist(showStatus = true) {
+  /* 保存序号：async persist 会交错 —— 先发起那次可能后落盘，把后发起那份覆盖成旧的。 */
+  const mySave = ++saveSeq;
   clearTimeout(saveTimer);
   saveTimer = null;
   // 存之前把两个编辑器都收一遍：谁在打字谁就得落盘
   collectEditor();
   collectOcrEditor();
   /* 面板也会写几个键（`showOriginal` / `targetLang` / `ocr.imageConfigId`），
-     而这里是**整份 state 覆盖写**。页面没动过的那几个键先以存档为准，
-     否则「面板里关了原文 → 回设置页随手打个字」会把面板的改动顶回去。 */
+     而这里是**整份 state 覆盖写**。页面没动过的那几个键先以存档为准。 */
   try {
     const saved = (await chrome.storage.local.get('state')).state;
+    /* **比对必须在 await 之后**：上面全同步，在这儿之前比恒真。
+       过期说明已有更新的保存发起 —— 直接放弃，别拿旧 state 覆盖新写入。 */
+    if (mySave !== saveSeq) return;
     adoptPanelOwned(state, saved, panelTouched);
   } catch {
     /* 读不到就按本地的写，和以前一样 */
   }
   await saveState(state);
+  if (mySave !== saveSeq) return;   // 落盘后才变旧：不闪「已保存」，免得误导
   if (showStatus) flashSaved();
 }
-
 /** 「把说明都放回来」那个按钮的显隐 —— 跟着 `hiddenHints` 走。
     `applyHintHides` 每次重画完块都会跑一遍，藏过说明的入口由它统一维护。 */
 function syncRestoreHints() {
