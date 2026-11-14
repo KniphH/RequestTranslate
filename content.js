@@ -51,6 +51,28 @@
      判据是下面的 cacheKey —— 数据驱动，不指望每个调用点都记得来清。 */
   const resultCache = new Map();   // configId → { r, ocr, action, fatal }
   let cacheKey = null;
+
+  /**
+   * 图片指纹。**同步**（translate 不是 async，不能 await）。
+   *
+   * 以前是「长度 + 末 64 字符」：base64 图片的尾部是相似的填充区，
+   * 两张同尺寸的截图很容易撞 → 切图之后端出旧译文。
+   * 现在采 5 个均匀位置各 32 字符：
+   *   0% / 25% / 50% / 75% / 100% —— 同尺寸不同内容的图几乎不可能全撞。
+   * 不做真哈希是因为 crypto.subtle 是异步的，为此把 translate 改成 async
+   * 会波及全部调用点，代价远大于收益。
+   */
+  function imageFingerprint(dataUrl) {
+    const s = String(dataUrl || '');
+    if (!s) return '';
+    const step = Math.floor(s.length / 4) || 1;
+    let sig = '';
+    for (let i = 0; i < 5; i += 1) {
+      const at = Math.min(i * step, s.length - 32);
+      sig += s.slice(Math.max(0, at), Math.max(0, at) + 32);
+    }
+    return '\u0001img|' + s.length + '|' + sig;
+  }
   /** 发出去的那条请求用的是哪个配置 —— 结果回来时按它归档（用户可能已经切走了） */
   let pendingConfigId = '';
 
@@ -111,9 +133,9 @@
   /* 样式表从 lib/panel-core.js 取（那是唯一真相源）。content script 不能 import，
    所以 panel-core.js 是普通脚本、把 CSS 挂在 window.RTPanelCore 上 ——
    manifest 的 content_scripts.js 里它排在 content.js 前面，加载顺序有保证。
-   以前这里是手抄一份 + 逐字比对断言，改样式要同步两处（text-align 就漏过一次）。 */
-  const TRIGGER_CSS = window.RTPanelCore.TRIGGER_CSS;
-
+    以前这里是手抄一份 + 逐字比对断言，改样式要同步两处（text-align 就漏过一次）。 */
+  /* 不再单独取 TRIGGER_CSS：PANEL_CSS 内部已 `${TRIGGER_CSS}` 插值拼好，
+     单独存一份只会让人以为还有个地方在用它（第六版 §2 ⑦）。 */
   /* 文案查表。lib/i18n.js 是普通脚本、在 manifest 里排在 panel-core 前面；
      万一它没加载，回落成中文原文 —— 面板不能因为少一个文件就显示成 key。 */
   function T(key, fallback) {
@@ -1648,19 +1670,16 @@
     // 两个模式各记各的：图片那一屏记的是 imageConfigId（= 设置页那个选中项），
     // 别让它把「文字用哪条」顶掉。
     if (cfgMode === 'image' && imageConfigs.length > 0) imageConfigId = picked;
-    else currentConfigId = picked;
-    pendingConfigId = picked;
-
-    // 原文一变，所有配置的结果都快照过期了 —— 数据驱动地作废，不指望每个调用点记得清。
-    // 直传（截图）模式没有文字原文，就拿图片的「长度 + 尾巴」当指纹。
-    const key = hasImage
-      ? '\u0001img|' + (ocr.image || '').length + '|' + (ocr.image || '').slice(-64)
-      : payload;
+    /* 原文一变，所有配置的结果都快照过期了 —— 数据驱动地作废。
+       直传（截图）模式没有文字原文，用**多段采样指纹**：
+       以前是「长度 + 末 64 字符」，两张不同的图只要大小相同、结尾都是 base64 填充区，
+       就会判成同一张 → 切图后端出旧译文（第六版 §2 ⑥）。
+       现在采 5 个位置各 32 字符 —— 同尺寸不同内容的图几乎不可能全撞。 */
+    const key = hasImage ? imageFingerprint(ocr.image || '') : payload;
     if (key !== cacheKey) {
       cacheKey = key;
       resultCache.clear();
     }
-
     // 状态栏那句随「是不是截图 / 有没有截断」变，先算好再交给公共骨架
     enterBusy(
       '等待结果…',
@@ -2608,6 +2627,10 @@
        早退就把这一步吞了。判据得是「真的什么都不用变」= 已经在槽里**且**就是当前那条。 */
     const already = slots.some((sl) => sl.configId === v);
     const primary = cfgMode === 'image' ? imageConfigId : currentConfigId;
+    /* **改之前拍个快照**：下面 currentConfigId / slots / imageConfigId 都要动，
+       而 await 之后可能发现「期间又拨了」—— 那时必须整份回滚，
+       否则界面上是 Y、内存里是 X，槽还被顶掉回不来（第六版 §2 ②）。 */
+    const snap = { currentConfigId, imageConfigId, slots: slots.slice() };
     if (already && v === primary) return;
     if (cfgMode === 'image') imageConfigId = v;
     else currentConfigId = v;
@@ -2635,7 +2658,13 @@
        请求会带着上一条图片配置出去 —— 2026-10-18 接多槽位时漏了这个 await，
        当场被 e2e 的「拨一下真的换成新那条了」抓住。 */
     if (cfgMode === 'image') await saveImageConfigId(v);
-    if (mySeq !== cfgSeq) return;   // 期间又拨了配置下拉，这次作废
+    if (mySeq !== cfgSeq) {
+      /* 期间又拨了：把刚才那批改动整份退回去，别留下「界面 Y、内存 X」 */
+      currentConfigId = snap.currentConfigId;
+      imageConfigId = snap.imageConfigId;
+      slots = snap.slots;
+      return;
+    }
     renderConfigOptions();
     // 翻过的 → 放回上次的结果，一个请求都不发；没翻过的 → 当场用这个配置翻一次
     const hit = resultCache.get(v);
@@ -2660,6 +2689,9 @@
     const v = langSelect.value;
     if (v === prefs.targetLang) return;
     prefs.targetLang = v;
+    /* 改之前拍快照：prefs.targetLang 和 resultCache 都动了，
+       作废时要能整份退回（第六版 §2 ②）。 */
+    const langSnap = { targetLang: prefs.targetLang, cache: new Map(resultCache) };
     langSelect.title = T('panel_lang_with', '目标语言：') + RTPanelCore.langDisplayName(v, T);
     // 缓存里每一条都是上一门语言的译文，全作废
     resultCache.clear();
@@ -2667,7 +2699,13 @@
     // （loadState 每次都现读），写没落盘就发，这一条会带着上一门语言出去。
     // 真踩过 —— e2e 里「换成英语但请求还是 ZH-HANS」抓到的就是这个。
     await saveSetting('targetLang', v);
-    if (mySeq !== langSeq) return;   // 期间又拨了语言下拉，这次作废
+    if (mySeq !== langSeq) {
+      /* 期间又拨了：把语言和缓存整份退回去，别留下「界面 Y、内存 X」 */
+      prefs.targetLang = langSnap.targetLang;
+      resultCache.clear();
+      for (const [k2, v2] of langSnap.cache) resultCache.set(k2, v2);
+      return;
+    }
     if (currentText || (lastOcr && lastOcr.image)) {
       translate(currentText, shownConfigId(), lastOcr || undefined);
       return;

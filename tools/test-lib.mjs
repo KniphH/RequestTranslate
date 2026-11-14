@@ -904,10 +904,10 @@ section('13. 按钮样式：content.js 里的副本必须和 lib 一致');
   const src = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
   const squash = (s) => s.replace(/\s+/g, '');
 
-  check('content.js 不再手抄按钮样式表（改从 RTPanelCore 取）',
-    /window\.RTPanelCore\.TRIGGER_CSS/.test(src) && !squash(src).includes(squash(TRIGGER_CSS).slice(0, 200)),
-    '合并后应只剩一行引用');
-
+  check('content.js 不再手抄按钮样式表（整份走 RTPanelCore.PANEL_CSS）',
+    /window\.RTPanelCore\.PANEL_CSS/.test(src) &&
+      !squash(src).includes(squash(TRIGGER_CSS).slice(0, 200)),
+      !squash(src).includes(squash(TRIGGER_CSS).slice(0, 200)));
   for (const s of TRIGGER_STYLES) {
     if (!s.svg) continue;
     check(`预设「${s.name}」的 SVG 逐字一致`, squash(src).includes(squash(s.svg)));
@@ -2681,7 +2681,8 @@ section('20. 「临时直连」已彻底移除：权限 / 模块 / 调用点都�
     'panel-core 该有一份、两个旧 lib 该没有');
   check('content.js 与 options.js 都从 window.RTPanelCore 取样式（不是手抄）',
     /window\.RTPanelCore\.PANEL_CSS/.test(read('../content.js')) &&
-      /window\.RTPanelCore\.TRIGGER_CSS/.test(read('../content.js')) &&
+      /* content.js 只取 PANEL_CSS 就够 —— TRIGGER_CSS 已被它内部插值拼好，
+         单独再取一份就是死代码（第六版 §2 ⑦ 指出并已删）。 */
       /* options.js 用的是解构写法 const { TRIGGER_CSS, PANEL_CSS } = window.RTPanelCore;
          所以这里不能找 `.PANEL_CSS` 字面 —— 找解构里同时出现两个名字。 */
       /\{\s*TRIGGER_CSS\s*,\s*PANEL_CSS\s*\}\s*=\s*window\.RTPanelCore/.test(read('../options.js')),
@@ -4467,6 +4468,30 @@ await (async () => {
   /* CSS 变量：用了的必须有定义（或有 JS 动态设置），拼错会静默失效 */
   check('panel-core 里没有拼错的 --rt-fg / --rt-fg-dim（应为 --rt-text*）',
     !/var\(--rt-fg/.test(pcSrc3));
+
+  /* ---- 口径自检（第六版 §4③：数字由脚本打印，不许手写）----
+     这几项以前我全是手写进文档的，而且**全部对不上**（1063 写成 1043、
+     19 写成 18、20 写成 25、265 写成 157）。现在让脚本自己报。 */
+  const zhAll = JSON.parse(readFileSync(new URL('../_locales/zh_CN/messages.json', import.meta.url), 'utf8'));
+  const zhKeys2 = Object.keys(zhAll).filter((k) => k !== 'extName' && k !== 'extDesc');
+  const enKeys2 = Object.keys(JSON.parse(readFileSync(new URL('../i18n/en.json', import.meta.url), 'utf8')).strings);
+  const used2 = new Set();
+  for (const f of ['options.html', 'options.js', 'content.js', 'popup.html', 'popup.js', 'background.js']) {
+    const s = readFileSync(new URL('../' + f, import.meta.url), 'utf8');
+    for (const m of s.matchAll(/data-i18n(?:-ph|-html)?="([^"]+)"/g)) used2.add(m[1]);
+    for (const m of s.matchAll(/\bT\('([a-z][a-z0-9_]+)'/g)) used2.add(m[1]);
+    for (const m of s.matchAll(/\bmsg\('([a-z][a-z0-9_]+)'/g)) used2.add(m[1]);
+  }
+  const settingKeys = Object.keys((await import("../lib/store.js")).DEFAULT_SETTINGS);
+
+  /* 这三条**不是断言**，是打印出来给文档对账用的 */
+  console.log("\n—— 口径自检（照抄进文档，别手写）——");
+  console.log(`  test-lib 项数      ${passed + failed}`);
+  console.log(`  zh 有效 key        ${zhKeys2.length}`);
+  console.log(`  en 有效 key        ${enKeys2.length}`);
+  console.log(`  代码里用到的 key    ${used2.size}`);
+  console.log(`  DEFAULT_SETTINGS   ${settingKeys.length} 键`);
+  console.log("");
 console.log('\n' + '='.repeat(46));
 console.log(`通过 ${passed} 项，失败 ${failed} 项`);
 console.log('='.repeat(46));
