@@ -576,7 +576,7 @@ function moveButton({ listEl, id, name, index, delta, total, onMove }) {
   b.disabled = delta < 0 ? index === 0 : index === total - 1;
   const label = delta < 0 ? T('opt_move_up_word', '上移') : T('opt_move_down_word', '下移');
   b.title = label;
-  b.setAttribute('aria-label', `${label}「${name || '未命名'}」`);
+  b.setAttribute('aria-label', `${label}${T('opt_unnamed_quoted', '「未命名」')}`);
 
   b.addEventListener('click', () => {
     onMove(id, index + delta);
@@ -647,7 +647,7 @@ function bindBlockActions({ collect, render }, container) {
 
     if (btn.classList.contains('rb-del') && i >= 0) {
       const item = cfg.fallbacks[i];
-      if (item.request.trim() && !confirm(`删掉「后备 ${i + 1}」？此操作不可撤销。`)) return;
+    if (item.request.trim() && !confirm(T('opt_confirm_del_backup', '删掉「后备 $1$」？此操作不可撤销。', [String(i + 1)]))) return;
       cfg.fallbacks.splice(i, 1);
       blockFold.delete(item.id);
     } else if (btn.classList.contains('rb-up') && i > 0) {
@@ -877,13 +877,13 @@ const CHIPS = [
   {
     ins: '{{targetCode}}',
     k: 'opt_chip_targetcode',
-    t: '映射成接口要的代码，内置是 DeepL 的 language code。换服务就在请求文本里写 #@lang 表，键写语言代码'
+      t: T('opt_chip_target_code_desc', '映射成接口要的代码，内置是 DeepL 的 language code。换服务就在请求文本里写 #@lang 表，键写语言代码'),
   },
   { ins: '{{image}}', t: '截图翻译直传模式下的图片（data URL）；普通翻译时是空串', k: 'opt_chip_image' },
   {
     ins: '{{imagePart}}',
     k: 'opt_chip_imagepart',
-    t: '图片那一段（含前导逗号），写在 content 数组最后；没图时是空串。用它就能让一段模板同时翻文字和翻图'
+      t: T('opt_chip_image_extra_desc', '图片那一段（含前导逗号），写在 content 数组最后；没图时是空串。用它就能让一段模板同时翻文字和翻图'),
   },
   { ins: '{{url}}', t: '页面地址', k: 'opt_chip_url' },
   { ins: '{{title}}', t: '页面标题', k: 'opt_chip_title' },
@@ -1472,7 +1472,7 @@ function updatePreview() {
     let vars;
     let ivars;
     try {
-      vars = buildVars(state, 'Hello, world! 这是一段示例文本。', {
+    vars = buildVars(state, T('opt_sample_text', 'Hello, world! 这是一段示例文本。'), {
         url: 'https://example.com/page',
         title: T('opt_sample_page', '示例页面')
       });
@@ -1588,8 +1588,8 @@ async function runTest() {
            别让人以为漏跑了（也别让人以为上面那条「共 N 条」是「发了 N 条」）。 */
         got = true;
         const left = total - sent;
-        const at = attempts.length > 1 ? `第 ${i + 1} 条第 ${j + 1} 个 model 拿到译文` : `第 ${i + 1} 条拿到译文`;
-        const tail = left ? (rotating ? `，还有 ${left} 次没发` : `，后面 ${left} 条没跑`) : '';
+    const at = attempts.length > 1 ? T('opt_attempt_n_m', '第 $1$ 条第 $2$ 个 model 拿到译文', [String(i + 1), String(j + 1)]) : T('opt_attempt_n', '第 $1$ 条拿到译文', [String(i + 1)]);
+    const tail = left ? (rotating ? T('opt_left_rotating', '，还有 $1$ 次没发', [String(left)]) : T('opt_left_queued', '，后面 $1$ 条没跑', [String(left)])) : '';
         head.insertAdjacentHTML('beforeend', `<span class="badge ok">${at}${tail}</span>`);
         break;
       }
@@ -1669,7 +1669,7 @@ function testItemHtml(item, r, opts = {}) {
   const rows = [];
 
   const badges = [
-    `<span class="badge ${r.ok ? 'ok' : 'err'}">HTTP ${r.status || '失败'}</span>`,
+      `<span class="badge ${r.ok ? 'ok' : 'err'}">HTTP ${r.status || T('opt_failed', '失败')}</span>`,
     `<span class="badge">${r.ms} ms</span>`
   ];
   // 轮换时把「这块试的是哪个 model」摆在最前面 —— 结果好坏都先要看出是哪个
@@ -1677,7 +1677,7 @@ function testItemHtml(item, r, opts = {}) {
   if (r.usedPath) badges.push(`<span class="badge">${escapeHtml(r.usedPath)}</span>`);
   for (const w of r.warnings || []) badges.push(`<span class="badge warn">${escapeHtml(w)}</span>`);
   if (r.missingVars && r.missingVars.length) {
-    badges.push(`<span class="badge warn">未填变量 ${r.missingVars.map(escapeHtml).join(', ')}</span>`);
+    badges.push(`<span class="badge warn">${T('opt_missing_vars', '未填变量 $1$', [r.missingVars.map(escapeHtml).join(', ')])}</span>`);
   }
 
   if (r.error) {
@@ -1801,7 +1801,7 @@ function renderVars() {
 
     if (idx !== editingVarIdx) {
       /* ---- 卡片（收起态）：名字一行、值两行，操作按钮贴右上角 ---- */
-      row.title = '点开编辑';
+  row.title = T('opt_click_to_edit', '点开编辑');
 
       /* 拖动手柄。和三处左栏同一个 `bindSortDrag`（拖它才动，点卡片是编辑）——
          变量一多就只能按创建顺序排，视觉上乱得没法归类（kniph 2026-10-14）。 */
@@ -1819,7 +1819,7 @@ function renderVars() {
 
       const subEl = document.createElement('span');
       subEl.className = 'var-sub';
-      subEl.textContent = varValueSummary(v) || '空';
+  subEl.textContent = varValueSummary(v) || T('opt_empty', '空');
       // 值可能很长（多行 model 列表、长 key）—— 完整内容挂 title，鼠标停上去看全文
       row.title = (v.name || T('opt_unnamed', '(未命名)')) + '\n' + (varValueSummary(v) || T('opt_var_empty', '空')) + '\n\n' + T('opt_var_click_edit', '点开编辑');
 
@@ -1833,7 +1833,7 @@ function renderVars() {
       eye.type = 'button';
       eye.className = 'row-eye' + (isSecretVar(v.name) ? '' : ' off');
       eye.innerHTML = EYE_OFF_SVG;
-      eye.title = '点开编辑';
+  eye.title = T('opt_click_to_edit', '点开编辑');
       eye.addEventListener('click', () => {
         editingVarIdx = idx;
         renderVars();
@@ -1842,7 +1842,7 @@ function renderVars() {
       const del = document.createElement('button');
       del.className = 'row-del';
       del.textContent = '✕';
-      del.title = '删除';
+  del.title = T('opt_delete', '删除');
       del.addEventListener('click', () => {
         if (editingVarIdx === idx) editingVarIdx = -1;
         else if (editingVarIdx > idx) editingVarIdx -= 1;
@@ -1890,7 +1890,7 @@ function renderVars() {
     const valueInput = document.createElement('textarea');
     valueInput.rows = 1;
     valueInput.value = v.value;
-    valueInput.placeholder = '值（一行一个）';
+  valueInput.placeholder = T('opt_value_one_per_line', '值（一行一个）');
     valueInput.spellcheck = false;
     valueInput.autocomplete = 'off';
     valueInput.dataset.kind = 'value';
@@ -1916,7 +1916,7 @@ function renderVars() {
       const masked = valueInput.classList.contains('masked');
       eye.innerHTML = masked ? EYE_SVG : EYE_OFF_SVG;
       eye.classList.toggle('on', !masked);
-      eye.title = masked ? '显示' : '隐藏';
+  eye.title = masked ? T('opt_show', '显示') : T('opt_hide', '隐藏');
       eye.setAttribute('aria-label', eye.title);
     };
     eye.addEventListener('click', () => {
@@ -1931,7 +1931,7 @@ function renderVars() {
     const del = document.createElement('button');
     del.className = 'row-del';
     del.textContent = '✕';
-    del.title = '删除';
+  del.title = T('opt_delete', '删除');
     del.addEventListener('click', () => {
       editingVarIdx = -1;
       state.vars.splice(idx, 1);
@@ -1945,8 +1945,8 @@ function renderVars() {
     const foldBtn = document.createElement('button');
     foldBtn.type = 'button';
     foldBtn.className = 'row-fold';
-    foldBtn.textContent = '收起';
-    foldBtn.title = '收起这一条（点名字再摊开）';
+  foldBtn.textContent = T('opt_collapse', '收起');
+  foldBtn.title = T('opt_collapse_hint', '收起这一条（点名字再摊开）');
     foldBtn.addEventListener('click', () => {
       editingVarIdx = -1;
       renderVars();
@@ -1983,7 +1983,7 @@ function currentOcrProvider() {
 
 /** 列表里那行小字：请求模板里第一个 URL，够认人就行 */
 function summarizeOcr(p) {
-  return summarizeUrl(p.request, '(还没填请求模板)');
+  return summarizeUrl(p.request, T('opt_tpl_not_filled', '(还没填请求模板)'));
 }
 
 /* OCR 供应商列表：和「配置」栏**同一套行、同一套操作**（`sortableRow` + 拖动 + ↑↓）——
@@ -2152,7 +2152,7 @@ function renderOcrDisabled() {
      而那两块在直传模式下还在用，看着像被禁用。 */
   els.ocrList.hidden = off;
   els.imgcfgList.hidden = !off;
-  els.ocrListTitle.textContent = off ? '图片配置' : 'OCR 配置';
+  els.ocrListTitle.textContent = off ? T('opt_img_configs', '图片配置') : T('opt_ocr_configs', 'OCR 配置');
   // 图片配置不能在 OCR 栏新建 —— 数据只有一份，维护入口也只留一个
   els.btnOcrNew.hidden = off;
   els.imgcfgFoot.hidden = !off;
@@ -2278,7 +2278,7 @@ function renderOcrPreview() {
 function collectOcrEditor() {
   const p = currentOcrProvider();
   if (!p) return null;
-  p.name = els.oName.value.trim() || '未命名供应商';
+  p.name = els.oName.value.trim() || T('opt_unnamed_provider', '未命名供应商');
 
   for (const node of els.ocrBlocks.querySelectorAll('.req-block')) {
     const isMain = node.dataset.id === p.id;
@@ -2367,7 +2367,7 @@ function bindOcr() {
     // 那是配置栏已经教过的事（kniph 2026-10-14 要求删），而且备注显示在 pane 最底下，
     // 等看见它时人早就写完了。
     const p = normalizeOcrProvider({
-      name: '新供应商',
+    name: T('opt_new_provider', '新供应商'),
       note: '',
       request: OCR_PROVIDERS[0].request
     });
@@ -2388,7 +2388,7 @@ function bindOcr() {
     const copy = normalizeOcrProvider({
       ...src,
       id: '',
-      name: (src.name || '未命名') + ' 副本'
+    name: (src.name || T('opt_unnamed', '未命名')) + T('opt_copy_suffix', ' 副本'),
     });
     state.ocr.providers.push(copy);
     editingOcrId = state.ocr.activeId = copy.id;
@@ -2400,7 +2400,7 @@ function bindOcr() {
   els.btnOcrDelete.addEventListener('click', () => {
     const p = currentOcrProvider();
     if (!p || state.ocr.providers.length <= 1) return;
-    if (!confirm(`删除 OCR 供应商「${p.name}」？`)) return;
+  if (!confirm(T('opt_confirm_del_provider', '删除 OCR 供应商「$1$」？', [p.name]))) return;
 
     const idx = state.ocr.providers.findIndex((x) => x.id === p.id);
     state.ocr.providers.splice(idx, 1);
@@ -2452,7 +2452,7 @@ function formatBytes(n) {
 
 function truncateText(s, n) {
   const t = String(s ?? '');
-  return t.length > n ? t.slice(0, n) + '\n\n…（已截断，共 ' + t.length + ' 字）' : t;
+    return t.length > n ? t.slice(0, n) + T('opt_truncated_suffix', '\n\n…（已截断，共 $1$ 字）', [String(t.length)]) : t;
 }
 
 /** 剪切板里的第一张图。「里面没图」和「压根读不到」分开报 */
@@ -2473,7 +2473,7 @@ async function clipboardImage() {
     if (!type) continue;
     const blob = await item.getType(type);
     const bytes = new Uint8Array(await blob.arrayBuffer());
-    return { dataUrl: toDataUrl(bytes, type), bytes: bytes.length, source: '剪切板' };
+    return { dataUrl: toDataUrl(bytes, type), bytes: bytes.length, source: T('opt_source_clipboard', '剪切板') };
   }
 
   throw new Error(NO_IMAGE_MESSAGE);
@@ -2481,7 +2481,7 @@ async function clipboardImage() {
 
 async function fileImage(file) {
   const bytes = new Uint8Array(await file.arrayBuffer());
-  return { dataUrl: toDataUrl(bytes, file.type), bytes: bytes.length, source: '本地图片 ' + file.name };
+    return { dataUrl: toDataUrl(bytes, file.type), bytes: bytes.length, source: T('opt_source_local_image', '本地图片 $1$', [file.name]) };
 }
 
 async function runOcrTest() {
@@ -2490,7 +2490,7 @@ async function runOcrTest() {
   /* **必须在 await 之前禁用**：下面 collectOcrEditor + await persist 期间按钮要是能点，
      双击就会起两轮，两个结果交替写 #ocr-test-result。 */
   btn0.disabled = true;
-  btn0.textContent = '测试中…';
+    btn0.textContent = T('opt_testing', '测试中…');
   try {
   /* 两块活儿共用一个按钮：
        * 平时——测当前这条 OCR 供应商（走 runOcr）；
@@ -2523,19 +2523,19 @@ async function runOcrTest() {
     shot = ocrTestFile ? await fileImage(ocrTestFile) : await clipboardImage();
   } catch (err) {
     btn.disabled = false; // 提前禁用了就得在这儿放开，不然测试按钮永久卡死
-    btn.textContent = '测试';
+    btn.textContent = T('opt_test', '测试');
     box.innerHTML =
-      '<div class="result-head"><span class="badge err">没拿到图片</span>' +
+    '<div class="result-head"><span class="badge err">' + T('opt_no_image', '没拿到图片') + '</span>' +
       `<span class="badge">${escapeHtml(label)}</span></div>` +
-      '<div class="result-body"><div class="row"><div class="row-title">原因</div>' +
+    '<div class="result-body"><div class="row"><div class="row-title">' + T('opt_reason', '原因') + '</div>' +
       `<pre class="err-text">${escapeHtml((err && err.message) || err)}</pre></div></div>`;
     return;
   }
 
   const srcLabel = shot.source + ' · ' + formatBytes(shot.bytes);
-  btn.textContent = off ? '翻译中…' : '识别中…';
+    btn.textContent = off ? T('opt_translating', '翻译中…') : T('opt_recognizing', '识别中…');
   box.innerHTML =
-    '<div class="result-head"><span class="badge">请求中…</span>' +
+    '<div class="result-head"><span class="badge">' + T('panel_requesting', '请求中…') + '</span>' +
     `<span class="badge">${escapeHtml(label)}</span>` +
     `<span class="badge">${escapeHtml(srcLabel)}</span></div>`;
 
@@ -2551,23 +2551,23 @@ async function runOcrTest() {
   }
 
   btn.disabled = false;
-  btn.textContent = '测试';
+    btn.textContent = T('opt_test', '测试');
   renderOcrTestResult({
     // 是后备成的就带上那一跳：不然只看到供应商名，不知道该改哪段
-    name: label + (r && r.from && r.from !== '主请求' ? ` · ${r.from}` : ''),
+      name: label + (r && r.from && r.from !== T('opt_main_request', '主请求') ? ` · ${r.from}` : ''),
     srcLabel,
     r,
     err,
-    textTitle: off ? '译文' : '识别到的文字'
+      textTitle: off ? T('opt_translation', '译文') : T('opt_recognized_text', '识别到的文字')
   });
   } finally {
     /* 任何一条 early return 都要把按钮还回去，否则「测试中…」永久卡住 */
     btn0.disabled = false;
-    btn0.textContent = '测试';
+    btn0.textContent = T('opt_test', '测试');
   }
 }
-function renderOcrTestResult({ name, srcLabel, r, err, textTitle = '识别到的文字' }) {
-  const status = err ? (err.status || '失败') : r.status;
+  function renderOcrTestResult({ name, srcLabel, r, err, textTitle = T('opt_recognized_text', '识别到的文字') }) {
+  const status = err ? (err.status || T('opt_failed', '失败')) : r.status;
   const ms = err ? err.ms : r.ms;
 
   const badges = [`<span class="badge ${err ? 'err' : 'ok'}">HTTP ${escapeHtml(String(status))}</span>`];
@@ -2609,7 +2609,7 @@ function renderOcrTestResult({ name, srcLabel, r, err, textTitle = '识别到的
     head: badges.join(''),
     body: rows.join(''),
     fold: !(r && r.text),
-    why: shortError((err && err.message) || '请求成功但没认出任何文字')
+      why: shortError((err && err.message) || T('opt_no_text_recognized', '请求成功但没认出任何文字'))
   });
 }
 
@@ -2750,7 +2750,7 @@ const SETTING_MAP = [
 function syncGroupCounts() {
   for (const group of document.querySelectorAll('.set-group')) {
     const n = group.querySelectorAll('.set-group-body .setting').length;
-    group.querySelector('summary').dataset.count = n ? n + ' 项' : '';
+  group.querySelector('summary').dataset.count = n ? T('opt_n_items', '$1$ 项', [String(n)]) : '';
   }
 }
 
@@ -2929,7 +2929,7 @@ function renderPanelPreview() {
     const langSel = host.shadowRoot.querySelector(".rt-lang");
     const cfgs = (state.configs || []).filter((c) => c && c.name);
     if (cfgSel) {
-      const list = cfgs.length ? cfgs : [{ id: "", name: "（没有配置）" }];
+  const list = cfgs.length ? cfgs : [{ id: "", name: T('opt_no_config', '（没有配置）') }];
       cfgSel.textContent = "";
       for (const c of list) {
         const o = document.createElement("option");
@@ -2942,12 +2942,12 @@ function renderPanelPreview() {
       const wantId = state.activeConfigId || (list[0] && list[0].id) || "";
       cfgSel.value = wantId;
       const cur = list.find((c) => c.id === wantId) || list[0];
-      cfgSel.title = "翻译接口：" + cur.name;
+  cfgSel.title = T('opt_cfg_title_prefixed', '翻译接口：$1$', [cur.name]);
     }
     if (langSel) {
       /* 候选和真面板同一份（lib/template.js 的 TARGET_PRESETS）——
          只填当前语言的话，预览的下拉是空的，点开看不到东西。 */
-      const lang = s.targetLang || "简体中文";
+  const lang = s.targetLang || T('opt_default_lang_name', '简体中文');
       const cands = TARGET_PRESETS.slice();
       if (!cands.includes(lang)) cands.push(lang);
       langSel.textContent = "";
@@ -2958,7 +2958,7 @@ function renderPanelPreview() {
         langSel.appendChild(o);
       }
       langSel.value = lang;
-      langSel.title = "目标语言：" + lang;
+  langSel.title = T('opt_lang_title_prefixed', '目标语言：$1$', [lang]);
     }
   }
 
@@ -3031,7 +3031,7 @@ function setPvVisible(on) {
   const btn = document.getElementById("btn-pv-open");
   if (!host) return;
   host.hidden = !on;
-  if (btn) btn.textContent = on ? "收起面板" : "显示面板";
+  if (btn) btn.textContent = on ? T('opt_hide_panel', '收起面板') : T('opt_show_panel', '显示面板');
   if (on) renderPanelPreview();
 }
 
@@ -3104,8 +3104,8 @@ function renderHistory() {
     const now = getConfig(state, state.activeConfigId);
     const was = h.configName || '';
     return now && was && now.name !== was
-      ? `用「${now.name}」重翻这条（当时用的是「${was}」）`
-      : '用当前配置重翻这条原文';
+      ? T('opt_redo_with_hint', '用「$1$」重翻这条（当时用的是「$2$」）', [now.name, was])
+      : T('opt_redo_hint', '用当前配置重翻这条原文');
   };
 
   list.innerHTML = items
@@ -3117,7 +3117,7 @@ function renderHistory() {
         `<div class="h-src">${escapeHtml(h.src)}</div>` +
         `<div class="h-dst">${escapeHtml(h.dst)}</div>` +
         `<div class="h-acts">` +
-        `<button type="button" class="ghost h-act" data-act="copy" title="复制这条译文">复制译文</button>` +
+      `<button type="button" class="ghost h-act" data-act="copy" title="${T('opt_copy_this_translation', '复制这条译文')}">${T('opt_copy_translation', '复制译文')}</button>` +
         `<button type="button" class="ghost h-act" data-act="redo" title="${escapeHtml(redoHint(h))}">重翻</button>` +
         `</div>` +
         '</div>'
@@ -3151,9 +3151,9 @@ async function onHistoryAction(e) {
   if (btn.dataset.act === 'copy') {
     try {
       await navigator.clipboard.writeText(String(h.dst || ''));
-      flashButton(btn, '已复制', '复制译文');
+    flashButton(btn, T('opt_copied', '已复制'), T('opt_copy_translation', '复制译文'));
     } catch {
-      flashButton(btn, '复制失败', '复制译文');
+    flashButton(btn, T('opt_copy_failed', '复制失败'), T('opt_copy_translation', '复制译文'));
     }
     return;
   }
@@ -3163,7 +3163,7 @@ async function onHistoryAction(e) {
     if (!cfg) return;
     const oldText = btn.textContent;
     btn.disabled = true;
-    btn.textContent = '翻译中…';
+  btn.textContent = T('opt_translating', '翻译中…');
     try {
       const vars = buildVars(state, String(h.src || ''), {});
       const r = await runRequest({
@@ -3182,9 +3182,9 @@ async function onHistoryAction(e) {
         renderHistory();
         return;
       }
-      flashButton(btn, '失败：' + String((r && r.error) || '没有译文').slice(0, 24), oldText, 2600);
+    flashButton(btn, T('opt_failed_prefix', '失败：') + String((r && r.error) || T('opt_no_translation', '没有译文')).slice(0, 24), oldText, 2600);
     } catch (err) {
-      flashButton(btn, '失败：' + String(err && err.message || err).slice(0, 24), oldText, 2600);
+    flashButton(btn, T('opt_failed_prefix', '失败：') + String(err && err.message || err).slice(0, 24), oldText, 2600);
     } finally {
       btn.disabled = false;
       if (btn.textContent !== oldText) btn.textContent = oldText;
@@ -3422,20 +3422,20 @@ function bindSettings() {
     persist();
     for (const el of document.querySelectorAll('[data-hint]')) el.classList.remove('hint-off');
     syncRestoreHints();
-    setSaveStatus('已放回全部说明');
+  setSaveStatus(T('opt_hints_restored', '已放回全部说明'));
   });
 
   // 清空翻译记录：只动 history 字段，配置 / 设置 / OCR 一概不碰
   $('#btn-clear-history').addEventListener('click', async () => {
-    if (!confirm('清空全部翻译记录？不可恢复。')) return;
+  if (!confirm(T('opt_confirm_clear_history', '清空全部翻译记录？不可恢复。'))) return;
     state.history = [];
     await persist();
     renderHistory();
-    setSaveStatus('已清空翻译记录');
+  setSaveStatus(T('opt_history_cleared', '已清空翻译记录'));
   });
 
   $('#btn-reset').addEventListener('click', async () => {
-    if (!confirm('会删掉你所有自定义配置，恢复成内置的那几条。确定？')) return;
+  if (!confirm(T('opt_confirm_restore_defaults', '会删掉你所有自定义配置，恢复成内置的那几条。确定？'))) return;
     await chrome.storage.local.remove('state');
     state = await loadState();
     editingId = state.activeConfigId;
@@ -3450,7 +3450,7 @@ function bindSettings() {
     renderOcrEditor();
     renderVars();
     renderSettings();
-    setSaveStatus('已恢复默认');
+  setSaveStatus(T('opt_restored_defaults', '已恢复默认'));
   });
 }
 
@@ -3476,8 +3476,8 @@ function pickImportConfigs(parsed, exportedAt) {
     if (!dlg || !list) { resolve(null); return; }
 
     const mine = new Set(state.configs.map((c) => c.name));
-    const when = exportedAt ? `导出于 ${exportedAt.slice(0, 16).replace('T', ' ')}` : '';
-    noteEl.textContent = `文件里有 ${parsed.configs.length} 条配置${when ? '，' + when : ''}。勾选要导入的：`;
+  const when = exportedAt ? T('opt_exported_at', '导出于 $1$', [exportedAt.slice(0, 16).replace('T', ' ')]) : '';
+  noteEl.textContent = T('opt_import_note_n', '文件里有 $1$ 条配置$2$。勾选要导入的：', [String(parsed.configs.length), when ? T('opt_import_note_when', '，$1$', [when]) : '']);
     errEl.textContent = '';
     errEl.classList.remove('is-err');
     mergeBox.checked = false;
@@ -3485,7 +3485,7 @@ function pickImportConfigs(parsed, exportedAt) {
     /* 默认全勾（原行为是「全都要」，不能因为加了勾选就让老用户多点一次）。
        已存在的同名配置在副标题里标一下，用户能看出「这条会覆盖」 */
     list.innerHTML = parsed.configs.map((c, i) => {
-      const dup = mine.has(c.name) ? '<span class="imp-sub">同名，导入后会覆盖现有的这条</span>' : '';
+    const dup = mine.has(c.name) ? `<span class="imp-sub">${T('opt_import_dup', '同名，导入后会覆盖现有的这条')}</span>` : '';
       const host = String((c.request || '').split('\n')[0] || '').trim().slice(0, 60);
       return ('<label class="imp-row">' +
         `<input type="checkbox" data-ci="${i}" checked>` +
@@ -3526,7 +3526,7 @@ function pickImportConfigs(parsed, exportedAt) {
         .map((b, i) => (b.checked ? parsed.configs[Number(b.dataset.ci)] : null))
         .filter(Boolean);
       if (!picked.length) {
-        errEl.textContent = '至少勾一条';
+    errEl.textContent = T('opt_pick_at_least_one', '至少勾一条');
         errEl.classList.add('is-err');
         return;
       }
@@ -3562,12 +3562,12 @@ function askPassphrase({ title, note, twice }) {
     const done = async () => {
       const a = input.value;
       if (twice && a !== again.value) {
-        noteEl.textContent = '两次输入的不一致，再试一次';
+    noteEl.textContent = T('opt_password_mismatch', '两次输入的不一致，再试一次');
         noteEl.classList.add('is-err');
         return;
       }
       if (!a) {
-        noteEl.textContent = '口令不能是空的';
+    noteEl.textContent = T('opt_password_empty', '口令不能是空的');
         noteEl.classList.add('is-err');
         return;
       }
@@ -3757,19 +3757,19 @@ function bindImportExport() {
 
     if (els.chkEncrypt.checked) {
       const pass = await askPassphrase({
-        title: '设置导出口令',
-        note: '口令不保存在任何地方 —— 丢了它，这份文件就解不开了。',
+    title: T('opt_export_password_title', '设置导出口令'),
+    note: T('opt_export_password_note', '口令不保存在任何地方 —— 丢了它，这份文件就解不开了。'),
         twice: true
       });
       if (!pass) return; // 取消就不导出，勾选框保持原样
       const wrapped = await encryptExport(plain, pass);
       downloadJson(wrapped);
-      setSaveStatus('已导出（加密） · ' + state.configs.length + ' 条配置');
+  setSaveStatus(T('opt_exported_encrypted_n', '已导出（加密） · $1$ 条配置', [String(state.configs.length)]));
       return;
     }
 
     downloadJson(plain);
-    setSaveStatus('已导出 ' + state.configs.length + ' 条配置');
+  setSaveStatus(T('opt_exported_n', '已导出 $1$ 条配置', [String(state.configs.length)]));
   });
 
   /* 分享版：把名字里含 key 的变量值清空，发给别人填他自己的。
@@ -3788,8 +3788,8 @@ function bindImportExport() {
     downloadJson(exportState(shared));
     setSaveStatus(
       cleared
-        ? `已导出分享版（清掉了 ${cleared} 个密钥值）`
-        : '已导出分享版（没有发现要清的密钥值）'
+      ? T('opt_exported_shared_cleared', '已导出分享版（清掉了 $1$ 个密钥值）', [String(cleared)])
+      : T('opt_exported_shared_clean', '已导出分享版（没有发现要清的密钥值）')
     );
   });
 
@@ -3808,14 +3808,14 @@ function bindImportExport() {
       let plainText = text;
       if (isEncryptedExport(text)) {
         const pass = await askPassphrase({
-          title: '输入口令',
-          note: '这份配置文件是加密导出的。'
+    title: T('opt_import_password_title', '输入口令'),
+    note: T('opt_import_password_note', '这份配置文件是加密导出的。'),
         });
         if (!pass) return;
         try {
           plainText = await decryptExport(text, pass);
         } catch (err) {
-          alert('导入失败：' + (err && err.message));
+    alert(T('opt_import_failed', '导入失败：') + (err && err.message));
           return;
         }
       }
@@ -3823,7 +3823,7 @@ function bindImportExport() {
       // exportedAt 只用来写提示 —— 别让它跟着进 state（否则下次导出会顶着旧日期）
       const { exportedAt, ...parsed } = importState(plainText);
       if (!parsed.configs.length) {
-        alert('导入失败：文件里没有配置');
+    alert(T('opt_import_no_config', '导入失败：文件里没有配置'));
         return;
       }
 
@@ -3881,9 +3881,9 @@ function bindImportExport() {
       panelTouched.add('imageConfigId');
       await persist();
       panelTouched.clear();   // 导入落盘完就清掉，别影响后续正常保存的归属判断
-      setSaveStatus(`导入完成（${state.configs.length} 条配置）`);
+  setSaveStatus(T('opt_import_done_n', '导入完成（$1$ 条配置）', [String(state.configs.length)]));
     } catch (err) {
-      alert('导入失败：' + (err && err.message));
+    alert(T('opt_import_failed', '导入失败：') + (err && err.message));
     }
   });
 }
@@ -3892,7 +3892,7 @@ function bindImportExport() {
 
 function scheduleSave() {
   clearTimeout(saveTimer);
-  setSaveStatus('编辑中…');
+  setSaveStatus(T('opt_editing', '编辑中…'));
   saveTimer = setTimeout(() => persist(), 700);
 }
 
@@ -3930,7 +3930,7 @@ async function persist(showStatus = true) {
   try {
     await saveState(state);
   } catch (err) {
-    setSaveStatus('保存失败：' + String((err && err.message) || err).slice(0, 60), true);
+    setSaveStatus(T('opt_save_failed', '保存失败：') + String((err && err.message) || err).slice(0, 60), true);
     return;
   }
   if (mySave !== saveSeq) return;   // 落盘后才变旧：不闪「已保存」，免得误导
@@ -3994,7 +3994,7 @@ let savedTimer = null;
 function flashSaved() {
   const t = new Date();
   const pad = (n) => String(n).padStart(2, '0');
-  setSaveStatus(`已保存 ${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`, true);
+  setSaveStatus(T('opt_saved_at', '已保存 $1$', [pad(t.getHours()) + ':' + pad(t.getMinutes()) + ':' + pad(t.getSeconds())]), true);
   clearTimeout(savedTimer);
   savedTimer = setTimeout(() => setSaveStatus(''), 2500);
 }

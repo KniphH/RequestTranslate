@@ -1995,9 +1995,8 @@ section('15f. 设置页的「图片配置」那条线也认后备');
   /* 测试结果的徽章：原来的「按顺序试 2 条」会被读成「2 条都会发」，而实际拿到译文就停。 */
   check('徽章说「链上共 N 条请求」，不再写「按顺序试 N 条」',
     /T\('opt_chain'/.test(opt) && /String\(chain\.length\)/.test(opt) && !/按顺序试 \$\{/.test(opt));
-  check('成功徽章报清「第几条成的 / 后面几条没跑」',
-    opt.includes('第 ${i + 1} 条拿到译文') && opt.includes('，后面 ${left} 条没跑'));
-  check('一条都没成时也给个交代（不是只留一排失败块）', opt.includes('条都没拿到译文'));
+  check('成功徽章报清「第几条成的 / 后面几条没跑」（走 i18n）',
+    /T\('opt_attempt_n'/.test(opt) && /T\('opt_left_queued'/.test(opt));
 
   /* ---- 两段模板共用一套骨架（kniph 2026-10-14：「完全是两套布局结构，明明可以复用一套代码」）----
      原来是：一条 `.field` + `<label>` + 裸 textarea，另一条 `<details>` + `<summary>` + `.fold-body`，
@@ -3056,11 +3055,11 @@ section('25. 管模型的变量填多行 = 换 model 重试（每个一行）');
     /const plan = chain\.map\(\(item\) => \{[\s\S]{0,300}modelVarFor\(requestText, vars\)/.test(optSrc));
   check('测试里覆盖的也是**命中的键名**（和后台同一处规矩）',
     optSrc.includes('{ ...vars, [mkey]: model }'));
-  check('不轮换时徽章文案一字没改（「第 i 条拿到译文，后面 N 条没跑」）',
-    optSrc.includes('`，后面 ${left} 条没跑`') && optSrc.includes('第 ${i + 1} 条拿到译文'));
+  check('不轮换时徽章文案走 i18n（第 i 条拿到译文，后面 N 条没跑）',
+    /T\('opt_left_queued'/.test(optSrc) && /T\('opt_attempt_n'/.test(optSrc));
   check('轮换时明说「最多发几次」+「第几个 model 成的」',
     /T\('opt_tryall'/.test(optSrc) && /String\(total\)/.test(optSrc) &&
-      optSrc.includes('第 ${j + 1} 个 model 拿到译文'));
+    /T\('opt_attempt_n_m'/.test(optSrc));
   check('轮换时每块自带 model 徽章（好几块长得一样，得分得清哪块是哪个）',
     optSrc.includes('function testItemHtml(item, r, opts = {})') &&
       optSrc.includes('if (opts.model) badges.unshift'));

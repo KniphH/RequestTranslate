@@ -35,13 +35,13 @@
     "opt_chip_url": "Page URL",
     "opt_compare": "Comparing $1$",
     "opt_compare_cleared": "Comparison cleared",
-    "opt_copy_suffix": "copy",
+    "opt_copy_suffix": " copy",
     "opt_del_confirm_a": "Delete \"",
     "opt_del_confirm_b": "\"? This cannot be undone.",
     "opt_del_fallback": "Delete this fallback",
     "opt_down": "Move down",
     "opt_drag_hint": "Drag to reorder",
-    "opt_empty": "(empty)",
+    "opt_empty": "empty",
     "opt_encrypt_export": "Encrypted export",
     "opt_err_boot": "Settings page failed to start: ",
     "opt_fallback_n": "Fallback ",
@@ -236,7 +236,7 @@
     "opt_tpl_title": "Request template",
     "opt_tryall": "model tried in turn, up to $1$ sends",
     "opt_unknown_adapter": "(unknown adapter)",
-    "opt_unnamed": "(untitled)",
+    "opt_unnamed": "Unnamed",
     "opt_untitled": "Untitled",
     "opt_untitled_cfg": "Untitled config",
     "opt_up": "Move up (higher is tried first)",
@@ -422,7 +422,85 @@
     "panel_shot_tip": "Drag to select the area to translate (scrollable page) · Esc or right-click to cancel",
     "panel_crop_failed": "Crop failed",
     "panel_recognizing": "Recognising screenshot…",
-    "panel_this_config": "this config"
+    "panel_this_config": "this config",
+    "opt_click_to_edit": "Click to edit",
+    "opt_delete": "Delete",
+    "opt_value_one_per_line": "Value (one per line)",
+    "opt_show": "Show",
+    "opt_hide": "Hide",
+    "opt_collapse": "Collapse",
+    "opt_collapse_hint": "Collapse this entry (click the name to expand)",
+    "opt_img_configs": "Image configs",
+    "opt_ocr_configs": "OCR configs",
+    "opt_unnamed_provider": "Unnamed provider",
+    "opt_new_provider": "New provider",
+    "opt_source_clipboard": "clipboard",
+    "opt_testing": "Testing…",
+    "opt_test": "Test",
+    "opt_translating": "Translating…",
+    "opt_recognizing": "Recognising…",
+    "opt_translation": "Translation",
+    "opt_recognized_text": "Recognised text",
+    "opt_hide_panel": "Hide panel",
+    "opt_show_panel": "Show panel",
+    "opt_copied": "Copied",
+    "opt_copy_translation": "Copy translation",
+    "opt_copy_failed": "Copy failed",
+    "opt_hints_restored": "All hints restored",
+    "opt_history_cleared": "Translation history cleared",
+    "opt_restored_defaults": "Defaults restored",
+    "opt_pick_at_least_one": "Pick at least one",
+    "opt_password_mismatch": "The two entries do not match, try again",
+    "opt_password_empty": "Password cannot be empty",
+    "opt_export_password_title": "Set an export password",
+    "opt_export_password_note": "The password is not stored anywhere — lose it and this file cannot be opened.",
+    "opt_import_password_title": "Enter password",
+    "opt_import_password_note": "This config file was exported with encryption.",
+    "opt_editing": "Editing…",
+    "opt_unnamed_quoted": "“Unnamed”",
+    "opt_confirm_del_backup": "Delete backup $1$? This cannot be undone.",
+    "opt_tpl_not_filled": "(request template not filled in yet)",
+    "opt_confirm_del_provider": "Delete OCR provider “$1$”?",
+    "opt_truncated_suffix": "\n\n… (truncated, $1$ characters in total)",
+    "opt_source_local_image": "local image $1$",
+    "opt_main_request": "main request",
+    "opt_failed": "Failed",
+    "opt_no_text_recognized": "The request succeeded but no text was recognised",
+    "opt_no_config": "(no config)",
+    "opt_cfg_title_prefixed": "Translation endpoint: $1$",
+    "opt_default_lang_name": "Simplified Chinese",
+    "opt_lang_title_prefixed": "Target language: $1$",
+    "opt_redo_with_hint": "Re-translate with “$1$” (it used “$2$” at the time)",
+    "opt_redo_hint": "Re-translate this text with the current config",
+    "opt_confirm_clear_history": "Clear the whole translation history? This cannot be undone.",
+    "opt_confirm_restore_defaults": "This deletes all your custom configs and restores the built-in ones. Continue?",
+    "opt_exported_at": "exported at $1$",
+    "opt_import_note_n": "The file contains $1$ config(s)$2$. Pick the ones to import:",
+    "opt_import_note_when": ", $1$",
+    "opt_import_dup": "Same name — importing will overwrite this one",
+    "opt_exported_encrypted_n": "Exported (encrypted) · $1$ config(s)",
+    "opt_exported_n": "Exported $1$ config(s)",
+    "opt_exported_shared_cleared": "Shareable copy exported ($1$ secret value(s) removed)",
+    "opt_exported_shared_clean": "Shareable copy exported (no secret values found)",
+    "opt_import_failed": "Import failed: ",
+    "opt_import_no_config": "Import failed: the file has no configs",
+    "opt_import_done_n": "Import complete ($1$ config(s))",
+    "opt_save_failed": "Save failed: ",
+    "opt_saved_at": "Saved $1$",
+    "opt_chip_target_code_desc": "Mapped to the code the endpoint expects; the built-in table uses DeepL language codes. For another service, write a #@lang table in the request text with language codes as keys.",
+    "opt_chip_image_extra_desc": "The image fragment (including the leading comma), placed last in the content array; empty when there is no image. Use it to translate text and images with a single template.",
+    "opt_sample_text": "Hello, world! This is some sample text.",
+    "opt_attempt_n_m": "Attempt $1$, model $2$ got a translation",
+    "opt_attempt_n": "Attempt $1$ got a translation",
+    "opt_left_rotating": ", $1$ attempt(s) still unsent",
+    "opt_left_queued": ", $1$ more not run",
+    "opt_missing_vars": "Missing variables: $1$",
+    "opt_no_image": "No image captured",
+    "opt_reason": "Reason",
+    "opt_n_items": "$1$ item(s)",
+    "opt_copy_this_translation": "Copy this translation",
+    "opt_no_translation": "no translation",
+    "opt_failed_prefix": "Failed: "
   },
   "placeholders": {
     "panel_switched_to": {
@@ -519,6 +597,120 @@
       }
     },
     "panel_truncated": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "opt_confirm_del_backup": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "opt_confirm_del_provider": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "opt_truncated_suffix": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "opt_source_local_image": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "opt_cfg_title_prefixed": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "opt_lang_title_prefixed": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "opt_redo_with_hint": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      }
+    },
+    "opt_exported_at": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "opt_import_note_n": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      }
+    },
+    "opt_import_note_when": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "opt_exported_encrypted_n": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "opt_exported_n": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "opt_exported_shared_cleared": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "opt_import_done_n": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "opt_saved_at": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "opt_attempt_n_m": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      }
+    },
+    "opt_attempt_n": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "opt_left_rotating": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "opt_left_queued": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "opt_missing_vars": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "opt_n_items": {
       "1": {
         "content": "$1"
       }

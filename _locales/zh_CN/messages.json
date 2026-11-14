@@ -1,9 +1,9 @@
 {
-  "extDesc": {
-    "message": "划词翻译，但配置是你自己的 HTTP 请求。直接写 curl 或原始请求报文，可保存多个命名配置。"
-  },
   "extName": {
     "message": "RequestTranslate · 请求式划词翻译"
+  },
+  "extDesc": {
+    "message": "划词翻译，但配置是你自己的 HTTP 请求。直接写 curl 或原始请求报文，可保存多个命名配置。"
   },
   "adapter_bing_hint": {
     "message": "走 bing.com 网页版接口，首次多花约 0.5 秒。",
@@ -254,6 +254,27 @@
     "message": "内置适配器：",
     "description": "内置适配器条目的前缀"
   },
+  "opt_attempt_n": {
+    "message": "第 $1$ 条拿到译文",
+    "description": "设置页",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_attempt_n_m": {
+    "message": "第 $1$ 条第 $2$ 个 model 拿到译文",
+    "description": "设置页",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      }
+    }
+  },
   "opt_block_off": {
     "message": "（已勾掉，不参与轮换）",
     "description": "设置页：测试/轮换/配置操作"
@@ -269,6 +290,15 @@
   "opt_cfg_requests": {
     "message": "主请求先发，失败才按顺序试后备。",
     "description": "设置页 JS 动态文案"
+  },
+  "opt_cfg_title_prefixed": {
+    "message": "翻译接口：$1$",
+    "description": "设置页",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
   },
   "opt_chain": {
     "message": "链上共 $1$ 条请求",
@@ -291,6 +321,10 @@
     "message": "直传模式下的图片 data URL；普通翻译时为空。",
     "description": "占位符/响应格式标签的说明"
   },
+  "opt_chip_image_extra_desc": {
+    "message": "图片那一段（含前导逗号），写在 content 数组最后；没图时是空串。用它就能让一段模板同时翻文字和翻图",
+    "description": "设置页"
+  },
   "opt_chip_imageb64": {
     "message": "裸 base64，不带 data: 前缀。",
     "description": "占位符/响应格式标签的说明"
@@ -306,6 +340,10 @@
   "opt_chip_target": {
     "message": "设置里的目标语言，原样搬过来（给聊天模型看）",
     "description": "占位符/响应格式标签的说明"
+  },
+  "opt_chip_target_code_desc": {
+    "message": "映射成接口要的代码，内置是 DeepL 的 language code。换服务就在请求文本里写 #@lang 表，键写语言代码",
+    "description": "设置页"
   },
   "opt_chip_targetcode": {
     "message": "映射成接口要的代码，内置是 DeepL 的 language code（ZH-HANS / JA）。换服务就在请求文本里写 #@lang 表，键写语言代码",
@@ -323,6 +361,18 @@
     "message": "页面地址",
     "description": "占位符/响应格式标签的说明"
   },
+  "opt_click_to_edit": {
+    "message": "点开编辑",
+    "description": "设置页"
+  },
+  "opt_collapse": {
+    "message": "收起",
+    "description": "设置页"
+  },
+  "opt_collapse_hint": {
+    "message": "收起这一条（点名字再摊开）",
+    "description": "设置页"
+  },
   "opt_compare": {
     "message": "对比 $1$ 条",
     "description": "底栏保存状态：正在对比几条",
@@ -336,9 +386,55 @@
     "message": "对比已清空",
     "description": "设置页：列表/变量/拖动"
   },
+  "opt_confirm_clear_history": {
+    "message": "清空全部翻译记录？不可恢复。",
+    "description": "设置页"
+  },
+  "opt_confirm_del_backup": {
+    "message": "删掉「后备 $1$」？此操作不可撤销。",
+    "description": "设置页",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_confirm_del_provider": {
+    "message": "删除 OCR 供应商「$1$」？",
+    "description": "设置页",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_confirm_restore_defaults": {
+    "message": "会删掉你所有自定义配置，恢复成内置的那几条。确定？",
+    "description": "设置页"
+  },
+  "opt_copied": {
+    "message": "已复制",
+    "description": "设置页"
+  },
+  "opt_copy_failed": {
+    "message": "复制失败",
+    "description": "设置页"
+  },
   "opt_copy_suffix": {
-    "message": "副本",
-    "description": "设置页：测试面板/诊断/配置操作"
+    "message": " 副本",
+    "description": "设置页"
+  },
+  "opt_copy_this_translation": {
+    "message": "复制这条译文",
+    "description": "设置页"
+  },
+  "opt_copy_translation": {
+    "message": "复制译文",
+    "description": "设置页"
+  },
+  "opt_default_lang_name": {
+    "message": "简体中文",
+    "description": "设置页"
   },
   "opt_del_confirm_a": {
     "message": "确定删除「",
@@ -352,6 +448,10 @@
     "message": "删掉这条后备请求",
     "description": "设置页 JS 动态文案"
   },
+  "opt_delete": {
+    "message": "删除",
+    "description": "设置页"
+  },
   "opt_down": {
     "message": "下移",
     "description": "设置页 JS 动态文案"
@@ -360,9 +460,13 @@
     "message": "按住拖动，调整顺序",
     "description": "设置页：列表/变量/拖动"
   },
+  "opt_editing": {
+    "message": "编辑中…",
+    "description": "设置页"
+  },
   "opt_empty": {
-    "message": "(空)",
-    "description": "设置页：列表/变量/拖动"
+    "message": "空",
+    "description": "设置页"
   },
   "opt_encrypt_export": {
     "message": "加密导出",
@@ -371,6 +475,62 @@
   "opt_err_boot": {
     "message": "设置页初始化失败：",
     "description": "设置页 JS 动态文案"
+  },
+  "opt_export_password_note": {
+    "message": "口令不保存在任何地方 —— 丢了它，这份文件就解不开了。",
+    "description": "设置页"
+  },
+  "opt_export_password_title": {
+    "message": "设置导出口令",
+    "description": "设置页"
+  },
+  "opt_exported_at": {
+    "message": "导出于 $1$",
+    "description": "设置页",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_exported_encrypted_n": {
+    "message": "已导出（加密） · $1$ 条配置",
+    "description": "设置页",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_exported_n": {
+    "message": "已导出 $1$ 条配置",
+    "description": "设置页",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_exported_shared_clean": {
+    "message": "已导出分享版（没有发现要清的密钥值）",
+    "description": "设置页"
+  },
+  "opt_exported_shared_cleared": {
+    "message": "已导出分享版（清掉了 $1$ 个密钥值）",
+    "description": "设置页",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_failed": {
+    "message": "失败",
+    "description": "设置页"
+  },
+  "opt_failed_prefix": {
+    "message": "失败：",
+    "description": "设置页"
   },
   "opt_fallback_n": {
     "message": "后备 ",
@@ -387,6 +547,14 @@
   "opt_grp_lang": {
     "message": "语言",
     "description": "界面语言切换"
+  },
+  "opt_hide": {
+    "message": "隐藏",
+    "description": "设置页"
+  },
+  "opt_hide_panel": {
+    "message": "收起面板",
+    "description": "设置页"
   },
   "opt_hint_dismiss": {
     "message": "不再显示",
@@ -440,6 +608,10 @@
     "message": "用 <code>{{名字}}</code> 引用；同名覆盖内置。",
     "description": "设置页：整段说明（含内联标签，走 data-i18n-html）"
   },
+  "opt_hints_restored": {
+    "message": "已放回全部说明",
+    "description": "设置页"
+  },
   "opt_hist_empty": {
     "message": "还没有记录（或上面把条数设成了 0）。",
     "description": "设置页：翻译记录空态"
@@ -452,6 +624,10 @@
     "message": "」的记录。",
     "description": "设置页：搜索无结果（后半句）"
   },
+  "opt_history_cleared": {
+    "message": "已清空翻译记录",
+    "description": "设置页"
+  },
   "opt_hotkey_unset": {
     "message": "未设置",
     "description": "设置页：快捷键还没绑定时显示"
@@ -459,6 +635,10 @@
   "opt_img_badge": {
     "message": "这条填了「图片请求模板」，截图翻译时会走它（图片直传模式）",
     "description": "设置页 JS 动态文案"
+  },
+  "opt_img_configs": {
+    "message": "图片配置",
+    "description": "设置页"
   },
   "opt_imgtpl_hint": {
     "message": "填了才会出现在「图片配置」里；留空复用上面那段。",
@@ -475,6 +655,56 @@
   "opt_imgtpl_title": {
     "message": "图片请求模板（可选 · 点开填）",
     "description": "配置编辑器：图片请求模板折叠块的标题"
+  },
+  "opt_import_done_n": {
+    "message": "导入完成（$1$ 条配置）",
+    "description": "设置页",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_import_dup": {
+    "message": "同名，导入后会覆盖现有的这条",
+    "description": "设置页"
+  },
+  "opt_import_failed": {
+    "message": "导入失败：",
+    "description": "设置页"
+  },
+  "opt_import_no_config": {
+    "message": "导入失败：文件里没有配置",
+    "description": "设置页"
+  },
+  "opt_import_note_n": {
+    "message": "文件里有 $1$ 条配置$2$。勾选要导入的：",
+    "description": "设置页",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      }
+    }
+  },
+  "opt_import_note_when": {
+    "message": "，$1$",
+    "description": "设置页",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_import_password_note": {
+    "message": "这份配置文件是加密导出的。",
+    "description": "设置页"
+  },
+  "opt_import_password_title": {
+    "message": "输入口令",
+    "description": "设置页"
   },
   "opt_label_adapter": {
     "message": "内置适配器",
@@ -536,9 +766,40 @@
     "message": "和面板顶栏那个是同一个值。",
     "description": "设置页：目标语言下方的说明"
   },
+  "opt_lang_title_prefixed": {
+    "message": "目标语言：$1$",
+    "description": "设置页",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_left_queued": {
+    "message": "，后面 $1$ 条没跑",
+    "description": "设置页",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_left_rotating": {
+    "message": "，还有 $1$ 次没发",
+    "description": "设置页",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
   "opt_main_req": {
     "message": "主请求",
     "description": "设置页：测试/轮换/配置操作"
+  },
+  "opt_main_request": {
+    "message": "主请求",
+    "description": "设置页"
   },
   "opt_misc_001": {
     "message": "RequestTranslate · 设置",
@@ -551,6 +812,15 @@
   "opt_misc_003": {
     "message": "配置就是一段请求，参数怎么摆你说了算",
     "description": "设置页：misc 区域"
+  },
+  "opt_missing_vars": {
+    "message": "未填变量 $1$",
+    "description": "设置页",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
   },
   "opt_mode_auto": {
     "message": "自动识别",
@@ -596,6 +866,15 @@
     "message": "上移",
     "description": "设置页：列表/变量/拖动"
   },
+  "opt_n_items": {
+    "message": "$1$ 项",
+    "description": "设置页",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
   "opt_need_one_cfg": {
     "message": "至少要留一条配置。",
     "description": "设置页：测试面板/诊断/配置操作"
@@ -604,9 +883,21 @@
     "message": "新配置",
     "description": "设置页：测试面板/诊断/配置操作"
   },
+  "opt_new_provider": {
+    "message": "新供应商",
+    "description": "设置页"
+  },
+  "opt_no_config": {
+    "message": "（没有配置）",
+    "description": "设置页"
+  },
   "opt_no_file": {
     "message": "未选择文件",
     "description": "OCR 测试：选图按钮与文件名"
+  },
+  "opt_no_image": {
+    "message": "没拿到图片",
+    "description": "设置页"
   },
   "opt_no_request": {
     "message": "（还没写请求模板）",
@@ -616,6 +907,18 @@
     "message": "不勾就不参与轮换（测试也不跑它）",
     "description": "设置页 JS 动态文案"
   },
+  "opt_no_text_recognized": {
+    "message": "请求成功但没认出任何文字",
+    "description": "设置页"
+  },
+  "opt_no_translation": {
+    "message": "没有译文",
+    "description": "设置页"
+  },
+  "opt_ocr_configs": {
+    "message": "OCR 配置",
+    "description": "设置页"
+  },
   "opt_ocr_direct_intro": {
     "message": "截图跳过 OCR，直接交给左边的图片配置。",
     "description": "设置页：OCR 栏头部说明（含内联标签）"
@@ -623,6 +926,14 @@
   "opt_ocr_intro": {
     "message": "先用这里选中的配置把图转成文字，再交给「配置」翻译。",
     "description": "设置页：OCR 栏头部说明（含内联标签）"
+  },
+  "opt_password_empty": {
+    "message": "口令不能是空的",
+    "description": "设置页"
+  },
+  "opt_password_mismatch": {
+    "message": "两次输入的不一致，再试一次",
+    "description": "设置页"
   },
   "opt_path_hint_ocr": {
     "message": "如 <code>words_result</code>。留空自动识别。",
@@ -664,9 +975,45 @@
     "message": "例如：硅基流动",
     "description": "设置页 JS 动态文案"
   },
+  "opt_pick_at_least_one": {
+    "message": "至少勾一条",
+    "description": "设置页"
+  },
   "opt_pick_file": {
     "message": "选择文件",
     "description": "OCR 测试：选图按钮与文件名"
+  },
+  "opt_reason": {
+    "message": "原因",
+    "description": "设置页"
+  },
+  "opt_recognized_text": {
+    "message": "识别到的文字",
+    "description": "设置页"
+  },
+  "opt_recognizing": {
+    "message": "识别中…",
+    "description": "设置页"
+  },
+  "opt_redo_hint": {
+    "message": "用当前配置重翻这条原文",
+    "description": "设置页"
+  },
+  "opt_redo_with_hint": {
+    "message": "用「$1$」重翻这条（当时用的是「$2$」）",
+    "description": "设置页",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      }
+    }
+  },
+  "opt_restored_defaults": {
+    "message": "已恢复默认",
+    "description": "设置页"
   },
   "opt_row_actual": {
     "message": "实际请求",
@@ -687,6 +1034,23 @@
   "opt_sample_page": {
     "message": "示例页面",
     "description": "设置页：测试/轮换/配置操作"
+  },
+  "opt_sample_text": {
+    "message": "Hello, world! 这是一段示例文本。",
+    "description": "设置页"
+  },
+  "opt_save_failed": {
+    "message": "保存失败：",
+    "description": "设置页"
+  },
+  "opt_saved_at": {
+    "message": "已保存 $1$",
+    "description": "设置页",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
   },
   "opt_send": {
     "message": "发送",
@@ -1064,6 +1428,27 @@
     "message": "确定",
     "description": "设置页：set 区域"
   },
+  "opt_show": {
+    "message": "显示",
+    "description": "设置页"
+  },
+  "opt_show_panel": {
+    "message": "显示面板",
+    "description": "设置页"
+  },
+  "opt_source_clipboard": {
+    "message": "剪切板",
+    "description": "设置页"
+  },
+  "opt_source_local_image": {
+    "message": "本地图片 $1$",
+    "description": "设置页",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
   "opt_style_auto": {
     "message": "（自动识别）",
     "description": "设置页：测试/轮换/配置操作"
@@ -1132,9 +1517,17 @@
     "message": "地址：",
     "description": "设置页：测试面板/诊断/配置操作"
   },
+  "opt_test": {
+    "message": "测试",
+    "description": "设置页"
+  },
   "opt_test_page": {
     "message": "RequestTranslate 测试",
     "description": "设置页：测试/轮换/配置操作"
+  },
+  "opt_testing": {
+    "message": "测试中…",
+    "description": "设置页"
   },
   "opt_title_201": {
     "message": "按住左侧的手柄上下拖动，或者点右侧的 ↑ ↓",
@@ -1176,6 +1569,10 @@
     "message": "curl 或原始报文都行，只替换占位符。换行写 <code>\\n</code>。",
     "description": "请求模板下方的说明（文本翻译）"
   },
+  "opt_tpl_not_filled": {
+    "message": "(还没填请求模板)",
+    "description": "设置页"
+  },
   "opt_tpl_ph": {
     "message": "在这里粘贴 curl，或者写原始 HTTP 报文",
     "description": "请求模板输入框占位"
@@ -1183,6 +1580,23 @@
   "opt_tpl_title": {
     "message": "请求模板",
     "description": "配置编辑器：请求模板折叠块的标题"
+  },
+  "opt_translating": {
+    "message": "翻译中…",
+    "description": "设置页"
+  },
+  "opt_translation": {
+    "message": "译文",
+    "description": "设置页"
+  },
+  "opt_truncated_suffix": {
+    "message": "\n\n…（已截断，共 $1$ 字）",
+    "description": "设置页",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
   },
   "opt_tryall": {
     "message": "model 逐个试，最多发 $1$ 次",
@@ -1250,8 +1664,16 @@
     "description": "设置页：测试面板/诊断/配置操作"
   },
   "opt_unnamed": {
-    "message": "(未命名)",
-    "description": "设置页：列表/变量/拖动"
+    "message": "未命名",
+    "description": "设置页"
+  },
+  "opt_unnamed_provider": {
+    "message": "未命名供应商",
+    "description": "设置页"
+  },
+  "opt_unnamed_quoted": {
+    "message": "「未命名」",
+    "description": "设置页"
   },
   "opt_untitled": {
     "message": "未命名",
@@ -1264,6 +1686,10 @@
   "opt_up": {
     "message": "上移（越靠前越先试）",
     "description": "设置页 JS 动态文案"
+  },
+  "opt_value_one_per_line": {
+    "message": "值（一行一个）",
+    "description": "设置页"
   },
   "opt_var_005": {
     "message": "变量",
