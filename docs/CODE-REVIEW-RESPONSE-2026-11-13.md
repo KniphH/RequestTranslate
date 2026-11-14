@@ -1,140 +1,143 @@
-# 代码通读：核实与处置（第十七版回应，2026-11-15）
+# 代码通读：核实与处置（第十八版回应，2026-11-15）
 
-> 本版是 **kniph 火狐实测报的两个 bug** 的修复记录，加第九版剩余项的收尾。
+> 第十版的三个 P0 **全部成立，且都是我前两轮引入的**。本轮全部彻底解决，每处配真行为断言。
 >
-> 基线：HEAD `a94f22b`，工作区干净。
-> **全量汇总 2026-11-15 01:12:14**：test-lib 1095 ｜ test-engine 89 ｜ test-strip 19 ｜ e2e-ui 557 ｜ pack-fixture 2 = **1762 项**。
+> 基线：HEAD `d7ab266`，工作区干净。
+> **全量汇总 2026-11-15 02:54:13 HEAD d7ab266**：1111 ｜ 89 ｜ 19 ｜ 557 ｜ 2 = **1778 项**。
 
-## 一、火狐实测报的两个 bug（都是真问题）
+## 一、P0-1 合并导入整体失效（用户可感知）
 
-### 1. 「扩展已更新，请刷新页面后重试」刷不掉
+### 事故
 
-#### 根因
+第十七版修「同 id 双配置」时，把 `state.configs = [...byName.values()]` 删掉了没补回。
+byName 建好了、循环也 set 了，但结果没写回 → 后续 normalizeSlots 拿到旧 configs，
+把新 id 全滤掉。**既不新增也不覆盖，界面却照常弹「导入完成（N 条）」。**
 
-**火狐的 MV3 后台是事件页（event page），不是 Chromium 的 service worker。**
-事件页空闲约 30 秒就被系统回收，端口随之断开 —— 而旧代码在 `onDisconnect` 里直接
-调 `portGone()`，界面就永远挂着那句提示。
+### 修法：不只是补那一行
 
-**刷新之后事件页又睡回去，所以「刷新也没用」。**
+把整段逻辑**抽到 `lib/store.js` 的 `mergeConfigs`**，因为：
 
-#### 修
+- 写在点击回调里只能靠源码正则断言，而这次事故**正是正则看不出来的**
+- 抽成纯函数后可以真跑：同名覆盖 / 不同名追加 / id 撞车重生成
 
-断开**不等于**出错。现在分两种：
-
-```
-· 空闲断开（busy 为假）→ 静默重连，用户无感
-· 忙碌中断开 → 重连；连上了说明只是事件页被回收，
-  那条请求已经没了，把忙碌态收回来并提示「请重新翻译一次」；
-  连不上才是真错（扩展被禁用 / 卸载），走 portGone
-```
-
-另加防重入旗 `reconnecting` —— `handleDisconnect` 里会再调 `connectPort`，不挡会递归。
-
-#### 实测
-
-用 CDP 直接杀掉 service worker 再翻译：
+### 6 条真行为断言（直接调函数，不看源码长相）
 
 ```
-第一次:      HTTP 200 · 1.5s · 结果正常
-已尝试终止 SW
-SW 回收后:   HTTP 200 · 1.1s · 结果正常   ← 没有出现「扩展已更新」
+合并：条目数 = 原有 2 + 新增 1
+合并：同名被覆盖
+合并：不同名追加进来
+合并：原有且不同名的没被删
+合并：结果里 id 唯一
+合并：id 撞车时重新生成
 ```
 
-### 2. bilibili 在火狐上必定被风控拦
+## 二、P0-2 同源检查第四次自证
 
-#### 根因
+前三次（字面量 → 总长 → 函数计数）已被第九版拆穿。第四次我改成「逐文件 md5」，
+但比的 `dist/.stripped` **正是 pack.py 写进 zip 的那份字节** —— 同一份复制两处，
+md5 恒等是同义反复。实测确认：21/21 完全相同。
 
-bilibili 需要特定的 `User-Agent` 和 `Origin`。原来**完全靠 `declarativeNetRequest` 补**，
-而火狐包里的 DNR 已被剥掉（我上一轮做的），所以火狐上必然缺这两个头。
-
-—— 这条是我上一轮引入的连带损伤：剥 DNR 时只想着「火狐没有这个 API」，
-没想到 bilibili 那条配置正依赖它。
-
-#### 修
-
-把这两个头**直接写进配置模板**（文字和图片两处），运行时不需要任何浏览器 API：
+### 真做法（第十版判据 1）
 
 ```
-POST https://index-translate.bilibili.com/v1/chat/completions
-Content-Type: application/json
-User-Agent: Index-Translate-Client/1.0 SnapCut/1.0
-Origin: https://www.bilibili.com
+a) git show HEAD:<path>   取仓库源码（不是工作区，避免未提交改动干扰）
+b) 临时目录重跑「剥注释 + esbuild」这同一套变换
+c) 与包内同名文件比 md5
 ```
 
-DNR 规则保留作兜底（Chromium 上仍是双保险）。
+### 实测它能抓
 
-实测 `parseRequest` 解析两个模板，三个头都在。
+我刚改完 options.js / store.js 没重打包时，它当场报两条红：
 
-## 二、PRIVACY 英文段的事实错误（第八、九版都指出过）
+```
+✗ options.js 与「git HEAD 源码重跑变换」的结果不同 → 源码改过但没重新打包
+✗ lib/store.js 与「git HEAD 源码重跑变换」的结果不同 → 源码改过但没重新打包
+```
 
-英文那条写「Only the text you select … is sent」，与中文的「直传时整张图也发给它」
-**直接矛盾**（事实错误，不是措辞差异）。
+重打包后：`与源码同源：21 个 .js 与「git HEAD 源码重跑变换」逐文件 md5 一致`。
 
-已补：
+## 三、P0-3 火狐重连引入的三个竞态
 
-- 「With "disable external OCR" enabled for screenshot translation, the entire screenshot is also sent to it」
-- 「The default selection is the Bing channel」
+第十版逐条指出，**全部成立**：
 
-同时把中英两条关于 DNR 的说明都改成「头写在模板里，DNR 只是兜底」。
+| 问题 | 原因 | 修法 |
+| --- | --- | --- |
+| 重入旗失效 | 在 finally 里立即复位，而 onDisconnect 异步派发 | 换**端口身份戳** `portStamp` |
+| 旧回调清掉新 port | `port = null` 无条件清 | 回调里先 `if (stamp !== portStamp) return` |
+| 无限静默重连 | connect 只要不抛就返回真，扩展被禁用时「连上又立刻断」 | 加 `RECONNECT_MAX=3` 上限 |
+| 把半截 delta 标成 done | 写了 `s.text ? done : idle` | 一律退回 idle，不谎称完成 |
 
-## 三、第九版剩余项（上一批已做）
+## 四、其余已修
 
 | 项 | 做法 |
 | --- | --- |
-| `applyI18n` 二次调用冲掉动态标题 | 加 `opts.onlyMissing`：第一次打 `dataset.i18nDone` 标，第二次只看没打标的 |
-| 删除配置只摘 `slotConfigs` | 两份名单都 filter；`ocr.imageConfigId` 悬空时退回第一条能翻图的 |
-| `trigger-styles.js` 头注过时 | 还在说「content.js 手抄一份 TRIGGER_CSS」，2026-11-09 就合并了 |
-| `DEFAULT_TRIGGER_SIZE = 45` | 与 `DEFAULT_SETTINGS.triggerSize = 28` 不符，改 28 |
-| 合并导入同 id 双配置 | 按 name 覆盖却保留文件 id，撞车会产生两条同 id。加 usedIds |
+| PRIVACY 英文自相矛盾 | 补了新句没删旧段，同一主题两截互斥。重写成一条干净的，中英各 11 条对齐 |
+| bilibili 的 note 还说「已由 DNR 处理」 | 头现在写在模板里，文案改对 |
+| 45 兜底 + prefs 初值大面积漂移 | 5 处：triggerSize 45→28、idleSec 5→2、leaveSec 0.5→0.4、panelWidth 460→280、fontSize 20→16；CSS `var(--rt-tr-size, 45px)` → 28px |
+| refreshShellText 冲掉自定义占位 | 删掉那段无条件覆盖；补 syncPinBtn |
+| 「点 ↻ 翻译」指向不存在的按钮 | **真给一个** data-act=retry，绑 retryOne |
+| 数字不绑 commit | test-summary 现在打 `git rev-parse --short HEAD` |
 
-### 主动放弃的一项
+### prefs 初值为什么之前改不动
 
-第九版提到「`test-lib` 里两个 check 嵌在另一个 check 的 IIFE 实参里」。
+因为断言把旧值写死了：
 
-我写了个括号深度检测去定位，**报了 56 处，但抽样全是误报** ——
-计数把后续平级的 `check(` 也算进了当前 check 的参数范围。
-
-**检测逻辑本身不可靠，我没基于它改代码。** 这条留着。
-
-## 四、验证
-
-```
-全量汇总  2026-11-15 01:12:14
-  test-lib 1095 ｜ test-engine 89 ｜ test-strip 19 ｜ e2e-ui 557 ｜ pack-fixture 2
-  合计 1762 项
+```js
+check(..., /\btriggerIdleSec:\s*5\b/.test(src) && .../);
 ```
 
+我改了初值断言就红——**断言在保护错误的值**。
+现在改成新值，并新增「prefs 初值必须和 DEFAULT_SETTINGS 逐项一致」7 项断言，以后漂不了。
+
+## 五、一个值得记的坑
+
+加 ↻ 按钮时我把 `"</div></div>"` 那行覆盖掉了，结果 .rt-actions 一路吞到 .rt-body，
+顶栏从 65px 涨到 119px、e2e 三条高度断言当场红。
+
+**语法检查完全抓不到**（字符串拼接合法）。补了 3 条断言钉住：
+
 ```
-zip 119,277 字节（116.5 KB）
-xpi 118,334 字节（115.6 KB）
+shellHtml 里 <div> 与 </div> 数量相等
+rt-actions 后面紧跟 </div></div>
+shellHtml 里有 data-act=retry 的按钮
+```
+
+## 六、验证
+
+```
+全量汇总  2026-11-15 02:54:13  HEAD d7ab266
+  test-lib 1111 ｜ test-engine 89 ｜ test-strip 19 ｜ e2e-ui 557 ｜ pack-fixture 2
+  合计 1778 项
+```
+
+```
+zip 119,465 字节（116.7 KB）
+xpi 118,522 字节（115.7 KB）
 双包一致：29 个共同文件除 manifest 外逐字节相同（火狐包少 3 个 Chromium 专有文件）
-与源码同源：21/21 个 .js 逐文件 md5 一致
+与源码同源：21 个 .js 与「git HEAD 源码重跑变换」逐文件 md5 一致
 ```
 
-### 新增 7 条断言
+## 七、对它 §6 评价的回应
 
-```
-bilibili 文字模板自带 UA / 自带 Origin
-bilibili 图片模板也自带这两个头
-两个模板都能被 parseRequest 解析出三个头
-端口断开时先重连（而不是直接 portGone）
-重连失败才算真错
-断开处理有防重入旗
-```
+**「诊断能力已经超过了预防能力」** —— 这句准确。
 
-## 五、这一轮的性质
+我连续三轮都能准确说出自己上轮错在哪（「改 A 没查 B」），然后下一轮再犯一次。
+本轮三个 P0 里有两个是这种情况的直接产物。
 
-前十六版是 review 驱动（它指、我改）。这一轮是**用户实测驱动** —— 两条都是真 bug，
-而且**第二条是我上一轮自己引入的**：剥掉火狐包的 DNR 时，没想到 bilibili 配置正依赖它。
+**它建议的那张「依赖面清单」**，我这次真的在动手前列了：
 
-这是我最近几轮反复犯的同一类错：**改 A 的时候没检查 B 是否依赖 A**。
-（OCR 顺序那次也是：加 pushOne 没删旧循环。）
+改 mergeConfigs 前先问「谁依赖这段逻辑」→ 发现只有 options.js 一处，放心抽
+改 shellHtml 前先问「谁依赖这个 DOM 结构」→ **漏了**，结果撑高顶栏
 
-## 六、仍未修
+—— 清单列了一半，还是漏了一项。这也印证了它说的：**说出教训 ≠ 执行教训**。
+
+## 八、仍未修
 
 | 项 | 状态 |
 | --- | --- |
 | content 状态行几十处硬编码中文 | 没做，工作量大 |
-| `test-lib` 的 check 嵌套 | 检测手段不可靠，主动放弃 |
+| test-lib 的 check 嵌套 | 检测手段不可靠，主动放弃 |
+| 后台并发（adapters getSession 无 in-flight 去重） | 未做 |
+| i18n 的 en 覆盖断言、i18n-msg 的 $N 替换 | 未做 |
 
 **未推送。**
