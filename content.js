@@ -98,6 +98,10 @@
    * 不持久化 —— 这是**当下这一次**的操作意图，存进设置里会变成"下次打开怎么又钉住了"。
    * 关闭面板就复位。
    */
+  /* 用户显式关过面板（✕ / Esc）。用来丢掉「关掉之后才迟到」的回包 ——
+     判据必须是这个标志，**不是「当前没 show」**：截图/划词流程都是
+     「先发请求、稍后 showPanel」，用 show 判会把正常流程一并挡掉（实测 13 条挂掉）。 */
+  let panelClosedByUser = false;
   let panelPinned = false;
 
   /** 截图翻译时面板的落点，重试还要用 */
@@ -517,6 +521,7 @@
   /* ---- 面板开关 ---- */
 
   function showPanel(anchor) {
+    panelClosedByUser = false;   // 重新打开 = 恢复接收回包
     panelResizeObs.observe(panel);   // 高度一变就贴回视口
 
     mount();
@@ -528,6 +533,17 @@
   }
 
   function hidePanel() {
+    panelClosedByUser = true;
+    /* 藏起来**不等于**请求结束 —— 后台收到 abort 后通常不回 done/fatal。
+       这里不收尾的话：busy 一直为 true、各槽 state 还停在 busy、
+       挂起的 deltaTimer 继续重绘一个看不见的面板。
+       后果是下次打开面板点那一槽的「重试」被 `if (sl && sl.state === 'busy') return` 挡掉。 */
+    cancelPendingDelta();
+    leaveBusy();
+    for (const s of slots) {
+      /* 已经有译文的退回 done（留着给用户看），没有的退回 idle */
+      if (s && s.state === 'busy') s.state = s.text ? 'done' : 'idle';
+    }
     panel.classList.remove('show');
     /* 关闭就松开图钉：下次划词该跟着选区走（这是绝大多数时候想要的行为）。 */
     if (panelPinned) { panelPinned = false; syncPinBtn(); }
@@ -664,13 +680,20 @@
        以前是 textContent='' 铺一句占位文字 —— 块没了、里面那排
        「复制 / 朗读 / 重试」也跟着没了，而失败态恰恰最需要「重试」。
        slotHtml 的 fail 分支本来就会把 error 文本画出来。 */
-    const only = slots[0];
-    if (only) {
-      only.state = 'fail';
-      only.error = why;
-      renderSlots();
+    /* 单槽才把失败写进 slots[0]；多槽时**不往任何槽里塞**这个全局错误
+       （每条槽有自己的成败），但仍要重画一次 —— 否则结果区还停在旧译文上，
+       用户看不到「这次挂了」。 */
+    if (slots.length <= 1) {
+      const only = slots[0];
+      if (only) {
+        only.state = 'fail';
+        only.error = why;
+        renderSlots();
+      } else {
+        outBox.textContent = '';
+      }
     } else {
-      outBox.textContent = '';
+      renderSlots();
     }
     setStatus(why, 'err');
     setDot('err');
@@ -886,6 +909,9 @@
   /** 正在朗读哪一条（configId；空串 = 没在朗读）。用来切「朗读/停止」图标 */
   let speakingKey = '';
 
+  /* 两个下拉**各一个**连拨守卫：共用一个的话，拨 A 再拨 B 会互相作废。 */
+  let cfgSeq = 0;
+  let langSeq = 0;
   let pendingDelta = null;
   let deltaTimer = 0;
   let lastFlush = 0;
@@ -951,14 +977,19 @@
       /* **结果写进槽位，再统一按块渲染**（kniph 2026-10-17）——
          以前单条是 outBox.textContent = r.text 铺成纯文本，块头（配置名）就没了。
          现在单条和多条走同一条渲染路径，配置名永远可见。 */
-      const only = slots[0];
-      if (only) {
-        only.state = 'done';
-        only.text = r.text;
-        only.error = '';
-        renderSlots();
-      } else {
-        outBox.textContent = r.text;
+      /* **单槽才往 slots[0] 写**。多槽时谁的结果写哪条槽由调用方决定
+         （done/fatal handler 走 renderSlots、renderSlotResult 写自己那条）——
+         这里再无条件写 slots[0] 就会串台。 */
+      if (slots.length <= 1) {
+        const only = slots[0];
+        if (only) {
+          only.state = 'done';
+          only.text = r.text;
+          only.error = '';
+          renderSlots();
+        } else {
+          outBox.textContent = r.text;
+        }
       }
       // 状态栏只留「HTTP · 耗时 · 路径」三段，其余都收进「…」
       const bits = [];
@@ -1019,6 +1050,16 @@
       renderConfigOptions();
       renderLangOptions();
       return;
+    }
+
+    /* **用户主动关掉面板之后**，迟到的那几个包不再改界面。
+       藏起时只发了 abort；后台收到 abort 后通常不回 done/fatal，
+       但那条流可能恰好在 abort 之前收完 —— 迟到的 start/delta/done/fatal
+       会把刚回退的槽状态又标成 busy/fail，并在看不见的面板上重绘。
+       ready 不在此列：那是配置/语言列表，随时该更新。 */
+    if (panelClosedByUser) {
+      if (msg.type === 'delta' || msg.type === 'start' ||
+          msg.type === 'done' || msg.type === 'fatal') return;
     }
 
     if (msg.type === 'start') {
@@ -1384,8 +1425,17 @@
       sl.text = (r && r.text) || sl.text || '';
       sl.error = (r && r.error) || '';
     }
-    // 状态栏/灯/诊断仍走公共收口
-    renderResult(r, ocr, action, fatal);
+    if (slots.length <= 1) {
+      renderResult(r, ocr, action, fatal);   // 状态栏 / 灯 / 诊断的统一收口
+    } else {
+      renderSlots();
+      /* **settled 才 leaveBusy**：以前多槽分支不管别人还在不在飞就复位全局 busy。 */
+      if (allSettled()) {
+        leaveBusy();
+        setDot(slots.some((s2) => s2.state === 'done') ? 'ok' : 'err');
+        setStatus(settledSummary());
+      }
+    }
   }
 
 
@@ -2170,16 +2220,18 @@
       return;
     }
 
-    let left = base.left + m.rect.left;
-    let top = base.top + m.rect.top;
-    let right = base.left + m.rect.right;
-    let bottom = base.top + m.rect.bottom;
+    /* 每层 iframe 的偏移只累加 left/top —— right/bottom 在 trail 里是**视口绝对值**，
+       拿它当宽度再加一遍会让右下边界翻倍（多层嵌套时按钮跑偏）。 */
+    let ox = base.left;
+    let oy = base.top;
     for (const t of m.trail || []) {
-      left += t.left;
-      top += t.top;
-      right += t.right;
-      bottom += t.bottom;
+      ox += t.left;
+      oy += t.top;
     }
+    const left = ox + m.rect.left;
+    const top = oy + m.rect.top;
+    const right = ox + m.rect.right;
+    const bottom = oy + m.rect.bottom;
     lastFrameSel = {
       text: String(m.text),
       anchor: { rect: { left, top, right, bottom } },
@@ -2527,6 +2579,10 @@
        所以这里**不再动槽位**——队列满了会顶掉队首，N=1 时就是普通的换配置。
      图片模式：本屏用哪条图片配置，单选。 */
   cfgSelect.addEventListener('change', async () => {
+    /* 连拨守卫：await 之后如果又拨了一次，这次作废。
+       没有它的话，先挂起那次恢复后会**用闭包里的旧值**再发一条请求，
+       而后台现读存档（早已是第二次的值）—— 重复发一条 + 界面/状态错位。 */
+    const mySeq = ++cfgSeq;
     const v = cfgSelect.value;
     if (!v) return;
     /* 图片直传那一屏原来在这儿「单选」短路（switchImageConfig），导致
@@ -2564,6 +2620,7 @@
        请求会带着上一条图片配置出去 —— 2026-10-18 接多槽位时漏了这个 await，
        当场被 e2e 的「拨一下真的换成新那条了」抓住。 */
     if (cfgMode === 'image') await saveImageConfigId(v);
+    if (mySeq !== cfgSeq) return;   // 期间又拨了配置下拉，这次作废
     renderConfigOptions();
     // 翻过的 → 放回上次的结果，一个请求都不发；没翻过的 → 当场用这个配置翻一次
     const hit = resultCache.get(v);
@@ -2584,6 +2641,7 @@
      换了它等于换了整条请求 —— 所以和「换配置」一个规矩：手上有原文就当场重翻，
      别让用户自己再点一次 ↻。 */
   langSelect.addEventListener('change', async () => {
+    const mySeq = ++langSeq;   // 连拨守卫，同 cfgSelect
     const v = langSelect.value;
     if (v === prefs.targetLang) return;
     prefs.targetLang = v;
@@ -2594,6 +2652,7 @@
     // （loadState 每次都现读），写没落盘就发，这一条会带着上一门语言出去。
     // 真踩过 —— e2e 里「换成英语但请求还是 ZH-HANS」抓到的就是这个。
     await saveSetting('targetLang', v);
+    if (mySeq !== langSeq) return;   // 期间又拨了语言下拉，这次作废
     if (currentText || (lastOcr && lastOcr.image)) {
       translate(currentText, shownConfigId(), lastOcr || undefined);
       return;

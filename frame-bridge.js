@@ -79,8 +79,8 @@
         break;
       }
     }
-    if (!fr) return; // 不是我直接子 frame 的消息，与我无关
-    const trail = [...(m.trail || []), { left: fr.left, top: fr.top, right: fr.right, bottom: fr.bottom }];
+    /* 只记 left/top —— 消费侧按层累加偏移量，right/bottom 是视口绝对值，累加会翻倍。 */
+    const trail = [...(m.trail || []), { left: fr.left, top: fr.top }];
     send({ ...m, trail });
   });
 })();
