@@ -13,11 +13,12 @@
     python tools/verify-pack.py dist/xxx.zip
 """
 
+import hashlib
 import re
 import json
-import re
 import subprocess
 import sys
+import shutil
 import tempfile
 import zipfile
 from pathlib import Path
@@ -191,48 +192,77 @@ def main():
                     f"  双包一致：{len(common)} 个共同文件除 manifest 外逐字节相同{note}"
                 )
 
-    # 7. **包必须与源码同源** —— 逐文件 md5，比对「等价形式」。
+    # 7. **包必须与仓库源码同源** —— 从 git HEAD 取源码，重跑一遍变换再比。
     #
-    #    三次失败尝试（第九版总结得很准）：
-    #      字符串字面量全包含 → 剥注释删掉中文文案，误报 781 段
-    #      字面量总长            → 剥注释后源码反而更短，方向反了
-    #      函数计数              → **esbuild 不改它**，pf/sf 恒等 1.000，等于没检查
-    #    共同点：都在找「不真比对也能判断」的廉价代理。
+    #    四次失败尝试（第十版总结得很准）：
+    #      字面量 → 总长 → 函数计数 → **比 dist/.stripped**
+    #    最后那个最像真的，其实最彻底的假：pack.py 正是从 .stripped 写进 zip，
+    #    同一份字节复制两处，md5 恒等是同义反复。
     #
-    #    现在真比对：打包时已经产出了 `dist/.stripped/` —— 那正是「源码剥注释 + esbuild」
-    #    的等价形式，也就是包内文件的来源。拿它和包内同名文件比 md5 即可。
-    #    两边同源 → 哈希必然相同；包是旧的 → 必然不同。**不需要任何代理指标。**
+    #    真做法：
+    #      a) git show HEAD:<path> 取仓库里的源码（不是工作区，避免未提交改动干扰）
+    #      b) 用一个临时目录重跑「剥注释 + esbuild」这同一套变换
+    #      c) 与包内同名文件比 md5
+    #    仓库改了但没重新打包 → 变换结果不同 → 必然红。
     repo_root = Path(__file__).resolve().parent.parent
-    stripped_dir = repo_root / "dist" / ".stripped"
-    if not stripped_dir.is_dir():
-        problems.append("缺 dist/.stripped（打包中间产物）→ 无法验证同源，先跑一次 tools/pack.py")
-    else:
-        import hashlib
-
-        def md5_of(data):
-            return hashlib.md5(data).hexdigest()
-
-        compared = 0
-        same = 0
-        stale = []
-        for name in sorted(n for n in names if n.endswith(".js")):
-            packed = z.read(name)
-            cand = stripped_dir / name
-            if not cand.is_file():
-                stale.append(f"{name} 在包里但 dist/.stripped 里没有 → 打包流程漏了它")
+    tmp = repo_root / "dist" / ".verify-src"
+    stale = []
+    compared = 0
+    try:
+        if tmp.exists():
+            shutil.rmtree(tmp)
+        tmp.mkdir(parents=True, exist_ok=True)
+        # a) 从 git HEAD 取每个 .js（不是工作区 —— 未提交改动不该让检查变绿）
+        js_names = [n for n in names if n.endswith(".js")]
+        got = []
+        for n in js_names:
+            try:
+                data = subprocess.run(
+                    ["git", "show", "HEAD:" + n],
+                    cwd=str(repo_root), capture_output=True, check=True
+                ).stdout
+            except subprocess.CalledProcessError:
+                stale.append(f"{n} 在包里但 git HEAD 里没有")
+                continue
+            dst = tmp / n
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_bytes(data)
+            got.append(n)
+        # b) 重跑同一套变换（minify-sources 剥注释 → esbuild 压缩）
+        if got:
+            args = ["node", str(repo_root / "tools" / "minify-sources.mjs"), str(tmp), *got]
+            r1 = subprocess.run(args, cwd=str(repo_root), capture_output=True, text=True, encoding="utf-8")
+            if r1.returncode != 0:
+                problems.append("同源检查：重跑剥注释失败\n" + (r1.stderr or "")[:400])
+            else:
+                r2 = subprocess.run(
+                    ["node", str(repo_root / "tools" / "esbuild-minify.mjs"), str(tmp)],
+                    cwd=str(repo_root), capture_output=True, text=True, encoding="utf-8"
+                )
+                if r2.returncode != 0:
+                    problems.append("同源检查：重跑 esbuild 失败\n" + (r2.stderr or "")[:400])
+        # c) 比 md5
+        for n in got:
+            rebuilt = tmp / n
+            if not rebuilt.is_file():
+                stale.append(f"{n} 重跑变换后没有产物")
                 continue
             compared += 1
-            if md5_of(packed) == md5_of(cand.read_bytes()):
-                same += 1
-            else:
+            if hashlib.md5(z.read(n)).hexdigest() != hashlib.md5(rebuilt.read_bytes()).hexdigest():
                 stale.append(
-                    f"{name} 与等价形式哈希不同（包内 {len(packed)}B / 等价 {cand.stat().st_size}B）"
-                    " → 包是旧的，重新打"
+                    f"{n} 与「git HEAD 源码重跑变换」的结果不同"
+                    " → 源码改过但没重新打包（或包来自别的提交）"
                 )
-        if stale:
-            problems.extend(stale)
-        else:
-            print(f"  与源码同源：{same}/{compared} 个 .js 逐文件 md5 一致")
+    except Exception as exc:  # noqa: BLE001
+        problems.append("同源检查跑挂了：" + str(exc)[:200])
+    finally:
+        if tmp.exists():
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    if stale:
+        problems.extend(stale[:12])
+    elif compared:
+        print(f"  与源码同源：{compared} 个 .js 与「git HEAD 源码重跑变换」逐文件 md5 一致")
 
     if problems:
         print("\n发现问题：")

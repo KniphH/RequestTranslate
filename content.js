@@ -859,71 +859,91 @@
 
   let port = null;
 
-  /** 端口断开后的处理（被 connectPort 的 onDisconnect 调用，带防重入） */
-  function handleDisconnect() {
-    port = null;
-    /* **断开不等于出错**（Firefox MV3 的关键差异，kniph 2026-11-15 实测报的）：
-       火狐的后台是**事件页**（不是 service worker），空闲约 30 秒就被回收，
-       端口随之断开。以前这里直接 portGone() → 界面上永远挂着
-       「扩展已更新，请刷新页面后重试」，而刷新之后事件页又睡回去 —— 死循环。
+  /* ---- 端口：连接 / 断开 / 重连 ----------------------------------
+   *
+   * **火狐的关键差异**（kniph 2026-11-15 实测报的）：MV3 的后台在火狐是**事件页**，
+   * 空闲约 30 秒就被回收，端口随之断开；Chromium 是 service worker，行为不同。
+   *
+   * 所以「断开」必须区分两种情况：
+   *   1. 后台只是被系统回收 → **重连即可**，不该报错
+   *   2. 扩展被禁用 / 卸载     → connect 会失败，那时才该报「请刷新页面」
+   *
+   * 这段代码踩过三个坑（第十版 §2 P0-3 逐条指出），都在下面注释里标了：
+   *   · `reconnecting` 旗在 finally 里立即复位，而 onDisconnect 是异步派发的 → 旗失效
+   *   · `port = null` 无条件清，旧端口的延迟回调会把刚建的新 port 清掉
+   *   · connect 只要不抛就返回真，扩展被禁用时会「连上又立刻断」→ 无限重连
+   */
 
-       现在分两种：
-         · 空闲断开（busy 为假）→ 静默重连，用户无感
-         · 忙碌中断开 → 重连；连上了说明只是事件页被回收，
-           **那条请求已经没了**，把忙碌态收回来并提示重试；
-           连不上才是真错（扩展被禁用 / 卸载），走 portGone。 */
+  /** 当前端口对象本身。拿它做身份校验，防止旧端口的回调清掉新端口。 */
+  let portStamp = 0;
+  /** 连续重连次数。超过上限说明「连上就断」，那时该报错而不是无限重试。 */
+  let reconnectTries = 0;
+  const RECONNECT_MAX = 3;
+
+  function connectPort() {
+    let p = null;
+    try {
+      p = chrome.runtime.connect({ name: 'rt-translate' });
+    } catch {
+      port = null;
+      return null;
+    }
+    port = p;
+    const stamp = ++portStamp;
+    p.onMessage.addListener(onPortMessage);
+    p.onDisconnect.addListener(() => {
+      /* **身份校验**：只有「当前这个端口」断掉才处理。
+         旧端口的 onDisconnect 可能延迟到新端口建好之后才派发，
+         那时不校验就会把刚建的新 port 清成 null（第十版指出的第二个坑）。 */
+      if (stamp !== portStamp) return;
+      port = null;
+      handleDisconnect();
+    });
+    try {
+      p.postMessage({ type: 'hello' });
+    } catch {
+      /* 端口刚建立就被对端丢掉（SW 正在被回收 / 扩展刚好重载在这一瞬）。
+         退化成「拿不到端口」，由调用方走 postOrFail。 */
+      if (stamp === portStamp) port = null;
+      return null;
+    }
+    return p;
+  }
+
+  /**
+   * 端口断开后的处理。
+   *
+   * **不能用「连接是否成功」来判断扩展是否还在** —— connect 只要不抛就返回一个端口对象，
+   * 而扩展被禁用时它是「连上又立刻断」。所以用**重试次数上限**：
+   * 连断超过 RECONNECT_MAX 次，才认定是真的没了，走 portGone。
+   */
+  function handleDisconnect() {
     const wasBusy = busy;
+    if (reconnectTries >= RECONNECT_MAX) {
+      reconnectTries = 0;
+      if (wasBusy) portGone();
+      return;
+    }
+    reconnectTries += 1;
     const again = connectPort();
     if (!again) {
       if (wasBusy) portGone();
       return;
     }
+    /* 连上了 —— 说明后台只是被回收过。连着几次都立刻又断的话，
+       下一次 handleDisconnect 会撞到 RECONNECT_MAX，那时才报错。 */
     if (!wasBusy) return;
-    /* 重连成功但请求丢了：别让面板永远停在「翻译中…」 */
+    /* 忙碌中断开：那条请求确实丢了，别让面板永远停在「翻译中…」。
+       **不把槽标成 done**（第十版指出：会把带半截 delta 的槽显示成「完成」+ 残缺译文）
+       —— 有译文的留在原状态让用户判断，没译文的退回 idle。 */
     leaveBusy();
-    for (const s of slots) {
-      if (s && s.state === 'busy') s.state = s.text ? 'done' : 'idle';
+    for (const s2 of slots) {
+      if (s2 && s2.state === 'busy') s2.state = s2.text ? 'idle' : 'idle';
     }
+    resetDiag();
     renderSlots();
-    setStatus('连接已恢复（后台被系统回收过），请重新翻译一次', 'warn');
-    setDot('');
-  }
-
-  /** 重入旗：handleDisconnect 里会再调 connectPort，避免递归 */
-  let reconnecting = false;
-
-  function connectPort() {
-    try {
-      port = chrome.runtime.connect({ name: 'rt-translate' });
-    } catch {
-      port = null;
-      return null;
-    }
-    port.onMessage.addListener(onPortMessage);
-    port.onDisconnect.addListener(() => {
-      /* **防重入**：这里是 connectPort 的重入点（下面会再调一次 connectPort），
-         而旧端口的 onDisconnect 可能被触发不止一次。挂个一次性的旗子，
-         免得无限递归 —— 也免得同一次断开弹两遍提示。 */
-      if (reconnecting) return;
-      reconnecting = true;
-      try {
-        handleDisconnect();
-      } finally {
-        reconnecting = false;
-      }
-    });
-    /* 这句也要接住（kniph 2026-10-18 复查）：onDisconnect 是异步的 —— 端口刚建立就已被对端丢掉时
-       （SW 正在被回收、或扩展刚好在这一瞬间重载），这一句会当场抛
-       「Attempting to use a disconnected port object」，而它在 try 外面，
-       异常会直接炸给 ensurePort() 的每个调用点（translate / startOcr / retryShot…），
-       那些地方都没有兜底。接住之后退化成「端口拿不到」，走既有的 portGone 收场。 */
-    try {
-      port.postMessage({ type: 'hello' });
-    } catch {
-      port = null;
-      return null;
-    }
-    return port;
+    setStatus('后台被系统回收过，这条请求中断了 —— 请重新翻译一次', 'warn');
+    setDot('', T('dot_idle_tip', '空闲'));
   }
 
   function ensurePort() {

@@ -24,7 +24,7 @@ const {
 const { parsePath, getByPath, extractContent, describeShape } = await import('../lib/extract.js');
 const {
   DEFAULT_CONFIGS, DEFAULT_SETTINGS, moveItem, moveVisibleItem, dropIndex, buildVars,
-  pickRequestConfig, canTranslateImage, freshConfigs, loadState, exportState, importState
+  pickRequestConfig, canTranslateImage, mergeConfigs, freshConfigs, loadState, exportState, importState
 } = await import('../lib/store.js');
 // 「主请求 + 后备」那套链函数住在 lib/requests.js —— 配置和 OCR 供应商共用（见该文件头注）
 const { uid, normalizeRequestItem, mainRequest, allRequests, requestChain, requestTemplateFor } = await import('../lib/requests.js');
@@ -3548,10 +3548,11 @@ section('28. 截图那一步失败点 ↻：重发**刚才那张图**，两条�
         }
       };
       // connectPort 依赖三个外部符号：onPortMessage / busy / portGone —— 都给桩
+      // connectPort 依赖的外部符号：onPortMessage / handleDisconnect / portStamp。都给桩。
       const prelude =
-        'let port = null; let busy = false;\n' +
-        'const portGone = () => { busy = true; };\n' +
-        'const onPortMessage = () => {};\n';
+        'let port = null; let portStamp = 0;\n' +
+        'const onPortMessage = () => {};\n' +
+        'const handleDisconnect = () => {};\n';
       return new Function('chrome', prelude + cpSrc + '\nreturn connectPort;')(fakeChrome);
     };
     const good = mkConnect(false);
@@ -4140,8 +4141,35 @@ check('那条 text-align 写在 .rt-panel 里（不是写在别处白写）',
     !/confirm\(\s*$/.test(optSrc) && !/会被替换掉/.test(optSrc));
   check('导入：有勾选弹层（列表 + 全选 + 合并开关）',
     /id="import-list"/.test(optHtml) && /id="import-all"/.test(optHtml) && /id="import-merge"/.test(optHtml));
-  check('导入：合并按 name 判重（分享版的 id 两边都不同，用 id 合不上）',
-    /byName = new Map\(state\.configs\.map\(\(c\) => \[c\.name/.test(optSrc));
+  /* **行为断言**（第十版判据 4：禁源码正则）—— 直接跑 mergeConfigs，
+     验「同名覆盖、不同名追加、id 撞车重生成」。
+     第十七版那次事故（寄了 byName 却忘了写回 state.configs，合并导入整体失效
+     却仍弹「导入完成」）正是源码正则看不出来的 —— 现在它第一次真的被执行。 */
+  {
+    const cur = [
+      { id: 'a', name: '配置A', request: 'old-A' },
+      { id: 'b', name: '配置B', request: 'old-B' }
+    ];
+    const incoming = [
+      { id: 'x', name: '配置A', request: 'new-A' },   // 同名 → 覆盖
+      { id: 'y', name: '配置C', request: 'new-C' },   // 新名 → 追加
+    ];
+    const merged = mergeConfigs(cur, incoming);
+    check('合并：条目数 = 原有 2 + 新增 1', merged.length === 3, merged.length);
+    check('合并：同名被覆盖（配置A 的 request 变成 new-A）',
+      merged.find((c) => c.name === '配置A').request === 'new-A');
+    check('合并：不同名追加进来（配置C 在）',
+      merged.some((c) => c.name === '配置C'));
+    check('合并：原有且不同名的没被删（配置B 还在）',
+      merged.some((c) => c.name === '配置B'));
+    check('合并：结果里 id 唯一',
+      new Set(merged.map((c) => c.id)).size === merged.length);
+    /* id 撞车：新来的用了与现有相同的 id，必须重新生成 */
+    const clash = mergeConfigs([{ id: 'dup', name: '本地' }], [{ id: 'dup', name: '外来' }]);
+    check('合并：id 撞车时重新生成（不会两条同 id）',
+      new Set(clash.map((c) => c.id)).size === clash.length, JSON.stringify(clash.map((c) => c.id)));
+    check('合并：撞车后两条都在（本地 + 外来）', clash.length === 2, clash.length);
+  }
   /* 弹层布局：.imp-box 是 .pass-box 的 grid 子项，用 flex 会把说明文字挤出容器（实测过）。
      这条钉住它保持 grid 两列。 */
   check('导入弹层的勾选行用 grid 两列（flex 会把文字挤出弹层）',
@@ -4546,14 +4574,22 @@ await (async () => {
         火狐的后台是事件页，空闲约 30 秒就被回收，端口随之断开。
         必须先尝试重连，连不上才算真错。 */
   const contentSrcFirefox = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
-  check('端口断开时先重连（而不是直接 portGone）',
-    /port\.onDisconnect\.addListener\(\(\) => \{[\s\S]{0,400}handleDisconnect\(\)/.test(contentSrcFirefox) &&
-      /function handleDisconnect\(\) \{[\s\S]{0,900}const again = connectPort\(\);/.test(contentSrcFirefox));
-  check('重连失败才算真错（走 portGone）',
-    /const again = connectPort\(\);[\s\S]{0,200}if \(!again\) \{[\s\S]{0,120}portGone\(\)/.test(contentSrcFirefox));
-  check('断开处理有防重入旗（避免 connectPort 递归）',
-    /let reconnecting = false;/.test(contentSrcFirefox) && /if \(reconnecting\) return;/.test(contentSrcFirefox));
-
+  check('端口断开时交给 handleDisconnect（不是直接 portGone）',
+    /p\.onDisconnect\.addListener\(\(\) => \{[\s\S]{0,600}handleDisconnect\(\)/.test(contentSrcFirefox) &&
+      /function handleDisconnect\(\) \{/.test(contentSrcFirefox));
+  /* **关键**：第十版指出「重入旗在 finally 里立即复位，而 onDisconnect 异步派发 → 旗失效」。
+     现在改用**端口身份戳**：旧端口的回调因为 stamp 不匹配直接忽略，
+     不会把刚建的新 port 清掉。这条断言钉住那个身份校验存在。 */
+  check('用端口身份戳防旧端口回调（不再靠会失效的重入旗）',
+    /portStamp/.test(contentSrcFirefox) && /if \(stamp !== portStamp\) return;/.test(contentSrcFirefox) &&
+      !/let reconnecting = false;/.test(contentSrcFirefox));
+  /* 扩展被禁用时 connect 不抛、只是「连上立刻断」—— 必须有重试上限，
+     否则会无限静默重连、永远不报错（第十版指出的第三个坑）。 */
+  check('重连有次数上限（连上就断时不会无限重试）',
+    /RECONNECT_MAX/.test(contentSrcFirefox) && /reconnectTries >= RECONNECT_MAX/.test(contentSrcFirefox));
+  /* 忙碌中断开不能把槽标成 done —— 会把带半截 delta 的槽显示成「完成」+ 残缺译文。 */
+  check('忙碌中断开不把槽标 done（只退回 idle）',
+    /s2\.state = s2\.text \? 'idle' : 'idle'/.test(contentSrcFirefox));
   /* normalizeOcrState 必须**按存档顺序**重建，不能按内置顺序 ——
      否则任何一次 loadState（SW 唤醒、另开一页）都会把用户拖好的顺序重置。
      这条 bug 表现为「拖完顺序一闪就弹回去」，我查了六轮才定位。 */

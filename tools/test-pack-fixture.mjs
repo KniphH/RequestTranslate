@@ -52,7 +52,8 @@ if (!existsSync(FIXTURE)) {
 
   check('拿 1.3.1 旧包跑同源检查，必须非零退出（证明它真能抓旧包）', code !== 0,
     'exit=' + code);
-  check('报错里点名「与等价形式哈希不同」', out.includes('与等价形式哈希不同'),
+  check('报错里点名「与 git HEAD 源码重跑变换不同」（或文件差异）',
+    /重跑变换\"的结果不同|与等价形式哈希不同|文件列表不该差/.test(out),
     (out.split('\n').filter((x) => x.indexOf('✗') >= 0)[0] || '(没有 ✗ 行)').trim().slice(0, 120));
 }
 
