@@ -3375,7 +3375,7 @@ section('28. 截图那一步失败点 ↻：重发**刚才那张图**，两条�
   check('页面 CSP 挡掉 data: 图时有兜底（挂 img 的 error）',
     /function renderSrcImage[\s\S]{0,600}addEventListener\('error'/.test(src));
   check('兜底之后那句「没有先做外置 OCR」还在（不然用户不知道发生了什么）',
-    src.includes("const DIRECT_SRC_NOTE = '（这张截图直接发给了模型，没有先做外置 OCR）'") &&
+    /const DIRECT_SRC_NOTE = T\('panel_direct_note'/.test(src) &&
     /addEventListener\('error'[\s\S]{0,300}DIRECT_SRC_NOTE/.test(src));
   check('换回文字原文时会摘掉 has-img（不然那块高度上限一直撑着）',
     /classList\.remove\('has-img'\)/.test(src));
@@ -4466,7 +4466,7 @@ await (async () => {
   check('enterBusy 写 placeholder 后立刻加 empty（不是先 remove）',
     /dataset\.placeholder = placeholder;[\s\S]{0,80}classList\.add\('empty'\)/.test(contentSrc2));
   check('showNoCachedResult 同样是 placeholder + empty 成对',
-    /dataset\.placeholder = '点 ↻ 翻译';[\s\S]{0,80}classList\.add\('empty'\)/.test(contentSrc2));
+    /dataset\.placeholder = T\('panel_click_retry', '点 ↻ 翻译'\);[\s\S]{0,80}classList\.add\('empty'\)/.test(contentSrc2));
 
   /* done/fatal 的 if (!sl)：别的槽可能还在飞，不能无条件 leaveBusy */
   check('if (!sl) 分支不再无条件 leaveBusy（要 allSettled）',

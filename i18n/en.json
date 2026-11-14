@@ -391,7 +391,38 @@
     "popup_no_result": "No result",
     "popup_failed": "Failed",
     "popup_translate": "Translate",
-    "popup_init_failed": "Initialisation failed: "
+    "popup_init_failed": "Initialisation failed: ",
+    "panel_all_ok_n": "All $1$ got translations",
+    "panel_all_fail_n": "All $1$ failed",
+    "panel_mixed_n": "$1$ translated, $2$ failed",
+    "panel_size_suffix": " · image $1$",
+    "panel_shot_direct": "Screenshot · direct",
+    "panel_shot_ocr": "Screenshot OCR",
+    "panel_shot_direct_desc": "No OCR — the image went straight into the request",
+    "panel_shot_ocr_hint": "This text was recognised from the clipboard screenshot",
+    "svg_reason_start": "Must start with an svg tag",
+    "svg_reason_end": "Must end with a closing svg tag",
+    "svg_reason_forbidden_tag": "Cannot contain script / foreignObject / use / image / a / style",
+    "svg_reason_event": "Cannot contain event attributes such as onload / onclick",
+    "svg_reason_href": "Cannot contain an external href",
+    "panel_error": "Error",
+    "panel_img_template_hint": "\"Disable external OCR\" is on — the image is inserted into the request template via {{image}}",
+    "panel_no_translation": "No translation received",
+    "panel_no_content": "No content returned",
+    "panel_ocr_failed": "Screenshot recognition failed",
+    "panel_direct_note": "(this screenshot went straight to the model, no external OCR)",
+    "panel_shot_alt": "Captured image",
+    "panel_looking_at_image": "Looking at the image…",
+    "panel_truncated": "Too long — truncated to $1$ characters",
+    "panel_waiting_ocr": "Waiting for recognition…",
+    "panel_reading_clipboard": "Reading the clipboard…",
+    "panel_retrying": "Retrying…",
+    "panel_shot_failed": "Screenshot failed: ",
+    "panel_shot_failed_short": "Screenshot failed",
+    "panel_shot_tip": "Drag to select the area to translate (scrollable page) · Esc or right-click to cancel",
+    "panel_crop_failed": "Crop failed",
+    "panel_recognizing": "Recognising screenshot…",
+    "panel_this_config": "this config"
   },
   "placeholders": {
     "panel_switched_to": {
@@ -460,6 +491,34 @@
       }
     },
     "panel_lang_with": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "panel_all_ok_n": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "panel_all_fail_n": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "panel_mixed_n": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      }
+    },
+    "panel_size_suffix": {
+      "1": {
+        "content": "$1"
+      }
+    },
+    "panel_truncated": {
       "1": {
         "content": "$1"
       }

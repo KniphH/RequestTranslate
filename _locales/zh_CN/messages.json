@@ -1,9 +1,9 @@
 {
-  "extName": {
-    "message": "RequestTranslate · 请求式划词翻译"
-  },
   "extDesc": {
     "message": "划词翻译，但配置是你自己的 HTTP 请求。直接写 curl 或原始请求报文，可保存多个命名配置。"
+  },
+  "extName": {
+    "message": "RequestTranslate · 请求式划词翻译"
   },
   "adapter_bing_hint": {
     "message": "走 bing.com 网页版接口，首次多花约 0.5 秒。",
@@ -1277,6 +1277,24 @@
     "message": "空",
     "description": "设置页：列表/变量/拖动"
   },
+  "panel_all_fail_n": {
+    "message": "$1$ 条都失败了",
+    "description": "面板",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "panel_all_ok_n": {
+    "message": "$1$ 条都拿到了译文",
+    "description": "面板",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
   "panel_cfg_only": {
     "message": "翻译接口",
     "description": "配置下拉 title：没有选中项时"
@@ -1327,6 +1345,18 @@
     "message": "复制这条译文",
     "description": "复制按钮的 title"
   },
+  "panel_crop_failed": {
+    "message": "裁图失败",
+    "description": "面板"
+  },
+  "panel_direct_note": {
+    "message": "（这张截图直接发给了模型，没有先做外置 OCR）",
+    "description": "面板"
+  },
+  "panel_error": {
+    "message": "错误",
+    "description": "面板"
+  },
   "panel_error_fallback": {
     "message": "出错了",
     "description": "没有具体错误信息时的兜底文案"
@@ -1353,6 +1383,10 @@
       }
     }
   },
+  "panel_img_template_hint": {
+    "message": "设置里勾了「禁用外置 OCR」，这张图是靠 {{image}} 塞进请求模板的",
+    "description": "面板"
+  },
   "panel_lang_title": {
     "message": "目标语言",
     "description": "面板顶栏那个语言下拉的 title"
@@ -1366,6 +1400,22 @@
       }
     }
   },
+  "panel_looking_at_image": {
+    "message": "正在看图…",
+    "description": "面板"
+  },
+  "panel_mixed_n": {
+    "message": "$1$ 条拿到译文，$2$ 条失败",
+    "description": "面板",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      }
+    }
+  },
   "panel_more_title": {
     "message": "查看详细信息",
     "description": "顶栏「…」按钮的 title"
@@ -1373,6 +1423,18 @@
   "panel_no_config": {
     "message": "（没有配置）",
     "description": "配置下拉在一条配置都没有时的占位项"
+  },
+  "panel_no_content": {
+    "message": "没有返回内容",
+    "description": "面板"
+  },
+  "panel_no_translation": {
+    "message": "没有拿到译文",
+    "description": "面板"
+  },
+  "panel_ocr_failed": {
+    "message": "截图识别失败",
+    "description": "面板"
   },
   "panel_ocr_no_text": {
     "message": "没识别出文字",
@@ -1385,6 +1447,14 @@
   "panel_processing": {
     "message": "处理中…",
     "description": "面板状态行"
+  },
+  "panel_reading_clipboard": {
+    "message": "正在读取剪切板…",
+    "description": "面板"
+  },
+  "panel_recognizing": {
+    "message": "正在识别截图…",
+    "description": "面板"
   },
   "panel_reconnect_interrupted": {
     "message": "后台被系统回收过，这条请求中断了 —— 请重新翻译一次",
@@ -1410,6 +1480,51 @@
   "panel_retry_title": {
     "message": "只重试这一条",
     "description": "单条重试按钮的 title"
+  },
+  "panel_retrying": {
+    "message": "正在重试…",
+    "description": "面板"
+  },
+  "panel_shot_alt": {
+    "message": "截取的图",
+    "description": "面板"
+  },
+  "panel_shot_direct": {
+    "message": "截图直传",
+    "description": "面板"
+  },
+  "panel_shot_direct_desc": {
+    "message": "没有走 OCR，图片直接进了请求",
+    "description": "面板"
+  },
+  "panel_shot_failed": {
+    "message": "截图失败：",
+    "description": "面板"
+  },
+  "panel_shot_failed_short": {
+    "message": "截图失败",
+    "description": "面板"
+  },
+  "panel_shot_ocr": {
+    "message": "截图 OCR",
+    "description": "面板"
+  },
+  "panel_shot_ocr_hint": {
+    "message": "这段原文是剪切板里那张截图认出来的",
+    "description": "面板"
+  },
+  "panel_shot_tip": {
+    "message": "拖动框选要翻译的区域（可滚动页面）· Esc 或右键取消",
+    "description": "面板"
+  },
+  "panel_size_suffix": {
+    "message": " · 图 $1$",
+    "description": "面板",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
   },
   "panel_slot_collapsed": {
     "message": "已收起「$1$」（本次显示，不改设置里的默认组合）",
@@ -1486,9 +1601,22 @@
       }
     }
   },
+  "panel_this_config": {
+    "message": "这条配置",
+    "description": "面板"
+  },
   "panel_translating_n": {
     "message": "翻译中…（$1$ 条）",
     "description": "面板状态行",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "panel_truncated": {
+    "message": "内容过长，已截断到 $1$ 字",
+    "description": "面板",
     "placeholders": {
       "1": {
         "content": "$1"
@@ -1506,6 +1634,10 @@
   "panel_waiting": {
     "message": "等待结果…",
     "description": "结果区空态占位符"
+  },
+  "panel_waiting_ocr": {
+    "message": "等待识别…",
+    "description": "面板"
   },
   "popup_copied": {
     "message": "已复制",
@@ -1546,6 +1678,26 @@
   "popup_waiting_input": {
     "message": "等待输入…",
     "description": "popup"
+  },
+  "svg_reason_end": {
+    "message": "要以 ␣/svg␣ 结尾",
+    "description": "面板"
+  },
+  "svg_reason_event": {
+    "message": "不能带 onload / onclick 这类事件属性",
+    "description": "面板"
+  },
+  "svg_reason_forbidden_tag": {
+    "message": "不能有 script / foreignObject / use / image / a / style 这类标签",
+    "description": "面板"
+  },
+  "svg_reason_href": {
+    "message": "不能带 href 外链",
+    "description": "面板"
+  },
+  "svg_reason_start": {
+    "message": "要以 ␣svg 开头（尖括号会被转义）",
+    "description": "面板"
   },
   "trigger_dot_err": {
     "message": "翻译失败",

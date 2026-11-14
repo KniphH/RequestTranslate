@@ -151,14 +151,14 @@
      SVG_GUARDS 一致（测试逐个正则比对）。为什么是「整体拒绝」而不是「改写危险标签」，
      见那边的注释 —— 这段 HTML 会插进 shadow DOM，而 content script 的世界能碰 chrome.*。 */
   const SVG_GUARDS = [
-    { re: /^<svg[\s>]/i, negate: true, reason: '要以 <svg 开头' },
-    { re: /<\/svg>\s*$/i, negate: true, reason: '要以 </svg> 结尾' },
+    { re: /^<svg[\s>]/i, negate: true, reason: T('svg_reason_start', '要以 <svg 开头') },
+    { re: /<\/svg>\s*$/i, negate: true, reason: T('svg_reason_end', '要以 </svg> 结尾') },
     {
       re: /<\s*(?:script|foreignObject|iframe|image|use|a|style|animate|set)\b/i,
-      reason: '不能有 <script> / <foreignObject> / <use> / <image> / <a> / <style> 这类标签'
+    reason: T('svg_reason_forbidden_tag', '不能有 <script> / <foreignObject> / <use> / <image> / <a> / <style> 这类标签')
     },
-    { re: /\son[a-z]+\s*=/i, reason: '不能带 onload / onclick 这类事件属性' },
-    { re: /\b(?:xlink:)?href\s*=/i, reason: '不能带 href 外链' }
+    { re: /\son[a-z]+\s*=/i, reason: T('svg_reason_event', '不能带 onload / onclick 这类事件属性') },
+    { re: /\b(?:xlink:)?href\s*=/i, reason: T('svg_reason_href', '不能带 href 外链') }
   ];
 
   /** 通过检查就原样返回，否则返回空串（页面这边不需要原因，设置页会告诉用户） */
@@ -726,7 +726,7 @@
     }
     setStatus(why, 'err');
     setDot('err');
-    showDiag(opts.diag || [{ k: opts.diagKey || '错误', v: why, err: true }]);
+    showDiag(opts.diag || [{ k: opts.diagKey || T('panel_error', '错误'), v: why, err: true }]);
   }
 
   /* ---- 顶部的「原文」开关 ---- */
@@ -802,15 +802,15 @@
     if (lastOcr) {
       rows.push(lastOcr.direct
         ? {
-            k: '截图直传',
-            v: '没有走 OCR，图片直接进了请求' + (lastOcr.bytes ? ' · 图 ' + formatBytes(lastOcr.bytes) : ''),
-            hint: '设置里勾了「禁用外置 OCR」，这张图是靠 {{image}} 塞进请求模板的'
+      k: T('panel_shot_direct', '截图直传'),
+      v: T('panel_shot_direct_desc', '没有走 OCR，图片直接进了请求') + (lastOcr.bytes ? T('panel_size_suffix', ' · 图 $1$', [formatBytes(lastOcr.bytes)]) : ''),
+      hint: T('panel_img_template_hint', '设置里勾了「禁用外置 OCR」，这张图是靠 {{image}} 塞进请求模板的')
           }
         : {
-            k: '截图 OCR',
+      k: T('panel_shot_ocr', '截图 OCR'),
             v: `${lastOcr.provider} · ${secs(lastOcr.ms)}` +
-              (lastOcr.bytes ? ' · 图 ' + formatBytes(lastOcr.bytes) : ''),
-            hint: '这段原文是剪切板里那张截图认出来的'
+      (lastOcr.bytes ? T('panel_size_suffix', ' · 图 $1$', [formatBytes(lastOcr.bytes)]) : ''),
+      hint: T('panel_shot_ocr_hint', '这段原文是剪切板里那张截图认出来的'),
           });
     }
     rows.push({ k: T('diag_first', '首字'), v: secs(r.firstDeltaMs), hint: T('diag_first_hint', '第一个译文分片出现的时间，你等待的就是它') });
@@ -1076,7 +1076,7 @@
       }
       // 状态栏只留「HTTP · 耗时 · 路径」三段，其余都收进「…」
       const bits = [];
-      if (lastOcr) bits.push(lastOcr.direct ? '截图直传' : '截图 OCR');
+    if (lastOcr) bits.push(lastOcr.direct ? T('panel_shot_direct', '截图直传') : T('panel_shot_ocr', '截图 OCR'));
       if (r.status) bits.push('HTTP ' + r.status);
       if (typeof r.ms === 'number') bits.push((r.ms / 1000).toFixed(1) + 's');
       if (r.usedPath) bits.push(r.usedPath);
@@ -1088,10 +1088,10 @@
       return;
     }
 
-    const why = (r && r.error) || (fatal ? '出错了' : '没有拿到译文');
+    const why = (r && r.error) || (fatal ? T('panel_error_fallback', '出错了') : T('panel_no_translation', '没有拿到译文'));
     showFailure(why, fatal
       ? {}
-      : { placeholder: '没有返回内容', diag: buildDiag(r || {}) });
+      : { placeholder: T('panel_no_content', '没有返回内容'), diag: buildDiag(r || {}) });
   }
 
   /** 这次的结果按配置归档 —— 同一段原文内，切回来就靠它 */
@@ -1119,7 +1119,7 @@
        单槽显示「点 ↻ 翻译」，多槽交给 renderSlots 画每槽的空态。 */
     if (slots.length <= 1) {
       outBox.textContent = '';
-      outBox.dataset.placeholder = '点 ↻ 翻译';
+    outBox.dataset.placeholder = T('panel_click_retry', '点 ↻ 翻译');
       outBox.classList.add('empty');
     } else {
       outBox.classList.remove('empty');
@@ -1210,7 +1210,7 @@
     }
 
     if (msg.type === 'ocr-error') {
-      showFailure(msg.message || '截图识别失败', { diagKey: '截图 OCR' });
+      showFailure(msg.message || T('panel_ocr_failed', '截图识别失败'), { diagKey: T('panel_shot_ocr', '截图 OCR') });
       return;
     }
 
@@ -1279,7 +1279,7 @@
     }
 
     if (msg.type === 'fatal') {
-      const r = { error: msg.message || '出错了' };
+      const r = { error: msg.message || T('panel_error_fallback', '出错了') };
       const sl = slotForMsg(msg);
       rememberResult(msg.configId || pendingConfigId, r, lastOcr, lastAction, true);
       if (!sl) {
@@ -1461,9 +1461,9 @@
   function settledSummary() {
     const ok = slots.filter((s) => s.state === 'done').length;
     const bad = slots.filter((s) => s.state === 'fail').length;
-    if (!bad) return `${ok} 条都拿到了译文`;
-    if (!ok) return `${bad} 条都失败了`;
-    return `${ok} 条拿到译文，${bad} 条失败`;
+    if (!bad) return T('panel_all_ok_n', '$1$ 条都拿到了译文', [String(ok)]);
+    if (!ok) return T('panel_all_fail_n', '$1$ 条都失败了', [String(bad)]);
+    return T('panel_mixed_n', '$1$ 条拿到译文，$2$ 条失败', [String(ok), String(bad)]);
   }
 
   /**
@@ -1678,7 +1678,7 @@
 
   /* ---- 翻译 ---- */
 
-  const DIRECT_SRC_NOTE = '（这张截图直接发给了模型，没有先做外置 OCR）';
+  const DIRECT_SRC_NOTE = T('panel_direct_note', '（这张截图直接发给了模型，没有先做外置 OCR）');
 
   /**
    * 直传那一屏：把截的图贴到原文区。
@@ -1690,7 +1690,7 @@
     srcBox.classList.add('has-img');
     const img = document.createElement('img');
     img.className = 'rt-srcimg';
-    img.alt = '截取的图';
+    img.alt = T('panel_shot_alt', '截取的图');
     img.addEventListener('error', () => {
       img.remove();
       srcBox.classList.remove('has-img');
@@ -1752,8 +1752,8 @@
     }
     // 状态栏那句随「是不是截图 / 有没有截断」变，先算好再交给公共骨架
     enterBusy(
-      '等待结果…',
-      hasImage ? '正在看图…' : (truncated ? `内容过长，已截断到 ${limit} 字` : '…'),
+      T('panel_waiting', '等待结果…'),
+      hasImage ? T('panel_looking_at_image', '正在看图…') : (truncated ? T('panel_truncated', '内容过长，已截断到 $1$ 字', [String(limit)]) : '…'),
       { statusKind: !hasImage && truncated ? 'warn' : '' }
     );
 
@@ -1831,7 +1831,7 @@
     lastOcr = null;
     currentText = '';
     // 掐掉上一屏排队的流式分片 + 连原文区一起清（OCR 开场没有原文可留）
-    enterBusy('等待识别…', statusText, { cancelDelta: true, clearSrc: true });
+    enterBusy(T('panel_waiting_ocr', '等待识别…'), statusText, { cancelDelta: true, clearSrc: true });
 
     /* 打断还在跑的翻译流：后台只在收到新的 translate 时才 abort，识别中的面板会被
        旧翻译的 delta 涂回旧译文、旧 done 还会把忙碌态提前复位成「翻译成功」——
@@ -1856,7 +1856,7 @@
 
   /** 剪切板那条路的入口：图从剪切板来，background 负责读 */
   function startOcr(anchor) {
-    const p = beginOcrPanel(anchor, '正在读取剪切板…');
+    const p = beginOcrPanel(anchor, T('panel_reading_clipboard', '正在读取剪切板…'));
     postOrFail(p, { type: 'ocr' });
   }
 
@@ -1871,7 +1871,7 @@
       translate('', '', { direct: true, image: lastOcr.image, bytes: lastOcr.bytes });
       return;
     }
-    const p = beginOcrPanel(lastOcrAnchor, '正在重试…');
+    const p = beginOcrPanel(lastOcrAnchor, T('panel_retrying', '正在重试…'));
     postOrFail(p, { type: 'ocr', reuse: true });
   }
 
@@ -1902,7 +1902,7 @@
       mount();
       showPanel(null);
       hideTrigger();
-      showFailure('截图失败：' + error);
+    showFailure(T('panel_shot_failed', '截图失败：') + error);
       return;
     }
     if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return;
@@ -1912,7 +1912,7 @@
        位图只在**松手那一刻**才用来裁出框里那块（见 pointerup）。
        好处是框选期间还能滚页面 / 翻页，裁到的永远是**松手时那一屏**的对应区域。
        代价是动态内容（视频 / 轮播）在拖框期间会动 —— 和系统截屏工具一样。 */
-    const SHOT_TIP = '拖动框选要翻译的区域（可滚动页面）· Esc 或右键取消';
+  const SHOT_TIP = T('panel_shot_tip', '拖动框选要翻译的区域（可滚动页面）· Esc 或右键取消');
     const hostEl = document.createElement('div');
     hostEl.setAttribute('data-rt-shot', '');
     hostEl.style.cssText = 'position:fixed;inset:0;z-index:2147483647;';
@@ -2033,13 +2033,13 @@
           /* 直接在面板上报失败（beginOcrPanel 已让它进忙碌态，showFailure 负责退出去）。
              曾经这里是给后台发 { type: 'ocr-error' } —— 后台根本没有那个 handler，
              消息被静默丢掉，面板就卡死在忙碌态（「裁图失败」四个字谁都看不见）。 */
-          const p = beginOcrPanel(anchorRect, '截图失败');
+    const p = beginOcrPanel(anchorRect, T('panel_shot_failed_short', '截图失败'));
           // 端口没连上时 showFailure 没人送，busy 已经被 beginOcrPanel 置上 —— 得有兜底
-          if (p) showFailure('裁图失败');
+    if (p) showFailure(T('panel_crop_failed', '裁图失败'));
           else portGone();
           return;
         }
-        postOrFail(beginOcrPanel(anchorRect, '正在识别截图…'), { type: 'ocr', dataUrl: cropped });
+    postOrFail(beginOcrPanel(anchorRect, T('panel_recognizing', '正在识别截图…')), { type: 'ocr', dataUrl: cropped });
       });
     });
 
@@ -2444,7 +2444,7 @@
       const cidDel = del.getAttribute('data-del');
       if (!cidDel) return;
       // 名字要在删之前取（删完 slotBy 就查不到了）
-      const goneName = (slotBy(cidDel) || {}).name || '这条配置';
+    const goneName = (slotBy(cidDel) || {}).name || T('panel_this_config', '这条配置');
       removeSlot(cidDel);
       renderConfigOptions();
       /* 重画结果区。**两条路径都要照顾**：
