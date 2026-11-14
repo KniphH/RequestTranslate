@@ -2306,11 +2306,23 @@ section('18. 目标语言：下拉挑语言，接口要的代码自动转');
     js.includes('function setLangMapName') && js.includes('settings.targetNames[code] = v'));
   check('表能加行（新增 code → 名字）', js.includes('function addLangRow') && js.includes('langOrder'));
   check('表能调整顺序（langOrder 决定下拉顺序）', js.includes('function moveLang'));
-  /* 面板顶栏那个下拉**也要跟 langOrder** —— 否则设置里排了顺序、面板还是老样子 */
-  check('面板下拉也按 langOrder 排（不是只用内置 TARGET_PRESETS）',
+  /* 顺序**只能有一处规则**：设置页调 template 的 orderedLangCodes，
+     面板调 panel-core 的同名函数（content 不能 import），两份必须同规则。 */
+  check('两边都调 orderedLangCodes（不是各写一遍排序）',
+    js.includes('orderedLangCodes') && readFileSync(new URL('../content.js', import.meta.url), 'utf8').includes('RTPanelCore.orderedLangCodes'));
+  check('两份 orderedLangCodes 行为一致（同样输入 → 同样输出）',
     (() => {
-      const c = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
-      return /prefs\.langOrder/.test(c) && /order\.concat\(targetLangs\.filter/.test(c);
+      const tplSrc = readFileSync(new URL('../lib/template.js', import.meta.url), 'utf8');
+      const pcSrc = readFileSync(new URL('../lib/panel-core.js', import.meta.url), 'utf8');
+      const tplStart = tplSrc.indexOf('export function orderedLangCodes');
+      const tplCode = tplSrc.slice(tplStart, tplSrc.indexOf('\n}', tplStart) + 2);
+      const pcStart = pcSrc.indexOf('function orderedLangCodes');
+      const pcCode = pcSrc.slice(pcStart, pcSrc.indexOf('\n  }', pcStart) + 4);
+      const LANGS = ['A', 'B', 'C', 'D'];
+      const f1 = new Function('LANGS', tplCode.replace('export function', 'return function'))(LANGS);
+      const f2 = new Function(pcCode + '\nreturn orderedLangCodes;')();
+      const cases = [undefined, [], ['C', 'A'], ['C', 'C', 'A'], ['X']];
+      return cases.every((c) => JSON.stringify(f1(c)) === JSON.stringify(f2(c, LANGS)));
     })());
   check('有「恢复内置对照」', /id="btn-lang-reset"/.test(html));
 

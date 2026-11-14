@@ -56,7 +56,7 @@ import { uid, allRequests, requestChain, requestTemplateFor } from './lib/reques
 import { runRequest, previewRequest } from './lib/engine.js';
 import { encryptExport, decryptExport, isEncryptedExport } from './lib/crypto.js';
 import { ADAPTERS } from './lib/adapters.js';
-import { BUILTIN_VAR_HINTS, VAR_HINT_KEYS, TARGET_PRESETS, defaultTargetNames, langDisplayName, isSecretVar, modelCandidates, modelVarFor } from './lib/template.js';
+import { BUILTIN_VAR_HINTS, VAR_HINT_KEYS, TARGET_PRESETS, orderedLangCodes, defaultTargetNames, langDisplayName, isSecretVar, modelCandidates, modelVarFor } from './lib/template.js';
 import {
   toDataUrl,
   pickImageMime,
@@ -3977,13 +3977,9 @@ function newOption(value, text) {
 
 /** 当前这套「代码 → 名字」：用户的 targetNames 打底，缺的用内置名补 */
 function currentLangMap() {
-  const names = (state.settings && state.settings.targetNames) || {};
-  /* 顺序：用户排过的 langOrder 优先；表里没提到的追加在后面 */
-  const order = Array.isArray(state.settings && state.settings.langOrder) ? state.settings.langOrder : [];
-  const codes = order.filter((c) => c).concat(TARGET_PRESETS.filter((c) => !order.includes(c)));
-  const seen = new Set();
-  return codes
-    .filter((code) => (seen.has(code) ? false : seen.add(code)))
+  /* 顺序由 lib/template.js 的 orderedLangCodes 统一给 —— 面板顶栏那个下拉
+     取的是同一份数据、调的是同一个函数，两边不可能再排成两样。 */
+  return orderedLangCodes(state.settings && state.settings.langOrder)
     .map((code) => ({ code, name: targetDisplayOf(code) }));
 }
 

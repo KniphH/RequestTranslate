@@ -1553,13 +1553,11 @@
 
   function renderLangOptions() {
     const cur = String(prefs.targetLang || 'ZH-HANS');
-    /* 顺序**跟设置页那张语言代码表走**（prefs.langOrder）—— 用户在表里上下移过，
-       面板下拉必须同序，否则两边看到的是两套排列。
-       表里没提到的（内置新语言 / 老存档）按内置顺序追加在后面。 */
-    const order = Array.isArray(prefs.langOrder) ? prefs.langOrder.filter(Boolean) : [];
-    const base = order.concat(targetLangs.filter((x) => !order.includes(x)));
-    /* 存档里存的是**语言代码**；显示名优先取用户改过的（settings.targetNames）。
-       当前值不在候选里（手填的代码）就临时补一条顶上。 */
+    /* 候选顺序**和设置页那张语言代码表同源**：都调 RTPanelCore.orderedLangCodes，
+       规则只有一处（langOrder 打头 → 未提到的按内置顺序 → 去重）。
+       以前面板自己写了一遍，漂移过：设置里排了顺序、面板还是老的。 */
+    const base = RTPanelCore.orderedLangCodes(prefs.langOrder, targetLangs);
+    /* 当前值不在候选里（手填的代码）就临时补一条顶上 */
     const list = base.includes(cur) ? base : [cur].concat(base);
     langSelect.innerHTML = '';
     for (const code of list) {
