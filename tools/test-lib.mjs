@@ -838,7 +838,7 @@ section('11. 翻译按钮：样式预设与尺寸');
 
   eq('尺寸下限 20', clampTriggerSize(5), 20);
   eq('尺寸上限 96', clampTriggerSize(999), 96);
-  eq('非数字回退到 45', clampTriggerSize('abc'), 45);
+  eq('非数字回退到默认值（28，和 DEFAULT_SETTINGS 一致）', clampTriggerSize('abc'), 28);
   eq('四舍五入', clampTriggerSize(44.6), 45);
 
   eq('默认设置里的样式', DEFAULT_SETTINGS.triggerStyle, 'badge');

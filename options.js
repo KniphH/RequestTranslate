@@ -216,7 +216,7 @@ async function init() {
   /* 收尾再填一次 —— 上面那些 renderXxx 会新建节点（编辑器头部、列表、预览），
      它们里面的 data-i18n 在第一次 applyI18n 时还不存在。
      这里补一次最省事，也比在每个 render 里各调一次好维护。 */
-  if (i18nApi && i18nApi.applyI18n) i18nApi.applyI18n(document);
+  if (i18nApi && i18nApi.applyI18n) i18nApi.applyI18n(document, { onlyMissing: true });
   /* ⚠️ 必须再跑一次 applyHintHides：上面的 applyI18n 里，data-i18n-html 那条会
      用 innerHTML 整段覆盖，把之前 applyHintHides 挂上去的「不再显示」按钮一起抹掉。
      它是幂等的（已经有 .hint-hide 就跳过），重复调用没有副作用。 */
@@ -1319,10 +1319,15 @@ $('#btn-duplicate').addEventListener('click', () => {
     state.configs.splice(idx, 1);
     editingId = state.configs[Math.max(0, idx - 1)].id;
     state.activeConfigId = editingId;
-    // 删掉的这条如果还在对比名单里，得摘掉（不然面板会拿到一个不存在的 id）
-    state.settings.slotConfigs = sortByConfigOrder(
-      slotConfigIds().filter((x) => x !== cfg.id)
-    );
+    /* 删掉的这条如果还在对比名单里，**两份都要摘** ——
+       不然面板会拿到一个不存在的 id（图片那一屏尤其：槽还在、配置没了）。 */
+    state.settings.slotConfigs = sortByConfigOrder(slotConfigIds().filter((x) => x !== cfg.id));
+    state.settings.imageSlotConfigs = sortByConfigOrder(imgSlotConfigIds().filter((x) => x !== cfg.id));
+    /* 图片这一屏选中的那条如果被删了，退回第一条能翻图的（或者空） */
+    if (state.ocr && state.ocr.imageConfigId === cfg.id) {
+      const still = imageConfigs().filter((c) => canTranslateImage(c));
+      state.ocr.imageConfigId = still.length ? still[0].id : '';
+    }
     refreshConfigViews();
   });
 
