@@ -859,6 +859,39 @@
 
   let port = null;
 
+  /** 端口断开后的处理（被 connectPort 的 onDisconnect 调用，带防重入） */
+  function handleDisconnect() {
+    port = null;
+    /* **断开不等于出错**（Firefox MV3 的关键差异，kniph 2026-11-15 实测报的）：
+       火狐的后台是**事件页**（不是 service worker），空闲约 30 秒就被回收，
+       端口随之断开。以前这里直接 portGone() → 界面上永远挂着
+       「扩展已更新，请刷新页面后重试」，而刷新之后事件页又睡回去 —— 死循环。
+
+       现在分两种：
+         · 空闲断开（busy 为假）→ 静默重连，用户无感
+         · 忙碌中断开 → 重连；连上了说明只是事件页被回收，
+           **那条请求已经没了**，把忙碌态收回来并提示重试；
+           连不上才是真错（扩展被禁用 / 卸载），走 portGone。 */
+    const wasBusy = busy;
+    const again = connectPort();
+    if (!again) {
+      if (wasBusy) portGone();
+      return;
+    }
+    if (!wasBusy) return;
+    /* 重连成功但请求丢了：别让面板永远停在「翻译中…」 */
+    leaveBusy();
+    for (const s of slots) {
+      if (s && s.state === 'busy') s.state = s.text ? 'done' : 'idle';
+    }
+    renderSlots();
+    setStatus('连接已恢复（后台被系统回收过），请重新翻译一次', 'warn');
+    setDot('');
+  }
+
+  /** 重入旗：handleDisconnect 里会再调 connectPort，避免递归 */
+  let reconnecting = false;
+
   function connectPort() {
     try {
       port = chrome.runtime.connect({ name: 'rt-translate' });
@@ -868,15 +901,19 @@
     }
     port.onMessage.addListener(onPortMessage);
     port.onDisconnect.addListener(() => {
-      port = null;
-      /* 扩展更新/重载或 SW 被杀都会走到这儿 —— 不复位的话 busy 永远是 true、
-         重试按钮永久禁用，这一屏没有任何恢复手段。只在忙碌时收场：
-         空闲时 SW 回收不该把已有结果抹成报错。 */
-      if (busy) portGone();
+      /* **防重入**：这里是 connectPort 的重入点（下面会再调一次 connectPort），
+         而旧端口的 onDisconnect 可能被触发不止一次。挂个一次性的旗子，
+         免得无限递归 —— 也免得同一次断开弹两遍提示。 */
+      if (reconnecting) return;
+      reconnecting = true;
+      try {
+        handleDisconnect();
+      } finally {
+        reconnecting = false;
+      }
     });
-    /* 这句也要接住（kniph 2026-10-18 复查）：
-       onDisconnect 是异步的 —— 端口刚建立就已被对端丢掉时（SW 正在被回收、
-       或扩展刚好在这一瞬间重载），这一句会当场抛
+    /* 这句也要接住（kniph 2026-10-18 复查）：onDisconnect 是异步的 —— 端口刚建立就已被对端丢掉时
+       （SW 正在被回收、或扩展刚好在这一瞬间重载），这一句会当场抛
        「Attempting to use a disconnected port object」，而它在 try 外面，
        异常会直接炸给 ensurePort() 的每个调用点（translate / startOcr / retryShot…），
        那些地方都没有兜底。接住之后退化成「端口拿不到」，走既有的 portGone 收场。 */

@@ -4519,6 +4519,41 @@ await (async () => {
   check('pendingConfigId 有赋值（不是只读）',
     /pendingConfigId = picked;/.test(contentSrc2));
 
+  /* ---- Firefox 兼容性（kniph 2026-11-15 实测报的两条）---- */
+
+  /* 1) bilibili 的 UA / Origin 必须**写在模板里**，不能只靠 DNR ——
+        火狐包里 DNR 被剥了，全靠那条规则的话在火狐上必被风控拦。 */
+  const bib = DEFAULT_CONFIGS.find((c) => c.id === 'builtin-bilibili');
+  check('bilibili 文字模板自带 UA（不依赖 declarativeNetRequest）',
+    !!bib && /User-Agent:\s*Index-Translate/.test(bib.request));
+  check('bilibili 文字模板自带 Origin',
+    !!bib && /Origin:\s*https:\/\/www\.bilibili\.com/.test(bib.request));
+  check('bilibili 图片模板也自带这两个头',
+    !!bib && /User-Agent:\s*Index-Translate/.test(bib.imageRequest) &&
+      /Origin:\s*https:\/\/www\.bilibili\.com/.test(bib.imageRequest));
+  check('两个模板都能被 parseRequest 解析出这三个头',
+    (() => {
+      if (!bib) return false;
+      for (const src of [bib.request, bib.imageRequest]) {
+        const p = parseRequest(src);
+        const hs = p.headers || {};
+        if (!hs['User-Agent'] || !hs.Origin || !hs['Content-Type']) return false;
+      }
+      return true;
+    })());
+
+  /* 2) 端口断开不能直接报「扩展已更新」——
+        火狐的后台是事件页，空闲约 30 秒就被回收，端口随之断开。
+        必须先尝试重连，连不上才算真错。 */
+  const contentSrcFirefox = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
+  check('端口断开时先重连（而不是直接 portGone）',
+    /port\.onDisconnect\.addListener\(\(\) => \{[\s\S]{0,400}handleDisconnect\(\)/.test(contentSrcFirefox) &&
+      /function handleDisconnect\(\) \{[\s\S]{0,900}const again = connectPort\(\);/.test(contentSrcFirefox));
+  check('重连失败才算真错（走 portGone）',
+    /const again = connectPort\(\);[\s\S]{0,200}if \(!again\) \{[\s\S]{0,120}portGone\(\)/.test(contentSrcFirefox));
+  check('断开处理有防重入旗（避免 connectPort 递归）',
+    /let reconnecting = false;/.test(contentSrcFirefox) && /if \(reconnecting\) return;/.test(contentSrcFirefox));
+
   /* normalizeOcrState 必须**按存档顺序**重建，不能按内置顺序 ——
      否则任何一次 loadState（SW 唤醒、另开一页）都会把用户拖好的顺序重置。
      这条 bug 表现为「拖完顺序一闪就弹回去」，我查了六轮才定位。 */

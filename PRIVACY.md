@@ -12,7 +12,7 @@ RequestTranslate 是一款划词翻译浏览器扩展。**开发者不收集、�
 
 - **内置 bilibili Index-Translate 通道**：扩展内置一条 B 站官方的免费翻译配置（`index-translate.bilibili.com`），不用填 Key。**只有当你在面板顶栏或设置里选中它时**，你选中的文字才会发送到 bilibili 的服务器并受其隐私政策约束；截图翻译时如果勾了「禁用外置 OCR」，**整张图片**也会发给它。**默认选中的是 Bing 通道**，不换就不走 bilibili。不想用可以删掉这条配置，或永远不选它。
 
-- **关于请求头**：bilibili 通道需要特定的 `User-Agent` 和 `Origin` 才能通过其风控，扩展用 `declarativeNetRequest` **只针对 `index-translate.bilibili.com` 这一个域名**改写这两个请求头。规则写在 `lib/ua-rules.json`，可自行查看；它不影响发往其他任何站点的请求。
+- **关于请求头**：bilibili 通道需要特定的 `User-Agent` 和 `Origin` 才能通过其风控。**这两个头直接写在 bilibili 那条配置的请求模板里**（打开配置就能看到），所以 Chromium 和 Firefox 上行为一致，不依赖任何浏览器专有 API。扩展另外带一条 `declarativeNetRequest` 规则（`lib/ua-rules.json`，**只针对 `index-translate.bilibili.com`**）作为兜底，不影响发往其他任何站点的请求。
 - **请求模板变量**：配置模板里可以使用 `{{url}}` 和 `{{title}}`，对应当前页面的地址和标题。它们只在模板里被你写出来时才会随请求发送；模板里不用就不发。
 - **OCR（截图识别）**：配置了 OCR 供应商时，剪切板里的截图会发送到你配置的 OCR 接口。勾选「禁用外置 OCR」时，图片直接进入你自己配置的翻译请求。
 - **本地存储**：配置、API Key、设置都保存在浏览器本地的 `chrome.storage.local`，不同步到任何账号。注意 API Key 是**明文**保存的——不要把导出的配置文件发给别人。
@@ -46,15 +46,15 @@ RequestTranslate is a selection-translation browser extension. **The developer d
 
 ### How this extension handles data
 
-- **Translation requests**: The text you select (and, for screenshot translation, the image in your clipboard) is sent to **the translation endpoint you configure yourself** (e.g. your own model gateway or any OpenAI-compatible service). Requests go directly from the extension to the address you entered; the developer never sees them and no intermediary server is involved.
+- **Translation requests**: The text you select (and, for screenshot translation, the image in your clipboard) is sent to **the endpoint of whichever config you have selected** — either an address you filled in yourself (your own model gateway, any OpenAI-compatible service), or the built-in bilibili free channel described below. Requests go directly from the extension to that address; the developer never sees them and no intermediary server is involved.
 
-- **Built-in bilibili Index-Translate channel**: The extension ships one free translation config that
+- **Built-in bilibili Index-Translate channel**: The extension ships one free translation config that uses bilibili's public endpoint (`index-translate.bilibili.com`), with no API key needed. It is only used if you select it in the panel header or in settings. When it is selected, the text you asked to translate is sent to bilibili's servers and is subject to their privacy policy. **With "disable external OCR" enabled for screenshot translation, the entire screenshot is also sent to it.** **The default selection is the Bing channel** — bilibili is never used unless you switch to it. You can delete that config or simply never select it.
   uses bilibili's public endpoint (`index-translate.bilibili.com`); it needs no API key. It is only
   used if you select it. Only the text you asked to translate is sent — nothing else, and no
   identifiers of yours.
 
-- **About request headers**: The bilibili channel only passes its abuse checks with a specific
-  `User-Agent` and `Origin`. The extension uses `declarativeNetRequest` to rewrite those two headers
+- **About request headers**: The bilibili channel only passes its abuse checks with a specific `User-Agent` and `Origin`. **Both are written directly into that config's request template** (open the config and you will see them), so behaviour is identical on Chromium and Firefox and does not depend on any browser-specific API. The extension also ships one `declarativeNetRequest` rule
+  (`lib/ua-rules.json`, **for `index-translate.bilibili.com` only**) as a fallback; it does not affect requests to any other site.
   **only for `index-translate.bilibili.com`** (a static rule, no other host is touched). No header of
   any other site is read, recorded or modified.
 - **Template variables**: Request templates may reference `{{url}}` and `{{title}}` (the current page's URL and title). They are only included in a request if your template references them.
