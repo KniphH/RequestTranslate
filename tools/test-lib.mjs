@@ -4469,6 +4469,52 @@ await (async () => {
   check('panel-core 里没有拼错的 --rt-fg / --rt-fg-dim（应为 --rt-text*）',
     !/var\(--rt-fg/.test(pcSrc3));
 
+  /* ---- 第七版 review 修完后的防回归断言 ---- */
+
+  /* showFailure 必须有 setStatus —— 上一轮重写时丢了，表现为状态栏停在「正在读取剪切板…」
+     而结果区已经写出错误（e2e 两条断言当场抓住）。 */
+  check('showFailure 里 setStatus / setDot / showDiag 三件套齐全',
+    (() => {
+      const s = contentSrc2.slice(contentSrc2.indexOf('function showFailure'));
+      const body = s.slice(0, s.indexOf('\n  }'));
+      return /setStatus\(why/.test(body) && /setDot\('err'\)/.test(body) && /showDiag\(/.test(body);
+    })());
+
+  /* 图片模式的配置选择：单条一律 imageConfigId，多槽才用各自的 cid */
+  const storeSrc7 = readFileSync(new URL('../lib/store.js', import.meta.url), 'utf8');
+  check('pickRequestConfig 收 multiSlot 参数（图片多槽不再收敛到同一 id）',
+    /export function pickRequestConfig\(state, configId, hasImage, multiSlot\)/.test(storeSrc7));
+  check('background 传 ids.length > 1 给 pickRequestConfig',
+    /ids\.length > 1\)/.test(readFileSync(new URL('../background.js', import.meta.url), 'utf8')) &&
+       /pickRequestConfig\(state, wantId,/.test(readFileSync(new URL('../background.js', import.meta.url), 'utf8')));
+
+  /* 导入必须跳过 adoptPanelOwned，否则包里的设置被旧存档顶回 */
+  check('导入时把 PANEL_OWNED_SETTING_KEYS 全标进 panelTouched',
+    /for \(const k of PANEL_OWNED_SETTING_KEYS\) panelTouched\.add\(k\)/.test(optSrc3));
+  check('导入落盘后清掉 panelTouched（不影响后续保存的归属）',
+    /await persist\(\);[\s\S]{0,200}panelTouched\.clear\(\)/.test(optSrc3));
+
+  /* 语言下拉的快照必须拍在赋值之前，否则回滚是空操作 */
+  check('语言快照拍在 prefs.targetLang = v 之前',
+    (() => {
+      const s = contentSrc2.slice(contentSrc2.indexOf("langSelect.addEventListener('change'"));
+      const body = s.slice(0, 1200);
+      const a = body.indexOf('const langSnap =');
+      const b = body.indexOf('prefs.targetLang = v;');
+      return a >= 0 && b > a;
+    })());
+  check('语言回滚后同步了下拉和标题',
+    /prefs\.targetLang = langSnap\.targetLang;[\s\S]{0,600}langSelect\.value = langSnap\.targetLang;/.test(contentSrc2));
+
+  /* 右键菜单标题必须接 i18n，否则英文界面仍是中文 */
+  check('两条 OCR 菜单标题都按当前语言传进去',
+    /ocrMenuItem\(state\.settings, await msg\('menuOcrClipboard'/.test(readFileSync(new URL('../background.js', import.meta.url), 'utf8')) &&
+      /shotMenuItem\(state\.settings, await msg\('menuShotTranslate'/.test(readFileSync(new URL('../background.js', import.meta.url), 'utf8')));
+
+  /* pendingConfigId 必须有赋值（否则两处兜底是死分支） */
+  check('pendingConfigId 有赋值（不是只读）',
+    /pendingConfigId = picked;/.test(contentSrc2));
+
   /* 设置页的「非合并导入」只换了 configs，slotConfigs 里还是旧 id —— 必须重跑归一化，
      否则面板一个槽都渲染不出来（第六版 §3 指出的悬空）。 */
   check('设置页导入后重跑 normalizeSlots（槽位不会悬空）',

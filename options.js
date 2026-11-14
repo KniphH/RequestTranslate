@@ -3852,7 +3852,14 @@ function bindImportExport() {
       renderOcrEditor();
       renderVars();
       renderSettings();
+      /* **导入 = 全量替换**：下面 persist() 会走 adoptPanelOwned，
+         而它对「没动过的键」一律取**导入前的存档** —— 结果导入包里的
+         targetLang / showOriginal / ocr.imageConfigId 会被静默改回旧值（第七版 §3.1）。
+         把这些键全标进 panelTouched，等于告诉 adoptPanelOwned「这些是我要的」。 */
+      for (const k of PANEL_OWNED_SETTING_KEYS) panelTouched.add(k);
+      panelTouched.add('imageConfigId');
       await persist();
+      panelTouched.clear();   // 导入落盘完就清掉，别影响后续正常保存的归属判断
       setSaveStatus(`导入完成（${state.configs.length} 条配置）`);
     } catch (err) {
       alert('导入失败：' + (err && err.message));

@@ -59,13 +59,15 @@ function ensureMenu() {
 
       // 截图那条和「翻译选中内容」分开管：选中翻译想关、截图翻译想留，是很正常的组合。
       // 描述由 lib/ocr.js 出（那条文案和 id 只有一份，测试也照它断言）。
-      const ocrItem = ocrMenuItem(state.settings);
+      // 描述由 lib/ocr.js 出（那条文案和 id 只有一份，测试也照它断言）。
+      // **标题必须按当前界面语言传进去**：不传就用库里的中文常量，
+      // 英文界面下右键菜单仍是中文（第七版 §3.7）。
+      const ocrItem = ocrMenuItem(state.settings, await msg('menuOcrClipboard', '翻译剪切板中的截图'));
       if (ocrItem) chrome.contextMenus.create(ocrItem);
 
       // 「框选截图翻译」同样独立开关（settings.shotMenu），和剪切板那条可以同时开。
-      const shotItem = shotMenuItem(state.settings);
+      const shotItem = shotMenuItem(state.settings, await msg('menuShotTranslate', '框选截图翻译'));
       if (shotItem) chrome.contextMenus.create(shotItem);
-    } catch {
       /* 忽略 */
     } finally {
       menuPending = null;
@@ -485,7 +487,9 @@ chrome.runtime.onConnect.addListener((port) => {
       const runOne = async (wantId) => {
         // 图片直传（勾了「禁用外置 OCR」）时用的是 OCR 栏里选定的那条**图片配置**，
         // 和顶栏那条（翻文字用的）互不干扰 —— 规则和兜底都在 pickRequestConfig 里
-        const config = pickRequestConfig(state, wantId, !!(msg.context && msg.context.image));
+        /* 第 4 个参数 = 这次是不是多槽对比（ids.length > 1）。图片模式下它决定
+           是「一律用 imageConfigId」（单条）还是「每槽用自己的 cid」（多槽）。 */
+        const config = pickRequestConfig(state, wantId, !!(msg.context && msg.context.image), ids.length > 1);
         if (!config) {
           safePost({ type: 'fatal', configId: wantId, message: '没有任何可用配置，请先到设置页新建一条' });
           return;

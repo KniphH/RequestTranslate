@@ -696,17 +696,14 @@
    */
   function showFailure(why, opts = {}) {
     leaveBusy();
-    /* 占位符和 .empty 必须成对（CSS 是 `.rt-out.empty::before`）—— 单槽但一条槽都没有时
-       才需要它；有槽的话 renderSlots 会画出 fail 块，那时不能留 empty。 */
-    outBox.dataset.placeholder = opts.placeholder || T('panel_error_fallback', '出错了');
-    outBox.classList.remove('empty');
     /* **失败也走块渲染**（kniph 2026-10-17：单条和多条统一）。
        以前是 textContent='' 铺一句占位文字 —— 块没了、里面那排
        「复制 / 朗读 / 重试」也跟着没了，而失败态恰恰最需要「重试」。
-       slotHtml 的 fail 分支本来就会把 error 文本画出来。 */
-    /* 单槽才把失败写进 slots[0]；多槽时**不往任何槽里塞**这个全局错误
-       （每条槽有自己的成败），但仍要重画一次 —— 否则结果区还停在旧译文上，
-       用户看不到「这次挂了」。 */
+       slotHtml 的 fail 分支本来就会把 error 文本画出来。
+
+       占位符只在**一条槽都没有**时才用（CSS 是 `.rt-out.empty::before`）：
+       以前先写 dataset 再 remove('empty') → 占位永远是死代码，失败时一片空白。 */
+    const placeholder = opts.placeholder || T('panel_error_fallback', '出错了');
     if (slots.length <= 1) {
       const only = slots[0];
       if (only) {
@@ -715,8 +712,12 @@
         renderSlots();
       } else {
         outBox.textContent = '';
+        outBox.dataset.placeholder = placeholder;
+        outBox.classList.add('empty');   // 和上面那句必须成对
       }
     } else {
+      /* 多槽：每槽有自己的成败，这个全局错误不往槽里塞，但**要重画一次** ——
+         否则结果区还停在旧译文上，用户看不到「这次挂了」。 */
       renderSlots();
     }
     setStatus(why, 'err');
@@ -1448,8 +1449,9 @@
   /**
    * 把某个槽位的结果写进去并重画。
    *
-   * 单条和多条**都走 renderSlots**（kniph 2026-10-17 统一），所以这里没有分支：
-   * 以前那句「多条 renderSlots / 单条 renderResult」已经不需要了。
+   * 单条走 `renderResult`（状态栏 / 灯 / 诊断的统一收口），
+   * 多条走 `renderSlots` + **等全部落定才 `leaveBusy`**（否则一条回包就复位全局 busy，
+   * 其余还在飞的槽失去保护）。
    */
   function renderSlotResult(configId, r, ocr, action, fatal) {
     const sl = slotBy(configId);
@@ -1471,7 +1473,6 @@
       }
     }
   }
-
 
 
   
@@ -1670,6 +1671,10 @@
     // 两个模式各记各的：图片那一屏记的是 imageConfigId（= 设置页那个选中项），
     // 别让它把「文字用哪条」顶掉。
     if (cfgMode === 'image' && imageConfigs.length > 0) imageConfigId = picked;
+    /* **记下这次发出去的是哪条配置**：回包时按它归档，而用户可能已经切走了。
+       以前这行赋值在某次重写里丢了，只剩两处 `msg.configId || pendingConfigId`，
+       那个兜底就成了死分支（第七版 §3.4）。 */
+    pendingConfigId = picked;
     /* 原文一变，所有配置的结果都快照过期了 —— 数据驱动地作废。
        直传（截图）模式没有文字原文，用**多段采样指纹**：
        以前是「长度 + 末 64 字符」，两张不同的图只要大小相同、结尾都是 base64 填充区，
@@ -2630,7 +2635,13 @@
     /* **改之前拍个快照**：下面 currentConfigId / slots / imageConfigId 都要动，
        而 await 之后可能发现「期间又拨了」—— 那时必须整份回滚，
        否则界面上是 Y、内存里是 X，槽还被顶掉回不来（第六版 §2 ②）。 */
-    const snap = { currentConfigId, imageConfigId, slots: slots.slice() };
+    const snap = {
+      currentConfigId,
+      imageConfigId,
+      /* **必须深拷贝**：slots.slice() 是浅拷贝，而槽对象会被就地改写
+         （state / text / error），回滚时拿到的还是被改过的那个对象（第七版判据 3）。 */
+      slots: slots.map((s) => ({ ...s })),
+    };
     if (already && v === primary) return;
     if (cfgMode === 'image') imageConfigId = v;
     else currentConfigId = v;
@@ -2688,10 +2699,10 @@
     const mySeq = ++langSeq;   // 连拨守卫，同 cfgSelect
     const v = langSelect.value;
     if (v === prefs.targetLang) return;
-    prefs.targetLang = v;
-    /* 改之前拍快照：prefs.targetLang 和 resultCache 都动了，
-       作废时要能整份退回（第六版 §2 ②）。 */
+    /* **快照必须拍在赋值之前** —— 以前先写 prefs.targetLang 再拍快照，
+       存的已经是新值，回滚等于空操作（第七版 §2 ⑤）。 */
     const langSnap = { targetLang: prefs.targetLang, cache: new Map(resultCache) };
+    prefs.targetLang = v;
     langSelect.title = T('panel_lang_with', '目标语言：') + RTPanelCore.langDisplayName(v, T);
     // 缓存里每一条都是上一门语言的译文，全作废
     resultCache.clear();
@@ -2700,10 +2711,14 @@
     // 真踩过 —— e2e 里「换成英语但请求还是 ZH-HANS」抓到的就是这个。
     await saveSetting('targetLang', v);
     if (mySeq !== langSeq) {
-      /* 期间又拨了：把语言和缓存整份退回去，别留下「界面 Y、内存 X」 */
+      /* 期间又拨了：把语言和缓存整份退回去。 */
       prefs.targetLang = langSnap.targetLang;
       resultCache.clear();
       for (const [k2, v2] of langSnap.cache) resultCache.set(k2, v2);
+      /* **回滚后同步 DOM**：下拉和标题还停在被作废的值上，
+         否则界面显示 Y、内存里是 X（第七版判据 3）。 */
+      langSelect.value = langSnap.targetLang;
+      langSelect.title = T('panel_lang_with', '目标语言：') + RTPanelCore.langDisplayName(langSnap.targetLang, T);
       return;
     }
     if (currentText || (lastOcr && lastOcr.image)) {
