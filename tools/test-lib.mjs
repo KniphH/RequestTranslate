@@ -4173,6 +4173,57 @@ await (async () => {
   check('i18n.js 是普通脚本（挂 window.RTI18n），不是 ES module',
     !/^export /m.test(i18nSrc) && /window\.RTI18n\s*=/.test(i18nSrc));
 
+
+  /* ---- 语言包校验：真跑函数，不是源码正则 ---- */
+  const vpSrc = i18nSrc.slice(i18nSrc.indexOf('const PACK_MAX_KEYS'));
+  const vpFnStart = vpSrc.indexOf('function validatePack');
+  const vpCode = vpSrc.slice(0, vpSrc.indexOf('\n  }', vpFnStart) + 4) + '\nreturn validatePack;';
+  const validatePack = new Function(vpCode)();
+
+  const realEn = JSON.parse(readFileSync(new URL('../i18n/en.json', import.meta.url), 'utf8'));
+  const realZh = {};
+  for (const [k, v] of Object.entries(zh)) realZh[k] = v.message || v;
+
+  check('真实的 en.json 能通过校验（不然用户装不上）', validatePack(realEn).ok);
+  check('真实的 zh_CN 也能通过', validatePack({ strings: realZh }).ok);
+  check('拒掉 <script>', !validatePack({ strings: { a: '<script>alert(1)</script>' } }).ok);
+  check('拒掉带属性的标签（<b onclick=…>）', !validatePack({ strings: { a: '<b onclick="x()">hi</b>' } }).ok);
+  check('拒掉超长单值', !validatePack({ strings: { a: 'x'.repeat(3000) } }).ok);
+  check('拒掉条目爆炸的包（防撑爆 storage）',
+    !validatePack({ strings: Object.fromEntries(Array.from({ length: 3000 }, (_, i) => ['k' + i, 'v'])) }).ok);
+  check('拒掉空包', !validatePack({ strings: {} }).ok);
+  check('白名单标签全放行（b/strong/code/br/i/em）',
+    ['<b>', '</b>', '<code>', '<br>', '<i>', '<em>', '<strong>'].every((tag) =>
+      validatePack({ strings: { a: 'x' + tag + 'y' } }).ok));
+
+  /* ---- 渲染侧净化：sanitizeInlineHtml 真跑 ---- */
+  const siSrc = i18nSrc.slice(i18nSrc.indexOf('const HTML_TAGS'));
+  const siFnStart = siSrc.indexOf('function sanitizeInlineHtml');
+  const siCode = siSrc.slice(0, siSrc.indexOf('\n  }', siFnStart) + 4) + '\nreturn sanitizeInlineHtml;';
+  const sanitizeInlineHtml = new Function(siCode)();
+
+  eq('白名单标签原样保留', sanitizeInlineHtml('点 <code>w</code> 那'), '点 <code>w</code> 那');
+  eq('标签属性被剥掉', sanitizeInlineHtml('<b onclick="x()">粗</b>'), '<b>粗</b>');
+  eq('非白名单标签整个转义', sanitizeInlineHtml('<script>a</script>'), '&lt;script&gt;a&lt;/script&gt;');
+  check('style/href 一个不留', !/style=|href=/.test(sanitizeInlineHtml('<b style="x" href="y">a</b>')));
+  eq('纯文本原样', sanitizeInlineHtml('就一句话'), '就一句话');
+
+  /* ---- inline()：options.js 的包装，含 RTI18n 未加载时的降级 ---- */
+  const optSrc2 = readFileSync(new URL('../options.js', import.meta.url), 'utf8');
+  const inStart = optSrc2.indexOf('function inline(html) {');
+  const inCode = optSrc2.slice(inStart, optSrc2.indexOf('\n}', inStart) + 2);
+  const mkInline = (rt) => new Function('window', 'escapeHtml', inCode + '\nreturn inline;')({ RTI18n: rt }, (s) => String(s).replace(/</g, '&lt;').replace(/>/g, '&gt;'));
+  eq('inline() 有 RTI18n 时走 sanitizeInlineHtml', mkInline({ sanitizeInlineHtml: (s) => 'S:' + s })('x'), 'S:x');
+  eq('RTI18n 没加载时降级成 escapeHtml', mkInline(null)('<b>x</b>'), '&lt;b&gt;x&lt;/b&gt;');
+
+  /* esc() 五字符全转（结果会进单引号包裹的属性值） */
+  const pcSrc2 = readFileSync(new URL('../lib/panel-core.js', import.meta.url), 'utf8');
+  const escStart = pcSrc2.indexOf('function esc(');
+  const escCode = pcSrc2.slice(escStart, pcSrc2.indexOf('\n  }', escStart) + 4) + '\nreturn esc;';
+  const escFn = new Function(escCode)();
+  eq('esc() 转 &', escFn('a&b'), 'a&amp;b');
+  eq('esc() 转双引号', escFn('a"b'), 'a&quot;b');
+  eq('esc() 转单引号', escFn("a'b"), 'a&#39;b');
   /* 两个 content script 都排在 i18n.js 后面 —— 顺序反了 panel-core 拿不到 T() */
   check('manifest 里 i18n.js 排在 panel-core 和 content.js 之前',
     (() => {
