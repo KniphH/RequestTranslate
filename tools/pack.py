@@ -9,9 +9,12 @@
 
 **包里的源码是剥掉注释的，仓库里那份是完整的**（kniph 2026-10-14）：
 注释是给克隆仓库的人看的，装着扩展的人不会打开 content.js。
-但**换行/空行全留着** —— DEFLATE 之后几乎不占体积，而留着它们意味着
-万一扩展在用户那儿炸了、报错栈的行号仍能对上 GitHub 上的源码。
-`tools/verify-pack.py` 打包后验三件事：语法、行号守恒、剥得干净（幂等）。
+
+**关于报错栈的行号**（第七版 §3 指出文档说法已过时）：
+剥注释那一步**保留换行/空行**，所以只剥注释时行号仍然守恒；
+但 esbuild 那一步会把整文件压成几行（包内 content.js 只剩 34 行、background.js 1 行），
+**压缩过的文件行号不再能对上源码** —— 排查线上问题时请按函数名/字符串定位，
+或直接对照仓库源码。`verify-pack` 的「行号守恒」只对被剥注释、未压缩的文件成立。
 
 只收「运行时」文件：manifest 引用的那些 + lib/ + icons/ + _locales/ + 两个说明文件。
 tools/ docs/ .git/ 这些开发用的东西一个都不进包。
@@ -207,7 +210,18 @@ def make_zip(files, out, stripped=None, target="chromium"):
                 bg.pop("service_worker", None)
                 bg["scripts"] = ["background.js"]
                 m["background"] = bg
-            elif target != "firefox" and bg.get("scripts"):
+            # 火狐不认的 Chromium 专用字段也一并去掉（第七版 §3 指出）。
+            #   minimum_chrome_version —— Firefox 会当成未知键，AMO 校验会警告
+            #   permissions 里的 offscreen —— Firefox 没有这个 API，留着是无效声明
+            #   declarative_net_request —— Firefox 支持 DNR 但字段形态不同（且我们只
+            #                              用它给 Chromium 收紧 referrer），去掉更安全
+            if target == "firefox":
+                m.pop("minimum_chrome_version", None)
+                m.pop("declarative_net_request", None)
+                perms = m.get("permissions")
+                if isinstance(perms, list):
+                    m["permissions"] = [x for x in perms if x != "offscreen"]
+            elif bg.get("scripts"):
                 # 兜底：万一仓库里又被人加回双字段，出 chromium 包时也裁掉
                 bg.pop("scripts", None)
                 m["background"] = bg

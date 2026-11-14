@@ -4539,14 +4539,22 @@ await (async () => {
   const settingKeys = Object.keys((await import("../lib/store.js")).DEFAULT_SETTINGS);
 
   /* 这三条**不是断言**，是打印出来给文档对账用的 */
+  /* **口径自检**（第七版判据 2：光有数字不够，还要打印口径）——
+     文档里的数字只能抄这里。上一轮出现 265/288/157 三个数并存，
+     就是因为没人写清「正则是什么、扫了哪些文件」。 */
   console.log("\n—— 口径自检（照抄进文档，别手写）——");
   console.log(`  test-lib 项数      ${passed + failed}`);
-  console.log(`  zh 有效 key        ${zhKeys2.length}`);
-  console.log(`  en 有效 key        ${enKeys2.length}`);
+  console.log(`  zh 有效 key        ${zhKeys2.length}  （_locales/zh_CN/messages.json，去掉 extName/extDesc）`);
+  console.log(`  en 有效 key        ${enKeys2.length}  （i18n/en.json 的 strings）`);
   console.log(`  代码里用到的 key    ${used2.size}`);
-  console.log(`  DEFAULT_SETTINGS   ${settingKeys.length} 键`);
+  console.log("     口径：扫上述 6 个文件，正则三选一 —— data-i18n*=\"key\" / T('key' / msg('key'");
+  console.log(`  DEFAULT_SETTINGS   ${settingKeys.length} 键  （lib/store.js，只数顶层键）`);
+  console.log("     说明：SETTING_MAP 里 20 行是「有独立输入框的」，其余走别的 UI（语言表 / 槽位 / 说明开关）");
+  /* key 覆盖关系必须成立：代码用到的 key 都该在 zh 包里 */
+  /* 过滤模板变量（data-i18n="${h.htmlKey}" 这种）—— 它不是真 key */
+  const orphanKeys = [...used2].filter((k) => !k.includes('${') && !(k in zhAll));
   console.log("");
-console.log('\n' + '='.repeat(46));
+  console.log(`  代码 key ⊂ zh 包   ${orphanKeys.length === 0 ? "是" : "否！缺 " + orphanKeys.slice(0, 5).join(", ")}`);
 console.log(`通过 ${passed} 项，失败 ${failed} 项`);
 console.log('='.repeat(46));
 
