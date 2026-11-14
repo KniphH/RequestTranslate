@@ -35,6 +35,21 @@ function T(key, fallback, params) {
   }
   return fallback;
 }
+
+/**
+ * 给「带内联标签的提示句」用：走 RTI18n 的白名单清洗（只留 b/strong/code/br/i/em，属性全丢）。
+ *
+ * 为什么不能一律 escapeHtml：有 7 个 key 的文案里嵌着 <code> / <b>（例如
+ * 「例如 <code>data.translations[0].translatedText</code>」），转义会把标签字面显示出来。
+ * 而语言包是**外部数据**，原样 innerHTML 又是注入面 —— 所以走白名单这一条中间路。
+ *
+ * 用法：进 innerHTML 的**文案**用 inline(T(...))；进属性的、或者纯文本，仍用 escapeHtml。
+ */
+function inline(html) {
+  const s = String(html == null ? '' : html);
+  const rt = window.RTI18n;   // 直接读全局（T() 里那个 api 是它自己的局部变量）
+  return rt && typeof rt.sanitizeInlineHtml === 'function' ? rt.sanitizeInlineHtml(s) : escapeHtml(s);
+}
 /* 「主请求 + 后备」那套链函数住在 lib/requests.js —— 配置和 OCR 供应商共用
    （store.js 和 ocr.js 都 import 它，谁也不用反过来依赖谁）。 */
 import { uid, allRequests, requestChain, requestTemplateFor } from './lib/requests.js';
@@ -218,7 +233,7 @@ function editorHeadHtml({ nameId, placeholder, top, bottom }) {
   const hint = (h) =>
     `<p class="hint wide"${h.id ? ` id="${h.id}"` : ''}` +
     `${h.hint ? ` data-hint="${h.hint}"` : ''}${h.hidden ? ' hidden' : ''}` +
-    `${h.htmlKey ? ` data-i18n-html="${h.htmlKey}"` : ''}>${h.html || ''}</p>`;
+    `${h.htmlKey ? ` data-i18n-html="${h.htmlKey}"` : ''}>${inline(h.html || '')}</p>`;
   return `
     <div class="hint-slot">${top.map(hint).join('')}</div>
     <div class="editor-head">
@@ -931,7 +946,7 @@ function templateFieldHtml({ wrapAttrs, boxAttrs, title, value, placeholder, hin
             ${chips ? chipsHtml(chips) : ''}
             <textarea ${boxAttrs} spellcheck="false" wrap="off"
               placeholder="${escapeHtml(placeholder)}">${escapeHtml(value)}</textarea>
-            <p class="hint"${dismiss ? ` data-hint="${dismiss}"` : ''}>${hint}</p>
+            <p class="hint"${dismiss ? ` data-hint="${dismiss}"` : ''}>${inline(hint)}</p>
           </div>
         </details>`;
 }
@@ -958,23 +973,23 @@ function blockHtml(item, idx, lastIdx, opts = {}) {
   return `
     <div class="req-block" data-id="${escapeHtml(item.id)}" data-adapter="${escapeHtml(item.adapter || '')}">
       <div class="rb-head">
-        <label class="rb-on" title="${T('opt_no_rotate', '不勾就不参与轮换（测试也不跑它）')}">
+        <label class="rb-on" title="${escapeHtml(T('opt_no_rotate', '不勾就不参与轮换（测试也不跑它）'))}">
           <input type="checkbox" class="rb-enable"${item.enabled ? ' checked' : ''}>
         </label>
         <span class="rb-tag">${escapeHtml(isMain ? T('opt_main_req', '主请求') : item.name)}</span>
         <span class="rb-sub">${escapeHtml(blockSummary(item, kind))}</span>
-        ${item.imageRequest && item.imageRequest.trim() ? `<span class="rb-badge" title="${T('opt_img_badge', '这条填了「图片请求模板」，截图翻译时会走它（图片直传模式）')}">图</span>` : ''}
+        ${item.imageRequest && item.imageRequest.trim() ? `<span class="rb-badge" title="${escapeHtml(T('opt_img_badge', '这条填了「图片请求模板」，截图翻译时会走它（图片直传模式）'))}">图</span>` : ''}
         <span class="spacer"></span>
         ${isMain ? '' : `
-          <button type="button" class="rb-mini rb-up" title="${T('opt_up', '上移（越靠前越先试）')}"${idx <= 1 ? ' disabled' : ''}>↑</button>
-          <button type="button" class="rb-mini rb-down" title="${T('opt_down', '下移')}"${idx >= lastIdx ? ' disabled' : ''}>↓</button>
-          <button type="button" class="rb-mini rb-del" title="${T('opt_del_fallback', '删掉这条后备请求')}">×</button>`}
-        <button type="button" class="rb-fold" title="${T('opt_fold', '折叠 / 展开（点这一行也行）')}">▾</button>
+          <button type="button" class="rb-mini rb-up" title="${escapeHtml(T('opt_up', '上移（越靠前越先试）'))}"${idx <= 1 ? ' disabled' : ''}>↑</button>
+          <button type="button" class="rb-mini rb-down" title="${escapeHtml(T('opt_down', '下移'))}"${idx >= lastIdx ? ' disabled' : ''}>↓</button>
+          <button type="button" class="rb-mini rb-del" title="${escapeHtml(T('opt_del_fallback', '删掉这条后备请求'))}">×</button>`}
+        <button type="button" class="rb-fold" title="${escapeHtml(T('opt_fold', '折叠 / 展开（点这一行也行）'))}">▾</button>
       </div>
       <div class="rb-body">
         ${isAdapter ? `
         <div class="field rb-adapter-field">
-          <label>${T('opt_label_adapter', '内置适配器')}</label>
+          <label>${escapeHtml(T('opt_label_adapter', '内置适配器'))}</label>
           <p class="rb-adapter-note">${escapeHtml(adapterLabel(item.adapter))}</p>
           <p class="hint">${escapeHtml(adapterHint(item.adapter))}</p>
         </div>` : ''}
@@ -1018,11 +1033,11 @@ function blockHtml(item, idx, lastIdx, opts = {}) {
         })}
         ${/* 两个「响应」字段收尾，见 blockHtml 上面那段字段顺序的注释 */ ''}
         ${ocr ? '' : `<div class="field mode-field rb-only-request"${hideReq}>
-          <label>${T('opt_label_mode', '响应格式')}</label>
+          <label>${escapeHtml(T('opt_label_mode', '响应格式'))}</label>
           <select class="rb-mode">${optionsHtml(MODE_OPTIONS, item.responseMode)}</select>
         </div>`}
         <div class="field rb-only-request"${hideReq}>
-          <label>${T('opt_label_path', '响应提取路径（留空自动识别）')}</label>
+          <label>${escapeHtml(T('opt_label_path', '响应提取路径（留空自动识别）'))}</label>
           <input class="rb-path" type="text" spellcheck="false" placeholder="choices[0].message.content" value="${escapeHtml(item.path)}">
           <p class="hint" data-hint="${ocr ? 'ocr-path' : 'cfg-path'}">${ocr
             ? T('opt_path_hint_ocr', '点号 + 下标，例如百度的 <code>words_result</code>（一行一个对象，会按行拼成一段）。留空时依次尝试各家常见的返回结构。')
@@ -3133,6 +3148,9 @@ async function onHistoryAction(e) {
     } catch (err) {
       flashButton(btn, '失败：' + String(err && err.message || err).slice(0, 24), oldText, 2600);
     } finally {
+      /* 探测过了（成功或失败都算）—— 不置位的话每次 focus/click 都重跑一遍
+         fetchIndex + verifyIndex（20×2 个 HEAD），和 PRIVACY 里「不换语言就永远不联网」冲突。 */
+      probed = true;
       btn.disabled = false;
       if (btn.textContent !== oldText) btn.textContent = oldText;
     }
@@ -3596,6 +3614,8 @@ async function bindUiLang() {
     sel.value = cur.lang;
   }
 
+  /** code → 清单里的文件名（verifyIndex 探的就是它，下载必须用同一个） */
+  const langFiles = {};
   let probing = false;   // 正在探测，避免 focus + mousedown 连开两次
   let probed = false;    // 探测过了（成功或失败都算，别反复骚扰仓库）
 
@@ -3620,8 +3640,10 @@ async function bindUiLang() {
         sel.appendChild(o);
       }
       // 探测完把选中项放回用户当前生效的那个（没装就是内置）
+      /* code → 清单里的文件名：下载时必须和 verifyIndex 探的是同一个字段 */
+      for (const k of Object.keys(langFiles)) delete langFiles[k];
+      for (const item of usable) langFiles[item.code] = item.meta.file || '';
       sel.value = keep || '';
-      probed = true;
       if (usable.length) {
         say(T('opt_ui_lang_count_pre', '核实到') + ' ' + usable.length + ' ' + T('opt_ui_lang_count_post', '种可用语言，选一种再点一次。'));
       } else {
@@ -3662,7 +3684,7 @@ async function bindUiLang() {
     }
     say(T('opt_ui_lang_dl', '正在下载…'));
     sel.disabled = true;
-    const r = await api.downloadPack(code);
+    const r = await api.downloadPack(code, langFiles[code] || '');
     sel.disabled = false;
     if (r.ok) {
       /* 换了界面语言 → 目标语言的名字**整份重新生成**（kniph 2026-11-13：
