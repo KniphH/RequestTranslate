@@ -2134,7 +2134,9 @@ try {
   check('被拖的那一行有反馈', mark.dragging === srcRow.id, mark.dragging || '(没有)');
 
   await opt.mouse.up();
-  await opt.waitForTimeout(1300);
+  /* persist 是 700ms debounce + 一次 storage 往返。1300ms 在慢机器上会踩线，
+     实测偶发；给到 2200ms，比「让它偶发红」划算。 */
+  await opt.waitForTimeout(2200);
   const afterDrag = await orderOf();
   check('拖到最前面之后顺序真的变了', afterDrag.dom[0] === srcRow.id, afterDrag.dom.slice(0, 3).join(','));
   check('拖动后的顺序也落盘了', JSON.stringify(afterDrag.saved) === JSON.stringify(afterDrag.dom));

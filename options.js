@@ -682,9 +682,10 @@ function moveConfig(id, to) {
   const next = moveItem(state.configs, from, to);
   if (next === state.configs) return false; // 原地没动
   state.configs = next;
-  /* 配置顺序变了 → 对比名单也要跟着重排（面板的默认顺序 = 设置里的顺序，
-     kniph 2026-10-17）。不重排的话拖一次顺序，面板里那几条就还是老次序。 */
+  /* 配置顺序变了 → **两份对比名单都要跟着重排**（面板默认顺序 = 设置里的顺序）。
+     以前只重排了文字那份，图片那份拖完还是老次序（第七版 §3 指出）。 */
   state.settings.slotConfigs = sortByConfigOrder(slotConfigIds());
+  state.settings.imageSlotConfigs = sortByConfigOrder(imgSlotConfigIds());
   renderConfigList();
   persist();
   return true;
@@ -1327,10 +1328,15 @@ $('#btn-duplicate').addEventListener('click', () => {
 
   $('#btn-test').addEventListener('click', runTest);
   els.testText.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') runTest();
+    if (e.key !== 'Enter') return;
+    /* **输入法组字中不能当回车用**：用拼音/五笔选词时按回车是「确认候选」，
+       那一下会被当成「发送」直接发出一条半截文本（第七版 §3 指出）。
+       isComposing 是标准判据；keyCode 229 是老浏览器 / 部分 IME 的兜底。 */
+    if (e.isComposing || e.keyCode === 229) return;
+    runTest();
   });
-}
 
+}
 function insertAtCursor(textarea, text) {
   /* 框被折起来时 `selectionStart` 恒为 0、`focus()` 是空操作 —— 字会插到最开头而且还看不见。
      所以插之前先把外面这道折摊开（模板那一段自己是一个 `<details>`；请求块那一层由调用方摊）。 */
