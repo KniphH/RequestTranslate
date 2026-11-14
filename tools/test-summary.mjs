@@ -8,6 +8,7 @@
  * 因为 npm 的 && 链不会把环境变量传给后面的步骤。
  */
 import { readFileSync, existsSync, unlinkSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 
 const FILE = new URL('../.test-counts.json', import.meta.url);
 
@@ -22,10 +23,16 @@ const order = ['test-lib', 'test-engine', 'test-strip', 'e2e-ui', 'pack-fixture'
 const shown = order.filter((k) => data[k] != null).map((k) => k + ' ' + data[k]);
 const total = order.reduce((n, k) => n + (Number(data[k]) || 0), 0);
 const stamp = new Date().toLocaleString('sv-SE');
+/* **绑 commit**（第十版判据 3）：数字必须能对到某一次具体提交，
+   否则「1778 项全绿」这句话没办法复核 —— 谁知道你测的是哪个版本。 */
+let head = '';
+try {
+  head = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim();
+} catch { head = '(非 git 仓库)'; }
 
 console.log('');
 console.log('='.repeat(56));
-console.log('全量汇总  ' + stamp);
+console.log('全量汇总  ' + stamp + '  HEAD ' + head);
 console.log('  ' + (shown.length ? shown.join(' ｜ ') : '（各步没上报数字）'));
 if (total) console.log('  合计 ' + total + ' 项');
 console.log('='.repeat(56));
