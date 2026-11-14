@@ -3833,10 +3833,22 @@ function bindImportExport() {
 
       if (picked.merge) {
         /* 合并：勾上的追加 / 同名覆盖，其余（变量、设置、OCR）保持不动。
-           同名判据用 name —— 用户认识的是名字，不是 id（分享版里的 id 两边都不同）。 */
+           同名判据用 name —— 用户认识的是名字，不是 id（分享版里的 id 两边都不同）。
+
+           **id 冲突要处理**（第九版 §2 P2）：文件里的 id 可能与本地某条不同名配置撞车，
+           那样 state.configs 会出现两条同 id —— 面板按 id 找配置时会拿错、删一条也会连坐。
+           撞了就重新生成，保证唯一。 */
+        const usedIds = new Set(state.configs.map((c) => c.id));
         const byName = new Map(state.configs.map((c) => [c.name, c]));
-        for (const c of picked.configs) byName.set(c.name, c);
-        state.configs = [...byName.values()];
+        for (const c of picked.configs) {
+          const copy = { ...c };
+          if (!byName.has(c.name)) {
+            /* 新加进来的：id 撞了就换一个 */
+            while (usedIds.has(copy.id)) copy.id = copy.id + '-' + Math.random().toString(36).slice(2, 6);
+            usedIds.add(copy.id);
+          }
+          byName.set(copy.name, copy);
+        }
         /* 配置数变多时槽位也要有个底。**真相源是 state.settings.slotConfigs**
            （不是 state.slotConfigs）—— 原来写成后者恒为 undefined，整块永不执行。
            上限也别硬编码 4，跟着 panelSlots 走。 */
