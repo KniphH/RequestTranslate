@@ -845,20 +845,6 @@ button.block { width: 100%; }
 }
 .set-group-body { padding-bottom: 6px; }
 
-/* ---- 面板效果预览（kniph 2026-10-17）----
-   这里是**真的**结果面板：样式表来自 lib/panel-styles.js（和 content.js 共用），
-   同样跑在 shadow root 里。所以不再需要「模拟」的样式，只要一个容器。 */
-.pv-wrap {
-  /* 面板宽度可到 1600px，塞不下时由 JS 用 transform 等比缩，
-     所以容器只负责裁掉溢出、给点内边距。 */
-  display: block;
-  padding: 16px;
-  background: var(--bg);
-  border: 1px solid var(--line-soft);
-  border-radius: 10px;
-  overflow: auto;
-}
-.pv-host { display: block; }
 
 /* ---- 自定义变量列表：卡片网格 + 点击编辑 ----
    一条 = 一张卡片（名字 + 值摘要 + 眼睛 + ✕），点了才摊开编辑。
@@ -1371,23 +1357,6 @@ button.block { width: 100%; }
 .ui-lang-row select { flex: 1; min-width: 0; }
 .ui-lang-row button { flex: none; white-space: nowrap; }
 
-/* 「它的名字」那行：紧跟在目标语言下拉下面，一眼看出改的是哪个语言的名字 */
-.lang-name-row {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  gap: 8px;
-  margin-top: 2px;
-}
-.lang-name-row label {
-  font-size: 12px;
-  color: var(--fg-dim);
-  white-space: nowrap;
-}
-.lang-name-row input {
-  min-width: 0;
-  font-size: 13px;
-}
 
 /* ---- 语言代码表（code ↔ {{target}} 的对应关系）----
    下拉里只显示名字，这里是唯一能看到 code 的地方。行可以上下移、名字可改。 */

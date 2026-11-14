@@ -1116,8 +1116,11 @@
       if (slots.length <= 1) {
         setStatus(msg.statusText ? `请求中…${msg.statusText}` : '请求中…');
         setDot('on');
-        outBox.classList.add('empty');
-        outBox.textContent = '';
+        /* **不清旧译文**（和 translate() 里那条同一个规矩）：清空会让结果区
+           瞬间变短、滚动位置被夹到 0。新译文一到就替换，中间那段「请求中…」
+           状态自己会标出来。
+           以前这里清 DOM 却保留 sl.text —— 两边不一致：下次 renderSlots() 会把
+           旧译文又搬回来，而屏幕上本该是空的（第七版 §3 指出）。 */
         resetDiag();
       } else {
         setStatus(`翻译中…（${slots.length} 条）`);
