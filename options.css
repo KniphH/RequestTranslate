@@ -1388,3 +1388,48 @@ button.block { width: 100%; }
   min-width: 0;
   font-size: 13px;
 }
+
+/* ---- 语言代码表（code ↔ {{target}} 的对应关系）----
+   下拉里只显示名字，这里是唯一能看到 code 的地方。行可以上下移、名字可改。 */
+.lang-map {
+  display: grid;
+  gap: 4px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 2px;
+}
+.lang-map-row,
+.lang-map-add {
+  display: grid;
+  grid-template-columns: 7.5em 1fr auto auto;
+  align-items: center;
+  gap: 6px;
+}
+.lang-map-add { grid-template-columns: 7.5em 1fr auto; margin-top: 6px; }
+.lang-map-code {
+  font-size: 12px;
+  color: var(--fg-dim);
+  font-family: ui-monospace, Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lang-map-code-in {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+.lang-map-name { min-width: 0; font-size: 13px; }
+.lang-map-btn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--hover-2);
+  color: var(--fg);
+  font-size: 11px;
+  cursor: pointer;
+}
+.lang-map-btn:disabled { opacity: .35; cursor: default; }
+.lang-map-btn:hover:not(:disabled) { border-color: var(--accent); }

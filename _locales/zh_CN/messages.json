@@ -1,9 +1,9 @@
 {
-  "extDesc": {
-    "message": "划词翻译，但配置是你自己的 HTTP 请求。直接写 curl 或原始请求报文，可保存多个命名配置。"
-  },
   "extName": {
     "message": "RequestTranslate · 请求式划词翻译"
+  },
+  "extDesc": {
+    "message": "划词翻译，但配置是你自己的 HTTP 请求。直接写 curl 或原始请求报文，可保存多个命名配置。"
   },
   "adapter_bing_hint": {
     "message": "走 bing.com 网页版接口，首次多花约 0.5 秒。",
@@ -487,6 +487,34 @@
   "opt_label_path": {
     "message": "响应提取路径（留空自动识别）",
     "description": "设置页 JS 动态文案"
+  },
+  "opt_lang_map_add": {
+    "message": "加一行",
+    "description": "语言代码表"
+  },
+  "opt_lang_map_code_ph": {
+    "message": "新代码，如 YUE",
+    "description": "语言代码表"
+  },
+  "opt_lang_map_dup": {
+    "message": "这个代码已经在表里了。",
+    "description": "语言代码表"
+  },
+  "opt_lang_map_hint": {
+    "message": "左边是接口要的<code>代码</code>（内置那套是 DeepL 的 language code），右边是它显示成什么、也是 <code>{{target}}</code> 的值。<b>可以随便改</b>，也能加自己的一行。",
+    "description": "语言代码表"
+  },
+  "opt_lang_map_label": {
+    "message": "语言代码表",
+    "description": "语言代码表"
+  },
+  "opt_lang_map_name_ph": {
+    "message": "它显示成什么",
+    "description": "语言代码表"
+  },
+  "opt_lang_map_reset": {
+    "message": "恢复内置对照",
+    "description": "语言代码表"
   },
   "opt_lang_name_label": {
     "message": "它的名字",

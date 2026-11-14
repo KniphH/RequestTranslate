@@ -359,6 +359,13 @@
     "langname_RO": "Romanian",
     "opt_lang_name_label": "Its name",
     "opt_lang_name_ph": "Simplified Chinese",
-    "opt_lang_other": "Other (type your own)"
+    "opt_lang_other": "Other (type your own)",
+    "opt_lang_map_label": "Language code table",
+    "opt_lang_map_hint": "Left is the <code>code</code> the API wants (the built-ins follow DeepL language codes); right is what it displays as, which is also the <code>{{target}}</code> value. <b>Edit freely</b>, and add your own rows.",
+    "opt_lang_map_reset": "Restore built-in table",
+    "opt_lang_map_add": "Add row",
+    "opt_lang_map_code_ph": "New code, e.g. YUE",
+    "opt_lang_map_name_ph": "What it displays as",
+    "opt_lang_map_dup": "That code is already in the table."
   }
 }

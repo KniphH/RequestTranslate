@@ -2008,7 +2008,7 @@ section('15f. 设置页的「图片配置」那条线也认后备');
   check('两段模板的骨架一样（details > summary + .fold-body > 标签排 + textarea + .hint）',
     /<summary>\$\{escapeHtml\(title\)\}<\/summary>[\s\S]{0,240}class="fold-body"/.test(opt) &&
       /class="fold-body"[\s\S]{0,120}\$\{chips \? chipsHtml\(chips\) : ''\}[\s\S]{0,120}<textarea \$\{boxAttrs\}/.test(opt) &&
-      /<textarea \$\{boxAttrs\}[\s\S]{0,220}<p class="hint"[\s\S]{0,90}>\$\{hint\}/.test(opt));
+      /<textarea \$\{boxAttrs\}[\s\S]{0,220}<p class="hint"[\s\S]{0,90}>\$\{inline\(hint\)\}/.test(opt));
   /* 两段模板**一项都不差**：标签排和「不再显示」那段说明两处都有（图片那条原来两样都没有 ——
      kniph：「变量是在请求模板内的…你就不能都统一到里面吗」）。 */
   check('两段模板都带标签排、说明都能收（chips ×2 + img-tpl 那个键）',
@@ -2292,23 +2292,29 @@ section('18. 目标语言：下拉挑语言，接口要的代码自动转');
   check('HTML 里那个下拉是空容器（不手抄第二份候选）',
     !!sel && !/<option/i.test(selBody), selBody);
 
-  const other = (html.match(/<input[^>]*id="s-lang-other"[^>]*>/) || [])[0];
-  check('旁边有个「自己填」的输入框', !!other, other);
-  check('它默认是藏着的（挑了「其他」才露出来）', !!other && /\bhidden\b/.test(other), other);
+  /* 「自己填」输入框和「其他」哨兵项已删：加语言/改名字统一走下面那张语言代码表，
+     同一个功能不留两个入口。 */
+  check('下拉旁边没有「自己填」输入框了', !/id="s-lang-other"/.test(html));
+  check('也没有「其他」哨兵项了', !/LANG_OTHER/.test(js));
+  check('脚本把语言代码填进那个下拉', js.includes('currentLangMap') && js.includes('els.langSelect.appendChild'));
+  check('存档里的代码不在表里时临时补一条顶上',
+    js.includes('function renderTargetLang') && js.includes('newOption(cur, targetDisplayOf(cur))'));
 
-  check('脚本把 TARGET_PRESETS 填进那个下拉',
-    js.includes('TARGET_PRESETS') && js.includes('els.langSelect.appendChild'));
-  check('「其他」那一项有哨兵 value', /LANG_OTHER\s*=\s*'__other__'/.test(js));
-  check('存档里不在预设里的值会还原成「其他」+ 输入框',
-    js.includes('function renderTargetLang') && js.includes('TARGET_PRESETS.includes(cur)'));
+  /* 语言代码表：code ↔ 名字，可改可排可加行 */
+  check('设置页有那张语言代码表', /id="lang-map"/.test(html) && js.includes('function renderLangMap'));
+  check('表里每行的名字可改（写回 targetNames）',
+    js.includes('function setLangMapName') && js.includes('settings.targetNames[code] = v'));
+  check('表能加行（新增 code → 名字）', js.includes('function addLangRow') && js.includes('langOrder'));
+  check('表能调整顺序（langOrder 决定下拉顺序）', js.includes('function moveLang'));
+  check('有「恢复内置对照」', /id="btn-lang-reset"/.test(html));
 
   const values = TARGET_PRESETS;
   check('列表不是空的', values.length > 0, values.length);
   check('够挑（至少 20 个）', values.length >= 20, values.length);
   check('列表里是**语言代码**（ZH-HANS / EN），不是语言名', values.includes('ZH-HANS') && values.includes('EN'), values.slice(0, 6).join(','));
   check('常用语言都在：EN / JA', values.includes('EN') && values.includes('JA'));
-  check('地区变体不在主表里（它们在 LANG_REGION_VARIANTS）', !values.includes('EN-GB') && !values.includes('PT-BR'));
-  eq('没有重复项', new Set(values).size, values.length);
+  check('地区变体也在表里（同样能改名 / 排序）',
+    values.includes('EN-GB') && values.includes('PT-BR'));
 
   /* 列表和映射表必须同步 —— 挑得到却转不出代码，等于骗人 */
   const unmapped = values.filter((v) => !targetCodeOf(v, ''));

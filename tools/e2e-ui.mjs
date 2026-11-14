@@ -1752,10 +1752,10 @@ try {
   check('下拉里真的有几十个候选（不是空的、也不是只剩两项）',
     langBox.count >= 25, `options = ${langBox.count}`);
   check('常用语言在里面（JA）', langBox.hasJa);
-  check('末尾是「其他（自己填）」', langBox.lastValue === '__other__', langBox.lastText);
-  check('「自己填」那个框默认藏着',
-    langBox.otherTag === 'INPUT' && langBox.otherHidden === true, `hidden = ${langBox.otherHidden}`);
-
+  /* 「其他（自己填）」和那个输入框已删 —— 加语言/改名字统一走语言代码表 */
+  check('下拉里只有真语言代码，没有「其他」哨兵',
+    !langBox.lastValue.includes('__other__') && /^[A-Z-]+$/.test(langBox.lastValue), langBox.lastValue);
+  check('也没有「自己填」那个输入框了', langBox.otherTag === '', String(langBox.otherTag));
   await opt.selectOption('#s-lang', 'JA');
   await opt.waitForTimeout(1300);
   const langSaved = await opt.evaluate(async () => {
@@ -1763,16 +1763,6 @@ try {
     return state.settings.targetLang;
   });
   check('挑「日语」之后落盘的是代码 JA', langSaved === 'JA', String(langSaved));
-
-  await opt.selectOption('#s-lang', '__other__');
-  await opt.waitForTimeout(150);
-  const langOther = await opt.evaluate(() => {
-    const el = document.getElementById('s-lang-other');
-    const box = el ? el.getBoundingClientRect() : null;
-    return { hidden: el ? el.hidden : null, h: box ? box.height : 0 };
-  });
-  check('选「其他」时那个输入框才露出来', langOther.hidden === false && langOther.h > 0,
-    JSON.stringify(langOther));
 
   // 收拾干净：后面几节要看到「简体中文」，别把语言留成日语
   await opt.selectOption('#s-lang', 'ZH-HANS');

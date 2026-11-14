@@ -124,9 +124,6 @@ const els = {
   btnPanelCssClear: $('#btn-panelcss-clear'),
   passDialog: $('#pass-dialog'),
   langSelect: $('#s-lang'),
-  langName: $('#s-lang-name'),
-  langOther: $('#s-lang-other'),
-
   // OCR
   ocrList: $('#ocr-list'),
   // 勾了「禁用外置 OCR」时，左栏换成这个 —— 列的是「填了图片请求模板」的配置
@@ -3953,24 +3950,22 @@ function flashSaved() {
 /* 候选只有一处真相源（lib/template.js 的 TARGET_PRESETS）                */
 /* HTML 里那个 select 是空容器，选项在这儿填 —— 别再去 HTML 手抄一份      */
 
-// 下拉里「自己填」那一项的 value。真语言名 / 代码都不可能是这个样子，
-// 所以拿它当哨兵很安全。
-const LANG_OTHER = '__other__';
-
-/** 选项：常用语言名 + 几个地区变体 + 末尾的「其他」 */
+/** 下拉里只显示名字。代码不进下拉 —— 它是内部身份，用户面对的是名字。 */
 function fillTargetLangOptions() {
-  /* value = **语言代码**（存档里存的就是它），text = 当前界面语言下的名字。
-     名字改了（用户在下面那个框里手改）不影响 value —— 身份和显示分开。 */
-  for (const code of TARGET_PRESETS) {
-    els.langSelect.appendChild(newOption(code, targetDisplayOf(code)));
+  for (const row of currentLangMap()) {
+    els.langSelect.appendChild(newOption(row.code, row.name));
   }
-  els.langSelect.appendChild(newOption(LANG_OTHER, T('opt_lang_other', '其他（自己填）')));
 }
 
 /** 某个代码现在该显示成什么：优先用户改过的名字，没有就用内置的 */
 function targetDisplayOf(code) {
   const names = (state.settings && state.settings.targetNames) || {};
-  return names[code] || langDisplayName(code, T);
+  /* 「名字 === 代码」当成留空（老存档被默认值填过一遍） */
+  const saved = names[code];
+  if (saved && saved !== code) return saved;
+  const builtin = langDisplayName(code, T);
+  /* langDisplayName 查不到时返回 code 本身 —— 那就是「没有内置名」（地区变体），留空 */
+  return builtin && builtin !== code ? builtin : '';
 }
 
 function newOption(value, text) {
@@ -3980,70 +3975,170 @@ function newOption(value, text) {
   return opt;
 }
 
-/** 把存档里的值摆到界面上：在预设里就选中它，不在就当「其他」放进输入框 */
+/** 当前这套「代码 → 名字」：用户的 targetNames 打底，缺的用内置名补 */
+function currentLangMap() {
+  const names = (state.settings && state.settings.targetNames) || {};
+  /* 顺序：用户排过的 langOrder 优先；表里没提到的追加在后面 */
+  const order = Array.isArray(state.settings && state.settings.langOrder) ? state.settings.langOrder : [];
+  const codes = order.filter((c) => c).concat(TARGET_PRESETS.filter((c) => !order.includes(c)));
+  const seen = new Set();
+  return codes
+    .filter((code) => (seen.has(code) ? false : seen.add(code)))
+    .map((code) => ({ code, name: targetDisplayOf(code) }));
+}
+
 function renderTargetLang() {
   const cur = String(state.settings.targetLang || '');
-  if (cur && !TARGET_PRESETS.includes(cur)) {
-    els.langSelect.value = LANG_OTHER;
-    els.langOther.value = cur;
-    els.langOther.hidden = false;
-  } else {
-    els.langSelect.value = cur || TARGET_PRESETS[0];
-    els.langOther.hidden = true;
+  /* 存档里的代码不在下拉里（手填的老存档、或者表里的行被删了）→ 临时补一条顶上 */
+  if (cur && ![...els.langSelect.options].some((o) => o.value === cur)) {
+    els.langSelect.appendChild(newOption(cur, targetDisplayOf(cur)));
   }
-  /* 下拉里那一项的显示名可能是用户改过的 —— 重画一次让它跟上 */
-  const sel = els.langSelect.value;
-  for (const opt of els.langSelect.options) {
-    if (opt.value !== LANG_OTHER) opt.textContent = targetDisplayOf(opt.value);
-  }
-  /* 「它的名字」那个框：直接摊当前语言的显示名，改了就写回 targetNames */
-  if (els.langName) els.langName.value = cur ? targetDisplayOf(cur) : '';
+  els.langSelect.value = cur || TARGET_PRESETS[0];
+  for (const opt of els.langSelect.options) opt.textContent = targetDisplayOf(opt.value);
+  renderLangMap();
 }
 
 function setTargetLang(value) {
   state.settings.targetLang = value;
   panelTouched.add('targetLang'); // 面板顶栏那个下拉也写它，页面动过就以页面为准
   scheduleSave();
-  renderTargetLang();   // 换语言后名字框要跟着换
   updatePreview();
 }
 
-/** 改「它的名字」：只动 targetNames，不动 targetLang */
-function setTargetName(value) {
-  const code = String(state.settings.targetLang || '');
-  if (!code) return;
-  const v = String(value || '').trim();
+/**
+ * 画那张语言代码表。一行 = 一个 code + 它的名字。
+ * 名字可改、行可上下移、也能自己加一行 —— 这就是「增加 code→target 对应关系」的入口。
+ * 下拉里只显示名字，所以要有个地方能看见 code。
+ */
+function renderLangMap() {
+  const host = document.getElementById('lang-map');
+  if (!host) return;
+  host.innerHTML = '';
+  const rows = currentLangMap();
+  for (const row of rows) {
+    const div = document.createElement('div');
+    div.className = 'lang-map-row';
+    div.dataset.code = row.code;
+
+    const codeEl = document.createElement('span');
+    codeEl.className = 'lang-map-code';
+    codeEl.textContent = row.code;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = row.name;
+    input.className = 'lang-map-name';
+    input.placeholder = row.code;
+    input.addEventListener('input', () => setLangMapName(row.code, input.value));
+
+    const up = document.createElement('button');
+    up.type = 'button';
+    up.className = 'lang-map-btn';
+    up.textContent = '↑';
+    up.disabled = rows.indexOf(row) === 0;
+    up.addEventListener('click', () => moveLang(row.code, -1));
+
+    const down = document.createElement('button');
+    down.type = 'button';
+    down.className = 'lang-map-btn';
+    down.textContent = '↓';
+    down.disabled = rows.indexOf(row) === rows.length - 1;
+    down.addEventListener('click', () => moveLang(row.code, 1));
+
+    div.appendChild(codeEl);
+    div.appendChild(input);
+    div.appendChild(up);
+    div.appendChild(down);
+    host.appendChild(div);
+  }
+
+  /* 末尾一行：加一个新的 code */
+  const add = document.createElement('div');
+  add.className = 'lang-map-add';
+  const codeIn = document.createElement('input');
+  codeIn.type = 'text';
+  codeIn.className = 'lang-map-code-in';
+  codeIn.placeholder = T('opt_lang_map_code_ph', '新代码，如 YUE');
+  const nameIn = document.createElement('input');
+  nameIn.type = 'text';
+  nameIn.className = 'lang-map-name';
+  nameIn.placeholder = T('opt_lang_map_name_ph', '它显示成什么');
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'primary';
+  btn.textContent = T('opt_lang_map_add', '加一行');
+  btn.addEventListener('click', () => {
+    if (addLangRow(codeIn.value, nameIn.value)) { codeIn.value = ''; nameIn.value = ''; }
+  });
+  add.appendChild(codeIn);
+  add.appendChild(nameIn);
+  add.appendChild(btn);
+  host.appendChild(add);
+}
+
+/** 改某行的名字（写进 targetNames；清空 / 填成代码本身 = 回落） */
+function setLangMapName(code, value) {
   if (!state.settings.targetNames) state.settings.targetNames = {};
-  if (v) state.settings.targetNames[code] = v;
-  else delete state.settings.targetNames[code];   // 清空 = 回到内置名
-  /* 下拉里那一项的文字要立刻跟上（不然改了名字、下拉还显示旧的） */
-  const cur = [...els.langSelect.options].find((o) => o.value === code);
-  if (cur) cur.textContent = v || langDisplayName(code, T);
+  const v = String(value || '').trim();
+  if (v && v !== code) state.settings.targetNames[code] = v;
+  else delete state.settings.targetNames[code];
+  /* 下拉里那一项跟着改 */
+  const opt = [...els.langSelect.options].find((o) => o.value === code);
+  if (opt) opt.textContent = targetDisplayOf(code);
   scheduleSave();
   updatePreview();
 }
 
+/** 把某个 code 在表里上移/下移（顺序 = 下拉里的顺序） */
+function moveLang(code, delta) {
+  const order = currentLangMap().map((r) => r.code);
+  const i = order.indexOf(code);
+  const j = i + delta;
+  if (i < 0 || j < 0 || j >= order.length) return;
+  order.splice(j, 0, order.splice(i, 1)[0]);
+  state.settings.langOrder = order;
+  scheduleSave();
+  rebuildLangSelect();
+}
+
+/** 加一行：代码 + 名字 */
+function addLangRow(rawCode, rawName) {
+  const code = String(rawCode || '').trim().toUpperCase();
+  const name = String(rawName || '').trim();
+  if (!code) return false;
+  if (currentLangMap().some((r) => r.code === code)) {
+    alert(T('opt_lang_map_dup', '这个代码已经在表里了。'));
+    return false;
+  }
+  if (!state.settings.targetNames) state.settings.targetNames = {};
+  state.settings.targetNames[code] = name || code;
+  state.settings.langOrder = currentLangMap().map((r) => r.code).concat(code);
+  scheduleSave();
+  rebuildLangSelect();
+  return true;
+}
+
+/** 重建下拉 + 重画表（顺序变了、或者多了行） */
+function rebuildLangSelect() {
+  els.langSelect.innerHTML = '';
+  fillTargetLangOptions();
+  renderTargetLang();
+}
+
 function bindTargetLang() {
   els.langSelect.addEventListener('input', () => {
-    if (els.langSelect.value === LANG_OTHER) {
-      els.langOther.hidden = false;
-      els.langOther.focus();
-      const kept = els.langOther.value.trim();
-      if (kept) setTargetLang(kept);
-      return;
-    }
-    els.langOther.hidden = true;
     setTargetLang(els.langSelect.value);
   });
 
-  els.langOther.addEventListener('input', () => {
-    // 只敲了空格等于没填，别把存档里的语言冲掉
-    const v = els.langOther.value.trim();
-    if (v) setTargetLang(v);
-  });
-
-  if (els.langName) {
-    els.langName.addEventListener('input', () => setTargetName(els.langName.value));
+  const reset = document.getElementById('btn-lang-reset');
+  if (reset) {
+    reset.addEventListener('click', () => {
+      /* 清掉所有改动：名字回内置、顺序回默认、自己加的行也一并去掉 */
+      state.settings.targetNames = {};
+      delete state.settings.langOrder;
+      scheduleSave();
+      rebuildLangSelect();
+    });
   }
 }
 
