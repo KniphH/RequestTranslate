@@ -4603,6 +4603,24 @@ await (async () => {
       const b = (contentSrcDefaults.match(new RegExp(k + ':\\s*([\\d.]+)')) || [])[1];
       check(`prefs 初值 / ${k} 与 store 一致`, a === b, 'store=' + a + ' content=' + b);
     }
+
+  /* **shellHtml 的 div 必须闭合平衡** —— 第十版之后我加 ↻ 按钮时把
+     `"</div></div>"` 那行覆盖掉了，结果 .rt-actions 一路吞到 .rt-body，
+     顶栏从 65px 涨到 119px、e2e 三条高度断言当场红。
+     这类错语法检查抓不到（字符串拼接合法），只能数量一下。 */
+  {
+    const pcSrc = readFileSync(new URL('../lib/panel-core.js', import.meta.url), 'utf8');
+    const fn = pcSrc.slice(pcSrc.indexOf('function shellHtml'));
+    const body = fn.slice(0, fn.indexOf('\n  }'));
+    const open = (body.match(/<div/g) || []).length;
+    const close = (body.match(/<\/div>/g) || []).length;
+    check('shellHtml 里 <div> 与 </div> 数量相等', open === close, open + ' 开 / ' + close + ' 闭');
+    check('rt-actions 后面紧跟 </div></div>（顶栏闭合）',
+      /rt-close|&#10005;<\/button>" \+\s*"<\/div><\/div>"/.test(body.replace(/\s+/g, ' ')) ||
+        /<\/button>" \+\s*"<\/div><\/div>"/.test(body));
+    /* 顶栏那排按钮必须有 ↻（空态提示「点 ↻ 翻译」得有个真按钮可点） */
+    check('shellHtml 里有 data-act=retry 的按钮', /data-act='retry'/.test(body));
+  }
   }
   /* normalizeOcrState 必须**按存档顺序**重建，不能按内置顺序 ——
      否则任何一次 loadState（SW 唤醒、另开一页）都会把用户拖好的顺序重置。

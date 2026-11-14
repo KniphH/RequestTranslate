@@ -254,20 +254,24 @@
    *
    * 只改文本不改结构：重建 innerHTML 会让下面那一串 DOM 引用全变成悬空的。
    */
+  /**
+   * 换界面语言后刷新骨架里那几处**只在 shellHtml() 里写一次**的文案。
+   *
+   * **不碰结果区的 placeholder**（第九版 ④ / 第十版指出的）：那是**动态状态**，
+   * 「等待结果…」「点 ↻ 翻译」「出错了」由各自的流程写，这里一律覆盖会把它们冲掉。
+   * 以前有 `if (out.classList.contains("empty")) out.dataset.placeholder = 等待结果…` ——
+   * 只要面板处于空态，切个语言就把「点 ↻ 翻译」变成「等待结果…」，自相矛盾。
+   */
   function refreshShellText() {
     const srcT = panel.querySelector('[data-act="src"]');
     const closeT = panel.querySelector('[data-act="close"]');
     if (srcT) srcT.title = T('panel_src_toggle', '显示 / 隐藏原文');
     if (closeT) closeT.title = T('panel_close', '关闭 (Esc)');
     if (moreBtn) moreBtn.title = T('panel_more_title', '查看详细信息');
-    const out = panel.querySelector('.rt-out');
-    // 占位符只在空态显示（CSS 用 content: attr(data-placeholder)）
-    if (out && out.classList.contains('empty')) {
-      out.dataset.placeholder = T('panel_waiting', '等待结果…');
-    }
     if (trigger) trigger.title = T('trigger_translate', '翻译选中内容');
+    /* 图钉按钮的 title 也跟着语言走（它由 syncPinBtn 维护，这里补一次） */
+    syncPinBtn();
   }
-
   /** 单条模式下的尾部操作条（多条时每条自己带一排，见 slotHtml） */
 
   function mount() {
@@ -2362,6 +2366,18 @@
   /* ---- 面板交互 ---- */
 
   panel.querySelector('[data-act="close"]').addEventListener('click', hidePanel);
+
+  /* **顶栏那个 ↻**（第十版 ③ 指出：空态提示写着「点 ↻ 翻译」，而顶栏根本没有它）。
+     语义和每条结果尾部那个 ↻ 一样：**重发当前这条**。
+     空态时它是最常用的入口 —— 划完词切了配置没缓存、或者上一轮失败了，都靠它。 */
+  const retryBtn = panel.querySelector('[data-act="retry"]');
+  if (retryBtn) {
+    retryBtn.addEventListener('click', () => {
+      if (busy) return;   // 正在跑就别叠第二条
+      const cid = shownConfigId();
+      retryOne(cid);
+    });
+  }
 
 
   /* 图钉：钉住 / 松开面板位置。
