@@ -238,9 +238,13 @@ def make_zip(files, out, stripped=None, target="chromium"):
                 m.pop("declarative_net_request", None)
                 perms = m.get("permissions")
                 if isinstance(perms, list):
-                    m["permissions"] = [
-                        x for x in perms if x not in ("offscreen", "declarativeNetRequest")
-                    ]
+                    perms = [x for x in perms if x not in ("offscreen", "declarativeNetRequest")]
+                    # 火狐没有 DNR 改头这条路，改用 blocking webRequest
+                    # （2026-11-16：bilibili 通道在火狐上 412，就是因为头没改出去）
+                    for extra in ("webRequest", "webRequestBlocking"):
+                        if extra not in perms:
+                            perms.append(extra)
+                    m["permissions"] = perms
             else:
                 m.pop("browser_specific_settings", None)
                 if bg.get("scripts"):

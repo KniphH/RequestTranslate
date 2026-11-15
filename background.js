@@ -674,3 +674,38 @@ chrome.storage.onChanged.addListener((changes, area) => {
   clearTimeout(menuTimer);
   menuTimer = setTimeout(ensureMenu, 1500);
 });
+
+/* ---- 火狐：把 bilibili 需要的请求头真正发出去 ----
+   Chromium 靠静态 DNR 规则（lib/ua-rules.json）改 UA / Origin；
+   火狐包在打包时把 DNR 整块裁掉了（字段、权限、规则文件），而 fetch 又禁止脚本设
+   Origin —— 请求里既没有 Origin 也没有伪装的 UA，B 站直接回 412 风控页
+   （2026-11-16 实测：Chrome 正常，火狐 HTTP 412）。
+   火狐的 MV3 仍支持 blocking webRequest，用它补这三个头。 */
+function installBiliHeaders() {
+  const wr = typeof browser !== 'undefined' && browser && browser.webRequest;
+  if (!wr || !wr.onBeforeSendHeaders) return false;
+  try {
+    wr.onBeforeSendHeaders.addListener(
+      (details) => {
+        const hs = details.requestHeaders || [];
+        const put = (name, value) => {
+          const hit = hs.find((x) => x.name.toLowerCase() === name.toLowerCase());
+          if (hit) hit.value = value;
+          else hs.push({ name: name, value: value });
+        };
+        put('User-Agent', 'Index-Translate-Client/1.0 SnapCut/1.0');
+        put('Origin', 'https://www.bilibili.com');
+        put('Referer', 'https://www.bilibili.com/');
+        return { requestHeaders: hs };
+      },
+      { urls: ['*://index-translate.bilibili.com/*'] },
+      ['blocking', 'requestHeaders']
+    );
+    return true;
+  } catch (err) {
+    /* 没有 webRequestBlocking（或 Chromium 上不支持 blocking）就当没这回事 */
+    console.warn('[RT] 请求头改写未启用', err);
+    return false;
+  }
+}
+installBiliHeaders();
