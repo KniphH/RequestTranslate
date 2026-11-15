@@ -21,7 +21,6 @@ import sys
 import shutil
 import tempfile
 import zipfile
-import uuid
 from pathlib import Path
 from pack import slim_messages   # 打包/验包共用同一份 messages.json 剥离规则
 
@@ -216,12 +215,17 @@ def main():
     repo_root = Path(__file__).resolve().parent.parent
     stale = []
     compared = 0
-    # 临时目录放在 dist/ 下、名字带随机后缀：**不能放系统 TEMP** —— esbuild 在
-    # Windows 的 %TEMP% 里写 .esbuild-out.js 会 "Access is denied"（实测），
-    # 于是同源检查被吞成「重跑 esbuild 失败」。带后缀就不会和上次残留撞，
-    # finally 里删不掉也只是留个 .verify-xxxx 目录（gitignore 覆盖 dist/）。
-    tmp = repo_root / "dist" / (".verify-" + uuid.uuid4().hex[:8])
-    tmp.mkdir(parents=True, exist_ok=False)
+    # 临时目录放在 dist/ 下、**固定名字**：
+    #   · 不能放系统 TEMP —— esbuild 在 %TEMP% 里写 .esbuild-out.js 会 "Access is denied"
+    #   · 不能用随机后缀 —— 某些环境删不掉，跑一次就堆一个目录（实测堆了十几个）
+    # 固定目录每次先清空再写；删不掉也只是同一个目录被覆盖，不累积。
+    tmp = repo_root / "dist" / ".verify"
+    try:
+        if tmp.exists():
+            shutil.rmtree(tmp, ignore_errors=True)
+    except BaseException:
+        pass
+    tmp.mkdir(parents=True, exist_ok=True)
     try:
         # a) 从 git HEAD 取每个 .js（不是工作区 —— 未提交改动不该让检查变绿）
         src_names_js = [n for n in names if n.endswith((".js", ".css", ".html"))]
