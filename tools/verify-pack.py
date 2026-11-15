@@ -213,9 +213,12 @@ def main():
             shutil.rmtree(tmp)
         tmp.mkdir(parents=True, exist_ok=True)
         # a) 从 git HEAD 取每个 .js（不是工作区 —— 未提交改动不该让检查变绿）
-        js_names = [n for n in names if n.endswith(".js")]
+        src_names_js = [n for n in names if n.endswith((".js", ".css", ".html"))]
+        # 剥注释只做 .js/.css/.html，json 原样复制 —— 这几类都要走同一套变换再比。
+        src_names = [n for n in names if n.endswith((".js", ".css", ".html"))]
+        same_names = [n for n in names if n.endswith((".json", ".md")) and n != "manifest.json"]
         got = []
-        for n in js_names:
+        for n in src_names_js:
             try:
                 data = subprocess.run(
                     ["git", "show", "HEAD:" + n],
