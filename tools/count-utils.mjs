@@ -19,6 +19,14 @@ export function writeCount(name, passed, extra) {
     const head = git(['rev-parse', '--short', 'HEAD']);
     const dirty = git(['status', '--short']).length > 0;
     d[name] = passed;
+    /* `_summary` 存在 = 上一轮已经收尾；这是新一轮，基准要重置。
+       否则一次 STALE 会永久 STALE（head 永远停在旧值），数字再也没法转绿。 */
+    const newRound = !!d['_summary'];
+    if (newRound) {
+      delete d['_summary'];
+      delete d['_stale'];
+      delete d['_meta'];
+    }
     const meta = d['_meta'] || {};
     /* 第一次写数的 HEAD 作为本次运行的基准；后续脚本若在不同 HEAD 上写就标 STALE。 */
     if (!meta.head) meta.head = head;
