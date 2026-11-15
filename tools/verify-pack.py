@@ -272,7 +272,7 @@ def main():
     if stale:
         problems.extend(stale[:12])
     elif compared:
-        print(f"  与源码同源：{compared} 个 .js 与「git HEAD 源码重跑变换」逐文件 md5 一致")
+        print(f"  与源码同源：{compared} 个 .js/.css/.html 与「git HEAD 源码重跑变换」逐文件 md5 一致")
 
     if problems:
         print("\n发现问题：")
