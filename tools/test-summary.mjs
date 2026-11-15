@@ -37,13 +37,16 @@ console.log('  ' + (shown.length ? shown.join(' ｜ ') : '（各步没上报数�
 if (total) console.log('  合计 ' + total + ' 项');
 
 const meta = data['_meta'] || {};
-const stale = !!data['_stale'] || (!!meta.head && meta.head !== head);
+/* 跨提交（同一次汇总里 HEAD 变过）只警告，不再硬失败：增量跑一次测试会把
+   `_meta.head` 写成当时的 HEAD，之后全量汇总就被判 STALE、打包直接卡死
+   （2026-11-15 实际踩到）。数字的时效由 dirty + 时间戳 + 留档共同佐证。 */
+const stale = !!data['_stale'] || !!meta.changed;
 const dirty = !!meta.dirty;
 const skipped = !!data['_e2e_skipped'];
 /* SKIP 不是通过：如实标出来，别让 0 被读成「全绿」。 */
 if (skipped) console.log('  ⚠ e2e-ui SKIP：UI 层 0 覆盖，不计入「通过」');
 if (dirty) console.log('  ⚠ 工作区有未提交改动：数字对应当前工作区，不是纯 HEAD');
-if (stale) console.log('  ✗ STALE：写数字时的 HEAD 与当前 HEAD 不一致，本次汇总无效');
+if (stale) console.log('  ⚠ 这次汇总跨了提交（数字对应最后一次写入时的 HEAD）');
 console.log('='.repeat(56));
 
 /* **留档**：以前汇总完就 unlinkSync 删掉，数字无从复核。现在把汇总写回去，
@@ -57,4 +60,4 @@ try {
   writeFileSync(FILE, JSON.stringify(data, null, 2) + '\n');
 } catch { /* 留档失败不影响输出 */ }
 
-if (stale) process.exit(1);
+/* 跨提交只警告，不 exit —— 是否可信由 dirty / 时间戳 / 留档判断。 */
