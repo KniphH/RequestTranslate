@@ -1585,10 +1585,18 @@ try {
   check('一条变量都没丢（还是 6 条，就是换了个位置）',
     varAfterDrag.dom.length === 6 && varNamesBefore.every((n) => varAfterDrag.dom.includes(n)),
     `${varAfterDrag.dom.length} 条：${varAfterDrag.dom.join(',')}`);
-  const varSavedOrder = await opt.evaluate(async () => {
-    const { state } = await chrome.storage.local.get('state');
-    return state.vars.map((v) => v.name);
-  });
+  /* **轮询等存档跟上**，不用固定 600ms —— 落盘是串行队列（saveChain），
+     机器忙时 600ms 不够，会读到「页面已换序、存档还是旧的」而假红（2026-11-15 实测一次）。
+     最多等 3 秒；顺序仍按严格相等比较，只是不再赌时间。 */
+  let varSavedOrder = [];
+  for (let i = 0; i < 30; i += 1) {
+    varSavedOrder = await opt.evaluate(async () => {
+      const { state } = await chrome.storage.local.get('state');
+      return state.vars.map((v) => v.name);
+    });
+    if (JSON.stringify(varSavedOrder) === JSON.stringify(varAfterDrag.dom)) break;
+    await opt.waitForTimeout(100);
+  }
   check('拖完的顺序落盘了（reload 后还是这个顺序）',
     JSON.stringify(varSavedOrder) === JSON.stringify(varAfterDrag.dom),
     `存档 ${varSavedOrder.slice(0, 3).join(',')}｜页面 ${varAfterDrag.dom.slice(0, 3).join(',')}`);
