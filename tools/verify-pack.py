@@ -224,6 +224,12 @@ def main():
             except subprocess.CalledProcessError:
                 stale.append(f"{n} 在包里但 git HEAD 里没有")
                 continue
+            # **行尾要统一成工作区的形状**：`git show` 给的是仓库里的 LF，
+            # 而打包读的是工作区（Windows 上 core.autocrlf 让它是 CRLF）。
+            # 不统一的话，剥注释后的字节数必然不同 → 天天报假红。
+            # 判据是「仓库源码经同一套变换后是否等于包内字节」，
+            # 行尾属于检出细节，不该参与这个比较。
+            # 做法：按 \n 切成行、去掉尾部 \r、再按工作区的形状重新拼。
             dst = tmp / n
             dst.parent.mkdir(parents=True, exist_ok=True)
             dst.write_bytes(data)
@@ -248,7 +254,8 @@ def main():
                 stale.append(f"{n} 重跑变换后没有产物")
                 continue
             compared += 1
-            if hashlib.md5(z.read(n)).hexdigest() != hashlib.md5(rebuilt.read_bytes()).hexdigest():
+            norm = lambda b: b.replace(b"\r\n", b"\n")   # 行尾是检出细节，不参与比较
+            if hashlib.md5(norm(z.read(n))).hexdigest() != hashlib.md5(norm(rebuilt.read_bytes())).hexdigest():
                 stale.append(
                     f"{n} 与「git HEAD 源码重跑变换」的结果不同"
                     " → 源码改过但没重新打包（或包来自别的提交）"
