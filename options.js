@@ -61,9 +61,7 @@ import { ADAPTERS } from './lib/adapters.js';
 import { BUILTIN_VAR_HINTS, VAR_HINT_KEYS, TARGET_PRESETS, orderedLangCodes, defaultTargetNames, langDisplayName, isSecretVar, modelCandidates, modelVarFor } from './lib/template.js';
 import {
   toDataUrl,
-  pickImageMime,
-  NO_IMAGE_MESSAGE,
-  CLIPBOARD_UNAVAILABLE_MESSAGE
+  pickImageMime
 } from './lib/clipboard.js';
 import { TRIGGER_STYLES, TRIGGER_SVG_SAMPLE, getTriggerStyle, clampTriggerSize, parseTriggerSvg } from './lib/trigger-styles.js';
 import {
@@ -1598,7 +1596,9 @@ async function runTest() {
   if (!got) {
     head.insertAdjacentHTML(
       'beforeend',
-      `<span class="badge err">${rotating ? `${total} 次都没拿到译文` : `${chain.length} 条都没拿到译文`}</span>`
+      `<span class="badge err">${rotating
+        ? T('opt_test_fail_n', '$1$ 次都没拿到译文', [String(total)])
+        : T('opt_test_fail_chain_n', '$1$ 条都没拿到译文', [String(chain.length)])}</span>`
     );
   }
 
@@ -2457,15 +2457,16 @@ function truncateText(s, n) {
 
 /** 剪切板里的第一张图。「里面没图」和「压根读不到」分开报 */
 async function clipboardImage() {
+  const unavailable = T('bg_clip_unavailable', '读不到剪切板，浏览器没放开剪贴板权限？');
   if (!navigator.clipboard || !navigator.clipboard.read) {
-    throw new Error(CLIPBOARD_UNAVAILABLE_MESSAGE);
+    throw new Error(unavailable);
   }
 
   let items;
   try {
     items = await navigator.clipboard.read();
   } catch (err) {
-    throw new Error(CLIPBOARD_UNAVAILABLE_MESSAGE + '（' + ((err && err.message) || err) + '）');
+    throw new Error(unavailable + ' — ' + ((err && err.message) || err));
   }
 
   for (const item of items || []) {
@@ -2476,7 +2477,7 @@ async function clipboardImage() {
     return { dataUrl: toDataUrl(bytes, type), bytes: bytes.length, source: T('opt_source_clipboard', '剪切板') };
   }
 
-  throw new Error(NO_IMAGE_MESSAGE);
+  throw new Error(T('bg_no_image', '剪切板里没有图片'));
 }
 
 async function fileImage(file) {

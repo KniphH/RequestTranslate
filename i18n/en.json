@@ -520,7 +520,12 @@
     "popup_clear": "Clear",
     "popup_open_full_settings": "Open full settings",
     "panel_retry_one": "Retry",
-    "panel_no_text_hint": "Select some text first, or use screenshot translation"
+    "panel_no_text_hint": "Select some text first, or use screenshot translation",
+    "opt_test_fail_n": "No translation after $1$ attempt(s)",
+    "opt_test_fail_chain_n": "No translation from any of the $1$ request(s)",
+    "diag_no_content": "No content found in the response; the structure is: ",
+    "bg_no_image": "No image in the clipboard",
+    "bg_clip_unavailable": "Cannot read the clipboard — did the browser deny clipboard permission?"
   },
   "placeholders": {
     "panel_switched_to": {

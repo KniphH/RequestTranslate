@@ -26,7 +26,6 @@ import {
   activeOcrProvider,
   runOcr
 } from './lib/ocr.js';
-import { NO_IMAGE_MESSAGE, CLIPBOARD_UNAVAILABLE_MESSAGE } from './lib/clipboard.js';
 import { readClipboardImage as readClipboardInPage, errText as clipErrText } from './lib/clipboard-read.js';
 import { msg as tMsg, invalidateI18nCache } from './lib/i18n-msg.js';
 // 顶栏那个「目标语言」下拉的候选。页面那边 import 不了模块，只能这样捎过去，
@@ -417,8 +416,9 @@ chrome.runtime.onConnect.addListener((port) => {
         safePost({
           type: 'ocr-error',
           message: reason === 'no-image'
-            ? NO_IMAGE_MESSAGE
-            : CLIPBOARD_UNAVAILABLE_MESSAGE + ((shot && shot.error) ? '（' + shot.error + '）' : '')
+            ? await tMsg('bg_no_image', '剪切板里没有图片')
+            : (await tMsg('bg_clip_unavailable', '读不到剪切板，浏览器没放开剪贴板权限？')) +
+              ((shot && shot.error) ? ' — ' + shot.error : '')
         });
         return;
       }

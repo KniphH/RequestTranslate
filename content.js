@@ -882,7 +882,14 @@
     if (r.missingVars && r.missingVars.length) {
       rows.push({ k: T('diag_missing', '缺失变量'), v: r.missingVars.join('、'), err: true });
     }
-    for (const w of (r.warnings || [])) rows.push({ k: T('diag_warn', '提示'), v: w, warn: true });
+    for (const w of (r.warnings || [])) {
+      /* warning 可能是字符串（解析器的备注），也可能是 { code, text, shape } ——
+         后者按当前语言重算，shape 是运行时结构不翻。 */
+      const v = (w && typeof w === 'object' && w.code)
+        ? T(w.code, w.text || '') + (w.shape || '')
+        : w;
+      rows.push({ k: T('diag_warn', '提示'), v, warn: true });
+    }
     if (r.error) rows.push({ k: T('diag_err', '错误'), v: r.error, err: true });
     return rows;
   }

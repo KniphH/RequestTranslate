@@ -2306,5 +2306,30 @@
   },
   "panel_no_text_hint": {
     "message": "先划选文字，或用截图翻译"
+  },
+  "opt_test_fail_n": {
+    "message": "$1$ 次都没拿到译文",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_test_fail_chain_n": {
+    "message": "$1$ 条都没拿到译文",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "diag_no_content": {
+    "message": "响应里没找到内容，返回结构是："
+  },
+  "bg_no_image": {
+    "message": "剪切板里没有图片"
+  },
+  "bg_clip_unavailable": {
+    "message": "读不到剪切板，浏览器没放开剪贴板权限？"
   }
 }
