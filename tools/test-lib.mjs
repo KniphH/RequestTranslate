@@ -5116,6 +5116,8 @@ section('变异测试补盲（2026-11-16，注入 bug 实测的 9 个漏网）')
   check('$N$ 参数取下标是 n-1（不是 n）', /params\[Number\(n\) - 1\]/.test(msgSrc3));
   check('t() 优先取下载包（不是先问 chrome.i18n）',
     /typeof pack\.strings\[key\] === "string"/.test(iSrc3));
+  check('火狐的细滚动条（@supports -moz-appearance + scrollbar-width: thin）',
+    /@supports \(-moz-appearance: none\) \{[\s\S]{0,220}scrollbar-width: thin/.test(pcSrc2));
   check('火狐包注入 webRequest / webRequestBlocking 权限', /webRequestBlocking/.test(packPy2));
   check('background 用 blocking webRequest 改写 bilibili 头',
     /onBeforeSendHeaders\.addListener/.test(bgSrc2) && /'blocking', 'requestHeaders'/.test(bgSrc2));
