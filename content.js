@@ -703,10 +703,20 @@
 
        多条对比时**别清空结果区**（kniph 2026-10-17）：抹掉等于把别的条已经翻好的
        译文一起清了、滚动位置也归零。交给 renderSlots 按槽渲染。 */
+    /* **单条也走块渲染**（kniph 2026-11-16）：多条对比时「翻译中…」贴在配置名旁边，
+       单条却铺一句「等待结果…」，两种形态不一样。有槽就按槽画。 */
     if (slots.length <= 1) {
-      outBox.textContent = '';
-      outBox.dataset.placeholder = placeholder;
-      outBox.classList.add('empty');
+      const only = slots[0];
+      if (only) {
+        only.state = 'busy';
+        only.error = '';
+        outBox.classList.remove('empty');
+        renderSlots();
+      } else {
+        outBox.textContent = '';
+        outBox.dataset.placeholder = placeholder;
+        outBox.classList.add('empty');
+      }
     } else {
       outBox.classList.remove('empty');
     }
