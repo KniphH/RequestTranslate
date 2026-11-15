@@ -4702,6 +4702,41 @@ await (async () => {
   check('代码里用到的 key 在英文包里也都有（不只是中文包）',
     orphanEn.length === 0, orphanEn.slice(0, 6).join(', '));
 
+  /* **popup 整页必须走 i18n**（第十一版 §1：它当时 9 处中文、data-i18n 数 0，
+     而且 popup.js 只查 chrome.i18n 不查下载包 → 装英文包仍全中文）。 */
+  {
+    const popupHtml = readFileSync(new URL('../popup.html', import.meta.url), 'utf8');
+    const popupJs = readFileSync(new URL('../popup.js', import.meta.url), 'utf8');
+    check('popup.html 的按钮/占位符都带 data-i18n（不再是裸中文）',
+      (popupHtml.match(/data-i18n(?:-title|-ph)?=/g) || []).length >= 8,
+      String((popupHtml.match(/data-i18n(?:-title|-ph)?=/g) || []).length) + ' 处');
+    check('popup.js 会载入下载语言包（不是只查 chrome.i18n）',
+      /rt_i18n/.test(popupJs) && /loadPopupPack/.test(popupJs));
+    check('popup.js 启动时先载包再铺界面',
+      /await loadPopupPack\(\)[\s\S]{0,200}applyPopupI18n\(\)/.test(popupJs));
+  }
+
+  /* **语言包的值必须和 HTML 原文等价**（第十一版 §2：约 30 处被简写降级 ——
+     结论留着、操作指引丢了，applyI18n 一跑就把详细版换成简版，用户静默降级）。
+     语义上没法自动比，但可以比**长度比例**：简写通常只剩 1/3。 */
+  {
+    const optHtml = readFileSync(new URL('../options.html', import.meta.url), 'utf8');
+    const optsZh = JSON.parse(readFileSync(new URL('../_locales/zh_CN/messages.json', import.meta.url), 'utf8'));
+    const bad = [];
+    for (const m of optHtml.matchAll(/<([a-z]+)[^>]*?\bdata-i18n(?:-html)?="([^"]+)"[^>]*>([\s\S]{0,300}?)<\/\1>/g)) {
+      const key = m[2];
+      const inner = m[3].trim();
+      if (!optsZh[key] || !inner) continue;
+      const pack = optsZh[key].message.trim();
+      if (pack === inner) continue;
+      /* 允许 ±20% 的差异（标点、空白），超出就报 */
+      const ratio = pack.length / inner.length;
+      if (ratio < 0.8) bad.push(key + '(' + Math.round(ratio * 100) + '%)');
+    }
+    check('语言包的中文值和 options.html 原文等价（不许简写降级）',
+      bad.length === 0, bad.slice(0, 6).join(', '));
+  }
+
 /* ---- check 不许嵌套（第九版 §2 P2）----
    两条 check 嵌在另一条的实参里时，它们靠副作用执行、失败信息也会错位。
    这种写法语法完全合法，肉眼很难看出来，所以用逐字符扫描钉住。

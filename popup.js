@@ -11,16 +11,61 @@ const $ = (s) => document.querySelector(s);
 const sel = $('#sel');
 const langSel = $('#lang');
 
-/** popup 没有 T()（那套只在 content/options 里有），直接问 chrome.i18n */
-function uiText(key) {
+/**
+ * popup 没有 T()（那套只在 content/options 里有），但**不能只查 chrome.i18n**：
+ * chrome.i18n 读的是 _locales/，而语言包是运行时从 GitHub 下载的（rt_i18n）——
+ * 只查 chrome.i18n 的话，用户装了英文包 popup 仍然全中文（第十一版 §1 指出）。
+ *
+ * 顺序和 lib/i18n.js 的 t() 一致：**下载包 → chrome.i18n → key**。
+ */
+let packStrings = null;
+
+async function loadPopupPack() {
   try {
-    return (chrome.i18n && chrome.i18n.getMessage(key)) || key;
+    const got = await chrome.storage.local.get('rt_i18n');
+    const p = got && got.rt_i18n;
+    packStrings = p && p.strings ? p.strings : null;
   } catch {
-    return key;
+    packStrings = null;
   }
 }
 
+function uiText(key, params) {
+  let out = null;
+  if (packStrings && typeof packStrings[key] === 'string') out = packStrings[key];
+  if (out == null) {
+    try {
+      const got = chrome.i18n && chrome.i18n.getMessage(key, params);
+      if (got) out = got;
+    } catch { /* 忽略 */ }
+  }
+  if (out == null) out = key;
+  if (params && params.length) {
+    out = String(out).replace(/\$(\d+)\$?/g, (m, n) => {
+      const v = params[Number(n) - 1];
+      return v == null ? m : String(v);
+    });
+  }
+  return out;
+}
 /** 语言代码在当前语言下该显示成什么（用户改过的名字优先） */
+/**
+ * 把带 data-i18n / -title / -ph 的静态节点填上文案。
+ * 和 lib/i18n.js 的 applyI18n 同一套语义（那个是给普通脚本用的，popup 是 ESM，不能直接 import）。
+ */
+function applyPopupI18n(root) {
+  const scope = root || document;
+  for (const el of scope.querySelectorAll('[data-i18n]')) {
+    el.textContent = uiText(el.dataset.i18n);
+  }
+  for (const el of scope.querySelectorAll('[data-i18n-title]')) {
+    el.title = uiText(el.dataset.i18nTitle);
+  }
+  for (const el of scope.querySelectorAll('[data-i18n-ph]')) {
+    el.placeholder = uiText(el.dataset.i18nPh);
+  }
+}
+
 function langNameOf(code) {
   const names = (state && state.settings && state.settings.targetNames) || {};
   return names[code] || langDisplayName(code, uiText);
@@ -95,6 +140,11 @@ function applyTheme() {
 }
 
 async function init() {
+  /* **语言包要先载入再铺界面**（第十一版 §1：popup 整页没进 i18n）。
+     顺序反了用户会先看见中文再闪成英文。 */
+  await loadPopupPack();
+  applyPopupI18n();
+
   state = await loadState();
   applyTheme();
 
