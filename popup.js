@@ -237,7 +237,7 @@ $('#btn-clear').addEventListener('click', () => {
   txt.focus();
 });
 
-$('#btn-open').addEventListener('click', () => chrome.runtime.openOptionsPage());
+/* 设置入口只保留底部那一个（顶部齿轮与底部链接重复，kniph 2026-11-15 要求去掉齿轮）。 */
 $('#link-options').addEventListener('click', () => chrome.runtime.openOptionsPage());
 
 async function run() {

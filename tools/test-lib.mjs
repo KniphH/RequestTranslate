@@ -4738,7 +4738,7 @@ await (async () => {
     const popupHtml = readFileSync(new URL('../popup.html', import.meta.url), 'utf8');
     const popupJs = readFileSync(new URL('../popup.js', import.meta.url), 'utf8');
     check('popup.html 的按钮/占位符都带 data-i18n（不再是裸中文）',
-      (popupHtml.match(/data-i18n(?:-title|-ph)?=/g) || []).length >= 8,
+      (popupHtml.match(/data-i18n(?:-title|-ph)?=/g) || []).length >= 7,
       String((popupHtml.match(/data-i18n(?:-title|-ph)?=/g) || []).length) + ' 处');
     check('popup.js 会载入下载语言包（不是只查 chrome.i18n）',
       /rt_i18n/.test(popupJs) && /loadPopupPack/.test(popupJs));
@@ -4961,10 +4961,10 @@ section('批次 A 闭环：用户可见修复的行为断言');
   /* A1：PRIVACY 中英与实际联网行为一致，CSS 句子不再串进语言包条目 */
   const privacy = readFileSync(new URL('../PRIVACY.md', import.meta.url), 'utf8');
   check('PRIVACY 中文不再声称「不换语言就永远不联网」', !privacy.includes('不换语言就永远不联网'));
-  check('PRIVACY 中文写明点开下拉会取一次清单',
-    /点开（或用键盘聚焦）设置页的语言下拉框/.test(privacy) && /取一次清单/.test(privacy));
-  check('PRIVACY 英文写明 opening/focusing dropdown 会预取',
-    /Opening \(or focusing\) the language dropdown/.test(privacy) && /probes the available packs/.test(privacy));
+  check('PRIVACY 中文写明语言包内置、点开下拉只核对更新',
+    /点开（或用键盘聚焦）设置页的语言下拉框/.test(privacy) && /随扩展一起分发/.test(privacy) && /核对一次仓库/.test(privacy));
+  check('PRIVACY 英文写明 packs are bundled、打开下拉只核对更新',
+    /Opening \(or focusing\) the language dropdown/.test(privacy) && /ship with the extension/.test(privacy) && /checks the repository once/.test(privacy));
   check('PRIVACY 英文 CSS 说明独立成条',
     /- \*\*Custom panel CSS may load remote resources\*\*/.test(privacy) &&
     !/dropdown fetches nothing\. If you put an `@import`/.test(privacy));
@@ -5050,6 +5050,27 @@ section('批次 C 闭环：i18n 补填 / 后台并发 / 口径边界的行为断
     .map((f) => readFileSync(new URL('../lib/' + f, import.meta.url), 'utf8'));
   check('除 i18n 引擎自身外，lib 内部不出现 data-i18n（诊断文案不进 UI 查表面）',
     libSrcs.every((s) => !s.includes('data-i18n')));
+}
+
+section('语言包内置 / 入口去重（2026-11-15 实测反馈）');
+{
+  const iSrc2 = readFileSync(new URL('../lib/i18n.js', import.meta.url), 'utf8');
+  const packPy = readFileSync(new URL('./pack.py', import.meta.url), 'utf8');
+  const popupHtml2 = readFileSync(new URL('../popup.html', import.meta.url), 'utf8');
+  const optHtml2 = readFileSync(new URL('../options.html', import.meta.url), 'utf8');
+
+  check('语言包随包分发（pack.py 的 DIRS 含 i18n）',
+    /DIRS\s*=\s*\[[^\]]*"i18n"/.test(packPy));
+  check('loadPack 优先读包内语言包（loadBundled 在返回缓存之前）',
+    /async function loadBundled\(/.test(iSrc2) &&
+    /const bundled = await loadBundled\(lang\);/.test(iSrc2) &&
+    iSrc2.indexOf('await loadBundled(lang)') < iSrc2.indexOf('pack = cached;'));
+  check('切语言优先用包内那份（离线，不依赖网络）',
+    /const bundled = await loadBundled\(lang\);[\s\S]{0,500}offline: true/.test(iSrc2));
+  check('popup 只保留底部「打开完整设置」（顶部齿轮已删）',
+    !/id="btn-open"/.test(popupHtml2) && /id="link-options"/.test(popupHtml2));
+  check('语言代码表说明可以「不再显示」（data-hint 齐全）',
+    /data-hint="lang-map"[^>]*data-i18n-html="opt_lang_map_hint"/.test(optHtml2));
 }
 
 console.log('\n' + '='.repeat(46));
