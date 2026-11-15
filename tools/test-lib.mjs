@@ -5071,6 +5071,14 @@ section('语言包下发 / 入口去重（2026-11-15 实测反馈）');
     !/id="btn-open"/.test(popupHtml2) && /id="link-options"/.test(popupHtml2));
   check('语言代码表说明可以「不再显示」（data-hint 齐全）',
     /data-hint="lang-map"[^>]*data-i18n-html="opt_lang_map_hint"/.test(optHtml2));
+
+  /* engine 的 warning 改成了 { code, text, shape }；设置页四处渲染必须走 warnText，
+     否则模板里直接插对象会显示 [object Object]（2026-11-15 实测）。 */
+  const optSrc2 = readFileSync(new URL('../options.js', import.meta.url), 'utf8');
+  check('设置页 4 个 warning 渲染点都走 warnText',
+    /function warnText\(/.test(optSrc2) &&
+    (optSrc2.match(/warnText\(w\)|\.map\(warnText\)/g) || []).length >= 4 &&
+    !/escapeHtml\(w\)/.test(optSrc2));
 }
 
 console.log('\n' + '='.repeat(46));
