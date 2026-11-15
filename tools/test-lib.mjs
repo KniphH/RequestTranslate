@@ -4482,7 +4482,7 @@ await (async () => {
   check('enterBusy 写 placeholder 后立刻加 empty（不是先 remove）',
     /dataset\.placeholder = placeholder;[\s\S]{0,80}classList\.add\('empty'\)/.test(contentSrc2));
   check('showNoCachedResult 同样是 placeholder + empty 成对',
-    /dataset\.placeholder = T\('panel_click_retry', '点 ↻ 翻译'\);[\s\S]{0,80}classList\.add\('empty'\)/.test(contentSrc2));
+    /dataset\.placeholder = T\('panel_click_retry', '划选文字或截图后开始翻译'\);[\s\S]{0,80}classList\.add\('empty'\)/.test(contentSrc2));
 
   /* done/fatal 的 if (!sl)：别的槽可能还在飞，不能无条件 leaveBusy */
   check('if (!sl) 分支不再无条件 leaveBusy（要 allSettled）',
@@ -4646,7 +4646,7 @@ await (async () => {
       /rt-close|&#10005;<\/button>" \+\s*"<\/div><\/div>"/.test(body.replace(/\s+/g, ' ')) ||
         /<\/button>" \+\s*"<\/div><\/div>"/.test(body));
     /* 顶栏那排按钮必须有 ↻（空态提示「点 ↻ 翻译」得有个真按钮可点） */
-    check('shellHtml 里有 data-act=retry 的按钮', /data-act='retry'/.test(body));
+    check('顶栏不再有 retry 按钮（重试只在结果尾部）', !/data-act='retry'/.test(body));
   }
   }
   /* normalizeOcrState 必须**按存档顺序**重建，不能按内置顺序 ——
@@ -4913,12 +4913,7 @@ section('批次 A 闭环：用户可见修复的行为断言');
     return s.slice(st + 1, s.indexOf('\n  }', st + 1) + 4);
   };
 
-  /* A3：顶栏 ↻ 空态不隐式触发截图翻译 */
-  const shouldRetry = new Function(cut(cSrc, 'shouldRetryFromPanel') + '\nreturn shouldRetryFromPanel;')();
-  check('顶栏 ↻：有原文可重发', shouldRetry('hello', null) === true);
-  check('顶栏 ↻：有图可重发', shouldRetry('', { image: 'data:...' }) === true);
-  check('顶栏 ↻：既无原文也无图 → 不重发（不读剪切板截图）',
-    shouldRetry('', null) === false && shouldRetry('', { image: '' }) === false);
+  /* 顶栏 ↻ 已删（2026-11-16）：重试只在结果尾部，这条断言随之取消。 */
 
   /* A6：发送失败后回滚 busy 槽 */
   const slots = [{ configId: 'a', state: 'busy', text: '旧译文' }, { configId: 'b', state: 'busy', text: '' }];
@@ -4975,8 +4970,8 @@ section('批次 A 闭环：用户可见修复的行为断言');
   check('panel_retry_one 两包都有、与 panel_retry 语义不同',
     zhPack.panel_retry_one.message === '重试' && enPack.panel_retry_one === 'Retry' &&
     enPack.panel_retry === 'Translate again');
-  check('顶栏用 panel_retry、译文尾用 panel_retry_one',
-    pcSrc.includes("T('panel_retry', '重新翻译')") && pcSrc.includes("T('panel_retry_one', '重试')"));
+  check('译文尾用 panel_retry_one，顶栏不再有 panel_retry',
+    pcSrc.includes("T('panel_retry_one', '重试')") && !pcSrc.includes("T('panel_retry',"));
 
   /* B6：白屏检测的反例进测试仓库 —— 不靠「e2e 真机手跑过一次」当证据。 */
   const { detectBootFailure } = await import('./boot-check.mjs');

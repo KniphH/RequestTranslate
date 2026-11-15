@@ -1803,7 +1803,7 @@
     }
   },
   "panel_click_retry": {
-    "message": "点 ↻ 翻译",
+    "message": "划选文字或截图后开始翻译",
     "description": "面板状态行"
   },
   "panel_close": {
@@ -2074,7 +2074,7 @@
     "description": "朗读按钮的 title（正在播放时）"
   },
   "panel_switched_to": {
-    "message": "已切到「$1$」，点 ↻ 翻译",
+    "message": "已切到「$1$」，划选文字即可翻译",
     "description": "面板状态行",
     "placeholders": {
       "1": {

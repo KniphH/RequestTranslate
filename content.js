@@ -279,11 +279,9 @@
    */
   function refreshShellText() {
     const closeT = panel.querySelector('[data-act="close"]');
-    const retryT = panel.querySelector('[data-act="retry"]');
     if (closeT) closeT.title = T('panel_close', '关闭 (Esc)');
     if (moreBtn) moreBtn.title = T('panel_more_title', '查看详细信息');
     if (trigger) trigger.title = T('trigger_translate', '翻译选中内容');
-    if (retryT) retryT.title = T('panel_retry', '重新翻译');
     /* 原文按钮的 title 带「当前显示中 / 隐藏中」，交给 syncSrcBtn 统一写；
        以前这里用通用文案覆盖，applyState 里先 syncSrcBtn 再 refreshShellText 就被冲掉了。 */
     syncSrcBtn();
@@ -912,12 +910,6 @@
     moreBtn.classList.remove('warn');
   }
 
-  /* 顶栏 ↻ 只在「有原文或有图」时才该重发；空态不该隐式触发截图翻译。
-     抽成纯函数，test-lib 直接真跑，而不是拿源码正则钉一段 handler 文本。 */
-  function shouldRetryFromPanel(text, ocr) {
-    return !!text || !!(ocr && ocr.image);
-  }
-
   /* 重连收尾：忙碌中的槽统一退回 idle，不谎称完成（第十版）。
      抽成纯函数，让断言能验证「busy → idle、不出现 done、译文保留」。 */
   function settleSlotsAfterReconnect(list) {
@@ -1193,7 +1185,7 @@
        单槽显示「点 ↻ 翻译」，多槽交给 renderSlots 画每槽的空态。 */
     if (slots.length <= 1) {
       outBox.textContent = '';
-    outBox.dataset.placeholder = T('panel_click_retry', '点 ↻ 翻译');
+    outBox.dataset.placeholder = T('panel_click_retry', '划选文字或截图后开始翻译');
       outBox.classList.add('empty');
     } else {
       outBox.classList.remove('empty');
@@ -1202,7 +1194,7 @@
     /* 这两句**在 for 外面**：以前被误缩进到循环体内，
        等于清完最后一个槽才设一次。 */
     setDot('');
-      setStatus(hit ? T('panel_switched_to', '已切到「$1$」，点 ↻ 翻译', [hit.name]) : T('panel_click_retry', '点 ↻ 翻译'));
+      setStatus(hit ? T('panel_switched_to', '已切到「$1$」，划选文字即可翻译', [hit.name]) : T('panel_click_retry', '点 ↻ 翻译'));
   }
 
   /* 吃一份配置列表：面板顶栏下拉用的 `configs`（带 img 标记）和图片模式专用的
@@ -2457,24 +2449,8 @@
 
   panel.querySelector('[data-act="close"]').addEventListener('click', hidePanel);
 
-  /* **顶栏那个 ↻**（第十版 ③ 指出：空态提示写着「点 ↻ 翻译」，而顶栏根本没有它）。
-     语义和每条结果尾部那个 ↻ 一样：**重发当前这条**。
-     空态时它是最常用的入口 —— 划完词切了配置没缓存、或者上一轮失败了，都靠它。 */
-  const retryBtn = panel.querySelector('[data-act="retry"]');
-  if (retryBtn) {
-    retryBtn.addEventListener('click', () => {
-      if (busy) return;   // 正在跑就别叠第二条
-      /* 顶栏 ↻ 是「重发当前这条」。既没有原文也没有图时，retryOne() 会退化成
-         retryShot() 去读剪切板截图 —— 那是另一条功能的入口，不该由「翻译」按钮隐式触发。
-         空态直接给一句提示，用户自己决定是划词还是截图。 */
-      if (!shouldRetryFromPanel(currentText, lastOcr)) {
-        setStatus(T('panel_no_text_hint', '先划选文字，或用截图翻译'), 'warn');
-        return;
-      }
-      const cid = shownConfigId();
-      retryOne(cid);
-    });
-  }
+  /* 顶栏不再有 ↻：重试只在每条结果尾部（data-act='retry-one'）。
+     空态靠提示引导划词 / 截图，不靠一个隐式按钮（kniph 2026-11-16）。 */
 
 
   /* 图钉：钉住 / 松开面板位置。
