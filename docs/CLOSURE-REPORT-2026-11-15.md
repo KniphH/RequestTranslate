@@ -108,9 +108,9 @@
 **验证依据（全部来自脚本输出）**
 
 ```
-npm test（提交 0e73d29 后）：
+npm test（最后一次全量，HEAD ecc1a99）：
   test-lib 1151 ｜ test-engine 89 ｜ test-strip 19 ｜ e2e-ui 558 ｜ pack-fixture 3
-  合计 1820 项，0 失败；静态检查 2 项通过
+  合计 1820 项，0 失败；静态检查 2 项通过；无 STALE、工作区干净（dirty=false）
 
 打包（python tools/pack.py --xpi，内部含全量）：
   zip 126,457 B（123.5 KB）｜ xpi 125,516 B（122.6 KB），各 32 个文件
