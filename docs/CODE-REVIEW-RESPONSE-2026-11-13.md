@@ -2,9 +2,9 @@
 
 > 第十一版的三个 P0 **全部成立，全部是我上一轮引入的**。已修，并按判据 1 做了证伪。
 >
-> 基线：HEAD `d66a008`，工作区干净。
-> **全量汇总 2026-11-15 15:02:06 HEAD 41a9a58**：1116 ｜ 89 ｜ 19 ｜ 557 ｜ 2 = **1783 项**。
-> zip 123,442 B ／ xpi 122,499 B。
+> 基线：HEAD `0a82cd7`，工作区干净。
+> **全量汇总 2026-11-15 16:03:19 HEAD 0a82cd7**：1122 ｜ 89 ｜ 19 ｜ 558 ｜ 2 = **1790 项**。
+> zip 125,275 B ／ xpi 124,332 B。
 
 ## 一、P0-1 右键菜单全空
 
@@ -85,18 +85,61 @@ xpi 122,499 字节（119.6 KB）
 同源检查已证伪：篡改一个字节 → 立刻报红 ✓
 ```
 
-## 七、仍未做（如实列出）
+## 七、第十一版「其余未闭环」逐条处置
 
 | 项 | 状态 |
 | --- | --- |
-| `popup.html` 的 9 处中文 / 零 `data-i18n` | **没做**。整页缺席 i18n，装英文包 popup 仍全中文 |
-| 语言包文案不等价（约 30 处被简写降级） | **没做**。`applyI18n` 用 textContent 还会抹掉内联标签 |
-| lib 内部 243 行中文 | **没做**，也不在 89% 的分母里 |
-| `verify-pack` 只比 .js | 没做（不含 css/html/manifest） |
-| 夹具 zip 不进 git | 没做，干净 clone 上 SKIP |
-| `showFailure` 多槽不落槽 / `renderSlotResult` 漏 err | 没做 |
-| 预览 `|| 46` 吞掉合法 0 | 没做 |
-| `PRIVACY` 说「不换语言不联网」但 `probeOnce()` 会提前联网 | 没做 |
+| `popup.html` 9 处中文 / 零 data-i18n | ✅ **已修**。8 处加标记；`uiText` 改成「下载包 → chrome.i18n → key」；init 先 `loadPopupPack()` 再 `applyPopupI18n()`。真浏览器实测中英都正确 |
+| 语言包约 30 处简写降级 | ✅ **已修 27 处**。以 options.html 原文为准同步 zh 值；10 处改用 `data-i18n-html`（否则 textContent 抹掉内联标签）；英文按完整语义重写 |
+| `applyI18n` 抹掉内联标签 | ✅ 同上（改用 `-html` 通道走 sanitizeInlineHtml） |
+| `showFailure` 多槽不落槽 | ✅ 已修：错误落到还没有结果的槽上 |
+| `renderSlotResult` 漏 ``'err'`` | ✅ 已修：新增 `settledAllFailed()` |
+| 预览 `|| 46` 吞掉合法 0 | ✅ 已修：改 `Number.isFinite` 判 |
+| 预览 460/20 旧默认 | ✅ 已修：走 `DEFAULT_SETTINGS` |
+| `PRIVACY` 说「不换语言不联网」 | ✅ 已修：如实写「点开下拉框会预取一次」 |
+| 夹具 zip 不进 git | ✅ 已修：移到 `tools/fixtures/`（132 KB 进 git，干净 clone 也有） |
+| `verify-pack` 只比 .js | ✅ 已修：扩到 .js/.css/.html，**21 → 25 个文件** |
+| `panel_retry` 一 key 两义 | ⚠️ **未做**。顶栏「重新翻译」与译文尾「重试」共用，语义可接受但不够精确 |
+| 顶层 `DIRECT_SRC_NOTE` 在 loadPack 前求值 | ⚠️ **未做**。切语言不刷新那句 |
+| lib 内部 243 行中文 | ⚠️ **未做**。需要先定口径（大量是诊断键与错误信息） |
+| `runCtrls` 不同 wantId 兜底到同一 cid | ⚠️ **未做** |
+| `getSession` 共享首个调用者 signal | ⚠️ **未做**。首个取消会连坐 |
+| `pack.py:201-202` 双 continue | ⚠️ **未做** |
+| `options.css:1000-1015` 定死 39px 裁长英文 | ⚠️ **未做** |
+
+## 七之二、这一轮我自己引入的 P0
+
+**改预览兜底时把 `const fs` / `const h` 两行覆盖掉了**，
+于是 `--rt-fs` 那段引用未定义变量 → init 抛 ReferenceError →
+**整个设置页白屏**，只剩一句「设置页初始化失败：fs is not defined」。
+
+### 三个验证器都没拦住
+
+| 验证器 | 为什么 |
+| --- | --- |
+| `node --check` | 语法没问题，是运行时 ReferenceError |
+| `check-globals` | 它只看函数调用，`fs` 是个变量名 |
+| e2e | **跑挂了，但报的是「page.waitForSelector 超时」** —— 真实原因藏在页面文字里没被读出来 |
+
+### 修 + 加防线
+
+补回两行定义。另外在 e2e 里**先判白屏、再等元素**：
+
+```js
+const bootFail = await opt.evaluate(() => {
+  const t = (document.body.textContent || '').trim();
+  return t.length < 200 && /失败|failed|Error/i.test(t) ? t.slice(0, 200) : '';
+});
+check('设置页没有白屏 / 初始化失败', !bootFail, bootFail);
+```
+
+**证伪**：临时把 `const fs` 改成 `const fsX`，e2e 立刻报
+
+```
+FAIL 设置页没有白屏 / 初始化失败  设置页初始化失败：fs is not defined
+```
+
+而不是以前那句「找不到元素」。恢复后转绿。
 
 ## 八、四条失明断言：全部修好了
 
