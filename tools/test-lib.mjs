@@ -5081,6 +5081,35 @@ section('语言包下发 / 入口去重（2026-11-15 实测反馈）');
     !/escapeHtml\(w\)/.test(optSrc2));
 }
 
+section('变异测试补盲（2026-11-16，注入 bug 实测的 9 个漏网）');
+{
+  const packPy2 = readFileSync(new URL('./pack.py', import.meta.url), 'utf8');
+  const bgSrc2 = readFileSync(new URL('../background.js', import.meta.url), 'utf8');
+  const iSrc3 = readFileSync(new URL('../lib/i18n.js', import.meta.url), 'utf8');
+  const { validateParsedRequest } = await import('../lib/request-parser.js');
+
+  check('pack.py 白名单只有 lib/_locales/icons（docs 不许进包）',
+    /DIRS\s*=\s*\["lib",\s*"_locales",\s*"icons"\]/.test(packPy2));
+  check('done 回包必须用 wantId', /type: 'done',\s*configId: wantId/.test(bgSrc2));
+  check('localizeResult 会翻译 warnings', /r\.warnings = await Promise\.all\(/.test(bgSrc2));
+  check('GET 带 body 会被拦',
+    validateParsedRequest({ url: 'https://x', method: 'GET', body: 'a' }).length === 1);
+
+  /* 「已填不覆盖」要用**每次不同的文本**才能看见 —— 同一份 t() 重复填，覆盖了也看不出差别 */
+  const nodesB = [{ dataset: { i18nHtml: 'k' }, innerHTML: '' }];
+  const scopeB = { querySelectorAll: () => nodesB };
+  let n3 = 0;
+  const tB = (key) => '<b>' + key + '#' + (n3 += 1) + '</b>';
+  const st3 = iSrc3.indexOf('\n  function applyI18nHtml(');
+  const fnB = iSrc3.slice(st3 + 1, iSrc3.indexOf('\n  }', st3 + 1) + 4);
+  const applyB = new Function('t', 'sanitizeInlineHtml',
+    fnB + '\nreturn applyI18nHtml;')(tB, (x) => x);
+  applyB(scopeB);
+  applyB(scopeB, { onlyMissing: true });
+  check('第二次 applyI18n 不覆盖已填节点（文本不会变第二版）',
+    nodesB[0].innerHTML === '<b>k#1</b>', nodesB[0].innerHTML);
+}
+
 console.log('\n' + '='.repeat(46));
 console.log(`通过 ${passed} 项，失败 ${failed} 项`);
 console.log('='.repeat(46));

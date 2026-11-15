@@ -353,6 +353,7 @@ console.log('\n12. 报错与异常');
   check('结构对不上时给出结构说明',
     (r.error || '').includes('没提取到译文') && String(r.errorParams || '').includes('foo'),
     (r.error || '') + ' | ' + JSON.stringify(r.errorParams || []));
+  check('无译文时带 err_no_extract（边界层可翻译）', r.errorCode === 'err_no_extract', r.errorCode);
 }
 {
   const r = await runRequest({ requestText: 'curl http://127.0.0.1:1/nope', vars });
