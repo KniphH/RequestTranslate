@@ -37,16 +37,15 @@ console.log('  ' + (shown.length ? shown.join(' ｜ ') : '（各步没上报数�
 if (total) console.log('  合计 ' + total + ' 项');
 
 const meta = data['_meta'] || {};
-/* 跨提交（同一次汇总里 HEAD 变过）只警告，不再硬失败：增量跑一次测试会把
-   `_meta.head` 写成当时的 HEAD，之后全量汇总就被判 STALE、打包直接卡死
-   （2026-11-15 实际踩到）。数字的时效由 dirty + 时间戳 + 留档共同佐证。 */
-const stale = !!data['_stale'] || !!meta.changed;
+/* `_stale` 只来自旧版文件；跨提交（meta.changed）只是提示，不当作失败。
+   数字的时效由 HEAD（最后一次写入时）+ dirty + 时间戳 + 留档共同佐证。 */
+const stale = !!data['_stale'];
 const dirty = !!meta.dirty;
 const skipped = !!data['_e2e_skipped'];
-/* SKIP 不是通过：如实标出来，别让 0 被读成「全绿」。 */
+/* SKIP 不是通过：如实标出来，别让 0 读成「全绿」。 */
 if (skipped) console.log('  ⚠ e2e-ui SKIP：UI 层 0 覆盖，不计入「通过」');
 if (dirty) console.log('  ⚠ 工作区有未提交改动：数字对应当前工作区，不是纯 HEAD');
-if (stale) console.log('  ⚠ 这次汇总跨了提交（数字对应最后一次写入时的 HEAD）');
+if (meta.changed) console.log('  ⚠ 这次汇总跨了提交（HEAD 见上行，为最后一次写入时的值）');
 console.log('='.repeat(56));
 
 /* **留档**：以前汇总完就 unlinkSync 删掉，数字无从复核。现在把汇总写回去，
