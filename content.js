@@ -137,16 +137,27 @@
   /* 不再单独取 TRIGGER_CSS：PANEL_CSS 内部已 `${TRIGGER_CSS}` 插值拼好，
      单独存一份只会让人以为还有个地方在用它（第六版 §2 ⑦）。 */
   /* 文案查表。lib/i18n.js 是普通脚本、在 manifest 里排在 panel-core 前面；
-     万一它没加载，回落成中文原文 —— 面板不能因为少一个文件就显示成 key。 */
-  function T(key, fallback) {
+     万一它没加载，回落成中文原文 —— 面板不能因为少一个文件就显示成 key。
+
+     **三形参**（第十一版 §2 P0-2 指出这里只有两个）：options.js 里同名函数早就
+     转发 params 了，这里漏了 —— 于是 content.js 里十几处带 `$1$` 的文案
+     （「已切到「$1$」，点 ↻ 翻译」「翻译中…（$1$ 条）」…）中英包都渲染成字面量 $1$。
+     同一个名字两套口径，是我这轮最大的疏忽。 */
+  function T(key, fallback, params) {
     const api = window.RTI18n;
     if (api && typeof api.t === "function") {
-      const got = api.t(key);
+      const got = api.t(key, params);
       if (got && got !== key) return got;
+    }
+    /* 语言包没这条时也要替换 —— 兜底文案里同样有 $1$ */
+    if (params && params.length) {
+      return String(fallback).replace(/\$(\d+)\$?/g, (m, n) => {
+        const v = params[Number(n) - 1];
+        return v == null ? m : String(v);
+      });
     }
     return fallback;
   }
-
   /* 用户粘进来的自定义 SVG 要过的几道关。⚠️ 同样与 lib/trigger-styles.js 的
      SVG_GUARDS 一致（测试逐个正则比对）。为什么是「整体拒绝」而不是「改写危险标签」，
      见那边的注释 —— 这段 HTML 会插进 shadow DOM，而 content script 的世界能碰 chrome.*。 */
@@ -630,17 +641,26 @@
 
   /* 顶栏那盏灯的四种状态（悬停时给一句话，省得靠猜） */
   /* 小圆点顶部那句提示。做成函数而不是常量表 —— 换了语言要能立刻跟着变 */
-  const dotTip = (kind) => {
+  /**
+   * 灯的悬停提示。
+   *
+   * `kind` 为空 = 熄灭，这时给「空闲」而不是「翻译失败」——
+   * 第十一版 §2 P0-3 指出：后台被回收后的收尾调 `setDot('')`，
+   * 原来 dotTip 只认 on/ok、其余一律返回「翻译失败」，于是**什么都没发生却报失败**。
+   */
+  const dotTip = (kind, tip) => {
+    if (tip) return tip;                    // 调用方给了具体文案就用它
     if (kind === 'on') return T('trigger_dot_on', '正在翻译…');
     if (kind === 'ok') return T('trigger_dot_ok', '翻译成功');
-    return T('trigger_dot_err', '翻译失败');
+    if (kind === 'err') return T('trigger_dot_err', '翻译失败');
+    return T('dot_idle_tip', '空闲');
   };
 
-  function setDot(kind) {
+  /** 第二参是可选的悬停文案 —— 以前它被吞掉，`setDot('', 「空闲」)` 会反写成「翻译失败」 */
+  function setDot(kind, tip) {
     dot.className = 'rt-dot' + (kind ? ' ' + kind : '');
-    dot.title = dotTip(kind);
+    dot.title = dotTip(kind, tip);
   }
-
   /* ---- 两种「铺界面」的公共骨架 ----------------------------------------
      「进忙碌态」和「报失败」在多处出现（翻译开场 / OCR 开场 / 截图开场失败 /
      结果失败 / OCR 失败）。各写一套的话，总线数一样，但改一处（比如多收一个诊断行、
@@ -1591,17 +1611,17 @@
     const cur = list.find((c) => c.id === want);
     const who = cur ? cur.name : '';
     const extra = !imgMode && slots.length > 1
-      ? T('panel_compare_note', '（对比中：共 $1$ 条）').replace('$1$', String(slots.length))
+      ? T('panel_compare_note', '（对比中：共 $1$ 条）', [String(slots.length)])
       : '';
     if (cfgMode !== 'image') {
       cfgSelect.title = cur
-        ? T('panel_cfg_with', '翻译接口：$1$').replace('$1$', who + extra)
+        ? T('panel_cfg_with', '翻译接口：$1$', [who + extra])
         : T('panel_cfg_only', '翻译接口');
     } else if (imageConfigs.length) {
-      cfgSelect.title = T('panel_img_cfg_with', '图片接口：$1$').replace('$1$', who);
+      cfgSelect.title = T('panel_img_cfg_with', '图片接口：$1$', [who]);
     } else {
       cfgSelect.title = T('panel_img_none', '还没有任何配置填过「图片请求模板」——去设置页的「配置」栏给能看图的那条填上，' +
-      '它才会出现在这个列表里。现在用的是「$1$」').replace('$1$', who);
+      '它才会出现在这个列表里。现在用的是「$1$」', [who]);
     }
   }
 

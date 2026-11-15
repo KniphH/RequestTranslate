@@ -52,7 +52,7 @@ function ensureMenu() {
       if (state.settings.contextMenu) {
         chrome.contextMenus.create({
           id: MENU_ID,
-          title: await msg('menuTranslate', '用 RequestTranslate 翻译选中内容'),
+      title: await tMsg('menuTranslate', '用 RequestTranslate 翻译选中内容'),
           contexts: ['selection']
         });
       }
@@ -62,11 +62,11 @@ function ensureMenu() {
       // 描述由 lib/ocr.js 出（那条文案和 id 只有一份，测试也照它断言）。
       // **标题必须按当前界面语言传进去**：不传就用库里的中文常量，
       // 英文界面下右键菜单仍是中文（第七版 §3.7）。
-      const ocrItem = ocrMenuItem(state.settings, await msg('menuOcrClipboard', '翻译剪切板中的截图'));
+    const ocrItem = ocrMenuItem(state.settings, await tMsg('menuOcrClipboard', '翻译剪切板中的截图'));
       if (ocrItem) chrome.contextMenus.create(ocrItem);
 
       // 「框选截图翻译」同样独立开关（settings.shotMenu），和剪切板那条可以同时开。
-      const shotItem = shotMenuItem(state.settings, await msg('menuShotTranslate', '框选截图翻译'));
+    const shotItem = shotMenuItem(state.settings, await tMsg('menuShotTranslate', '框选截图翻译'));
       if (shotItem) chrome.contextMenus.create(shotItem);
       /* 忽略 */
     } finally {

@@ -4537,9 +4537,9 @@ await (async () => {
     /prefs\.targetLang = langSnap\.targetLang;[\s\S]{0,600}langSelect\.value = langSnap\.targetLang;/.test(contentSrc2));
 
   /* 右键菜单标题必须接 i18n，否则英文界面仍是中文 */
-  check('两条 OCR 菜单标题都按当前语言传进去',
-    /ocrMenuItem\(state\.settings, await msg\('menuOcrClipboard'/.test(readFileSync(new URL('../background.js', import.meta.url), 'utf8')) &&
-      /shotMenuItem\(state\.settings, await msg\('menuShotTranslate'/.test(readFileSync(new URL('../background.js', import.meta.url), 'utf8')));
+  check('两条 OCR 菜单标题都按当前语言传进去（tMsg 或 msg 均可，不能写死中文）',
+    /ocrMenuItem\(state\.settings, await (?:t)?[Mm]sg\('menuOcrClipboard'/.test(readFileSync(new URL('../background.js', import.meta.url), 'utf8')) &&
+      /shotMenuItem\(state\.settings, await (?:t)?[Mm]sg\('menuShotTranslate'/.test(readFileSync(new URL('../background.js', import.meta.url), 'utf8')));
 
   /* pendingConfigId 必须有赋值（否则两处兜底是死分支） */
   check('pendingConfigId 有赋值（不是只读）',
@@ -4748,13 +4748,30 @@ await (async () => {
    check-globals 抓不到（msg 确实「有定义」），e2e 抓到 25 条红。 */
 {
   const bgSrc = readFileSync(new URL('../background.js', import.meta.url), 'utf8');
-  const importLine = bgSrc.split('\n').find((l) => l.includes('i18n-msg.js')) || '';
-  const importedName = (importLine.match(/import\s*\{\s*msg(?:\s+as\s+(\w+))?/) || [])[1] || 'msg';
-  /* 这个文件里所有回调参数叫 msg 的地方，都会遮蔽同名 import */
+  const bgLines = bgSrc.split('\n');
+  const importLine = bgLines.find((l) => l.includes('i18n-msg.js')) || '';
+  const im = importLine.match(/import\s*\{\s*msg(?:\s+as\s+(\w+))?/);
+  const importedAs = im ? (im[1] || 'msg') : null;
+  check('background.js 从 i18n-msg 导入了 msg', !!importedAs, importedAs || '没找到 import');
+
+  /* **反例在这条里**：import 改名了但还有代码调旧名 → ReferenceError。
+     第十一版 §2 P0-1 就是这么栽的（改名只改 5/8 处，右键菜单整个空掉），
+     而当时那条断言只验「importedName !== msg」，照样通过。
+     所以这里扫的是**所有调用了旧名的行**，不只管 import 怎么写。 */
+  if (importedAs && importedAs !== 'msg') {
+    const stray = [];
+    for (let k = 0; k < bgLines.length; k += 1) {
+      const line = bgLines[k];
+      if (/^\s*(\/\/|\*|\/\*)/.test(line)) continue;
+      if (/(^|[^\w$.])msg\s*\(/.test(line)) stray.push('L' + (k + 1));
+    }
+    check('没有残留调用旧名 msg( 的地方（改名要扫全文件）',
+      stray.length === 0, stray.length ? '残留：' + stray.join(', ') : '');
+  }
+
+  /* 参数遮蔽本身也挡一道：import 没改名而回调参数又叫 msg */
   const shadows = /addListener\(\s*async\s*\(\s*msg\b|function\s*\w+\s*\(\s*msg\b/.test(bgSrc);
-  check('background.js 里 i18n 的 msg 没被同名参数遮蔽',
-    !(shadows && importedName === 'msg'),
-    shadows ? '有回调参数叫 msg，import 必须改名（如 msg as tMsg）' : '');
+  check('background.js 的回调参数 msg 没有遮蔽 i18n 的 msg', !(shadows && importedAs === 'msg'));
 }
 
 console.log('\n' + '='.repeat(46));

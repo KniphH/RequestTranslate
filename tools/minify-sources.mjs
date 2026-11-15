@@ -9,7 +9,7 @@
 //   —— 同时对每个 .js 跑一次 `node --check`，剥坏了当场退出非零
 //   —— 最后一行输出 JSON：{"<相对路径>": <剥后字节数>, ...}
 
-import { mkdirSync, readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, mkdtempSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -44,7 +44,14 @@ let before = 0;
 let after = 0;
 
 for (const name of names) {
-  const src = readFileSync(join(ROOT, name), 'utf8');
+  /* **先看 outDir 里有没有同名文件**（第十一版 §3 判据 3 指出这里只读 ROOT）：
+     打包时 outDir 是空的、ROOT 就是源码，两者等价；
+     但 verify-pack 的「从 git HEAD 重跑变换」会先把 HEAD 的字节写进 outDir，
+     这一读 ROOT 就把刚写进去的 HEAD 内容覆盖掉了 —— git show 变成装饰。
+     现在优先读 outDir，没有才回落 ROOT。 */
+  const inOut = join(outDir, name);
+  const src = readFileSync(existsSync(inOut) ? inOut : join(ROOT, name), 'utf8');
+
   const out = stripOne(name, src);
   // 剥坏了吗？当场炸 —— 装上才发现面板打不开就晚了
   if (name.endsWith('.js')) {
