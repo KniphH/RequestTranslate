@@ -39,6 +39,7 @@ import json
 import shutil
 import subprocess
 import sys
+import uuid
 import zipfile
 from pathlib import Path
 
@@ -117,15 +118,11 @@ def strip_sources(files):
     if not targets:
         return None
 
-    tmp = ROOT / "dist" / ".stripped"
-    if tmp.exists():
-        # 清理失败绝不能把打包打断：某些环境的批量删除保护会让 rmtree 抛 BaseException
-        # （2026-11-15 打包实测：run_tests 已通过、下一步清理旧目录时整包中止）。
-        try:
-            shutil.rmtree(tmp, ignore_errors=True)
-        except BaseException:
-            pass
-    tmp.mkdir(parents=True, exist_ok=True)
+    # **每次用全新目录**：minify-sources 在「输出目录已有同名文件」时会把它当输入
+    # （`existsSync(inOut) ? inOut : ROOT/name`），残留的 .stripped 会让新代码永远进不了包
+    # —— 2026-11-16 打包实测：包里是几轮之前的 lib/*.js，verify-pack 当场报「与 HEAD 不同」。
+    tmp = ROOT / "dist" / (".stripped-" + uuid.uuid4().hex[:6])
+    tmp.mkdir(parents=True, exist_ok=False)
 
     r = subprocess.run(
         ["node", str(ROOT / "tools" / "minify-sources.mjs"), str(tmp), *targets],
@@ -469,6 +466,14 @@ def main():
         crx = make_crx(files, version, out.parent, stripped)
         csize = crx.stat().st_size
         print(f"crx：{crx}，{csize:,} 字节（{csize / 1024:.1f} KB）")
+
+
+    # 收尾：删掉剥注释的临时目录（删不掉就算了，dist/ 已在 .gitignore 里）
+    if stripped:
+        try:
+            shutil.rmtree(stripped, ignore_errors=True)
+        except BaseException:
+            pass
 
 
 if __name__ == "__main__":
