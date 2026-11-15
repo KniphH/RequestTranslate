@@ -309,11 +309,11 @@
     "description": "设置页：cfg 区域"
   },
   "opt_cfg_intro": {
-    "message": "照着内置那条改就行，占位符别动。",
+    "message": "照着内置那条改：换地址、模型名、提示词，<b>占位符别动</b>。",
     "description": "设置页 JS 动态文案"
   },
   "opt_cfg_requests": {
-    "message": "主请求先发，失败才按顺序试后备。",
+    "message": "一条配置能挂好几条请求：<b>主请求</b>先发，它挂了就按顺序试勾上的<b>后备请求</b>。",
     "description": "设置页 JS 动态文案"
   },
   "opt_cfg_title_prefixed": {
@@ -618,7 +618,7 @@
     "html": true
   },
   "opt_hint_panelcss": {
-    "message": "只作用于面板。<code>#rt-panel</code> 和 <code>.rt-*</code> 是稳定钩子。",
+    "message": "这段 CSS 会<strong>注入到面板自己的 shadow root 里</strong>。面板不在页面 DOM 中，所以把它贴到 Stylus / user.css 是<strong>无效的</strong> —— 只能写在这儿。<br>可用的钩子：<code>#rt-panel</code>（面板本体，id 选择器优先级高于预设，一般不用 <code>!important</code>）、<code>[data-rt-theme=\"dark\"]</code> 与 <code>[data-rt-theme=\"light\"]</code>（按主题分别写）、<code>.rt-head</code> <code>.rt-cfg</code> <code>.rt-lang</code> <code>.rt-out</code> <code>.rt-src</code> <code>.rt-slot</code> <code>.rt-slot-h</code> <code>.rt-slot-name</code> <code>.rt-slot-b</code> <code>.rt-acts</code> <code>.rt-act</code> <code>.rt-foot</code> <code>.rt-msg</code> <code>.rt-more</code> <code>.rt-diag</code> <code>.d-k</code> <code>.d-v</code> <code>.rt-btn</code> <code>.rt-dot</code>。这些名字<strong>不会改</strong>（真要改会给别名）。",
     "description": "设置页：整段说明（含内联标签，走 data-i18n-html）"
   },
   "opt_hint_trigidle": {
@@ -697,7 +697,7 @@
     "description": "设置页"
   },
   "opt_imgtpl_hint": {
-    "message": "填了才会出现在「图片配置」里；留空复用上面那段。",
+    "message": "<b>填了这段（主请求或哪条后备都行），这条配置才会出现在 OCR 栏的「图片配置」列表里。</b>它管翻图，上面那段继续管划词翻译；留空就回退到上面那段。<br>写成多模态的样子，比如：<code>{\"role\":\"user\",\"content\":[{\"type\":\"image_url\",\"image_url\":{\"url\":\"{{image}}\"}},{\"type\":\"text\",\"text\":\"把图里的文字翻成{{target}}，只输出译文\"}]}</code><br>这段里 <code>{{text}}</code> 是空串 —— 直传时图片本身就是原文。",
     "description": "图片请求模板下方的说明"
   },
   "opt_imgtpl_ph": {
@@ -980,11 +980,11 @@
     "description": "设置页"
   },
   "opt_ocr_direct_intro": {
-    "message": "截图跳过 OCR，直接交给左边的图片配置。",
+    "message": "现在是<b>图片直传</b>：截图不过 OCR，直接交给左边选中那条的<b>「图片请求模板」</b>去翻。",
     "description": "设置页：OCR 栏头部说明（含内联标签）"
   },
   "opt_ocr_intro": {
-    "message": "先用这里选中的配置把图转成文字，再交给「配置」翻译。",
+    "message": "<b>「翻译剪切板中的截图」</b>和<b>「框选截图翻译」</b>都先用这里<b>选中</b>的配置把图转成文字，再交给「配置」翻译。",
     "description": "设置页：OCR 栏头部说明（含内联标签）"
   },
   "opt_password_empty": {
@@ -996,11 +996,11 @@
     "description": "设置页"
   },
   "opt_path_hint_ocr": {
-    "message": "如 <code>words_result</code>。留空自动识别。",
+    "message": "点号 + 下标，例如百度的 <code>words_result</code>（一行一个对象，会按行拼成一段）。留空时依次尝试各家常见的返回结构。",
     "description": "响应提取路径下方说明（OCR）"
   },
   "opt_path_hint_text": {
-    "message": "如 <code>data.translations[0].translatedText</code>。留空自动识别。",
+    "message": "点号 + 下标，例如 <code>data.translations[0].translatedText</code>。留空时会依次尝试各家常见的返回结构。",
     "description": "响应提取路径下方说明（文本）"
   },
   "opt_ph_209": {
@@ -1598,7 +1598,7 @@
     "description": "设置页 title 区域"
   },
   "opt_title_202": {
-    "message": "浮出一个和网页上一模一样的面板",
+    "message": "把一个和网页上一模一样的面板浮到页面上（能拖动、点 ✕ 关闭）",
     "description": "设置页 title 区域"
   },
   "opt_title_203": {
@@ -1606,11 +1606,11 @@
     "description": "设置页 title 区域"
   },
   "opt_title_204": {
-    "message": "导出全部配置为一个 JSON 文件（含明文 Key，只发给自己）",
+    "message": "把全部配置 / 变量 / 设置 / OCR 导出成一个 JSON 文件（里面有明文 API Key，只发给你自己）",
     "description": "设置页 title 区域"
   },
   "opt_title_205": {
-    "message": "用口令加密导出（AES-GCM）。口令丢了文件解不开",
+    "message": "勾上后导出的文件会用口令加密（AES-GCM），发给别人、存网盘都不怕泄露。口令不恢复 —— 丢了文件就解不开。",
     "description": "设置页 title 区域"
   },
   "opt_title_206": {
@@ -1626,11 +1626,11 @@
     "description": "设置页 title 区域"
   },
   "opt_tpl_hint_ocr": {
-    "message": "除占位符外原样发出。表单接口用 <code>{{imageUrlEncoded}}</code>。",
+    "message": "除占位符外一字不改地发出去；<b>提示词直接写在请求文本里</b>，不是占位符。三个图片占位符的区别见上面那排标签的悬停提示 —— 百度那类表单接口要 <code>{{imageUrlEncoded}}</code>（base64 里的 <code>+</code> 不转成 <code>%2B</code> 会被当空格）。Key 走 <code>{{apiKey}}</code>，别写死在模板里。",
     "description": "请求模板下方的说明（OCR）"
   },
   "opt_tpl_hint_text": {
-    "message": "curl 或原始报文都行，只替换占位符。换行写 <code>\\n</code>。",
+    "message": "curl 和原始 HTTP 报文都行，除占位符外一字不改地发出去。JSON 里不能有裸换行（写 <code>\\n</code>），双引号写 <code>\\\"</code>；行首 <code>#</code> 是注释。",
     "description": "请求模板下方的说明（文本翻译）"
   },
   "opt_tpl_not_filled": {
@@ -2300,5 +2300,11 @@
   "varhint_url": {
     "message": "所在页面地址",
     "description": "内置变量的说明（变量页签那张表）"
+  },
+  "panel_retry_one": {
+    "message": "重试"
+  },
+  "panel_no_text_hint": {
+    "message": "先划选文字，或用截图翻译"
   }
 }

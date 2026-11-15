@@ -516,15 +516,10 @@ server.close();
 console.log('\n' + '='.repeat(46));
 console.log(`通过 ${passed} 项，失败 ${failed} 项`);
 console.log('='.repeat(46));
-/* 把这一次的通过数写进 .test-counts.json，供 tools/test-summary.mjs 汇总（带时间戳）。
-   第八版判据 4：回应里的数字要能绑定到某一次具体运行，不能引用先前的日志。 */
+/* 计数走一处真相源：写通过数 + 当时的 HEAD / 工作区状态，汇总时复核。 */
 try {
-  const { readFileSync: __rf, writeFileSync: __wf } = await import('node:fs');
-  const __p = new URL('../.test-counts.json', import.meta.url);
-  let __d = {};
-  try { __d = JSON.parse(__rf(__p, 'utf8')); } catch { /* 首次 */ }
-  __d['test-engine'] = passed;
-  __wf(__p, JSON.stringify(__d));
+  const { writeCount } = await import('./count-utils.mjs');
+  writeCount('test-engine', passed);
 } catch { /* 汇总失败不影响测试结论 */ }
 
 process.exit(failed === 0 ? 0 : 1);

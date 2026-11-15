@@ -136,40 +136,44 @@
     以前这里是手抄一份 + 逐字比对断言，改样式要同步两处（text-align 就漏过一次）。 */
   /* 不再单独取 TRIGGER_CSS：PANEL_CSS 内部已 `${TRIGGER_CSS}` 插值拼好，
      单独存一份只会让人以为还有个地方在用它（第六版 §2 ⑦）。 */
+  /* 最近一次 T() 的结果。setStatus(T(...)) 是紧跟的调用，用它把状态行和 key 对上；
+     不用「译文→key」全局表，避免不同 key 译文相同时串味。 */
+  let lastTLookup = null;
+  let lastStatusI18n = null;
+  let lastStatusRenderedText = '';
+
   /* 文案查表。lib/i18n.js 是普通脚本、在 manifest 里排在 panel-core 前面；
      万一它没加载，回落成中文原文 —— 面板不能因为少一个文件就显示成 key。
-
-     **三形参**（第十一版 §2 P0-2 指出这里只有两个）：options.js 里同名函数早就
-     转发 params 了，这里漏了 —— 于是 content.js 里十几处带 `$1$` 的文案
-     （「已切到「$1$」，点 ↻ 翻译」「翻译中…（$1$ 条）」…）中英包都渲染成字面量 $1$。
-     同一个名字两套口径，是我这轮最大的疏忽。 */
+     **三形参**（第十一版 P0-2）：params 必须转发，兜底文案里的 $1$ 也要替换。 */
   function T(key, fallback, params) {
     const api = window.RTI18n;
+    let out = fallback == null ? '' : String(fallback);
     if (api && typeof api.t === "function") {
       const got = api.t(key, params);
-      if (got && got !== key) return got;
+      if (got && got !== key) out = got;
     }
-    /* 语言包没这条时也要替换 —— 兜底文案里同样有 $1$ */
-    if (params && params.length) {
-      return String(fallback).replace(/\$(\d+)\$?/g, (m, n) => {
+    if (out === String(fallback ?? '') && params && params.length) {
+      out = out.replace(/\$(\d+)\$?/g, (m, n) => {
         const v = params[Number(n) - 1];
         return v == null ? m : String(v);
       });
     }
-    return fallback;
+    lastTLookup = { out: out, meta: { key: key, fallback: fallback, params: params } };
+    return out;
   }
-  /* 用户粘进来的自定义 SVG 要过的几道关。⚠️ 同样与 lib/trigger-styles.js 的
-     SVG_GUARDS 一致（测试逐个正则比对）。为什么是「整体拒绝」而不是「改写危险标签」，
-     见那边的注释 —— 这段 HTML 会插进 shadow DOM，而 content script 的世界能碰 chrome.*。 */
+  /* 用户粘进来的自定义 SVG 要过的几道关。⚠️ 与 lib/trigger-styles.js 的 SVG_GUARDS 一致
+     （测试逐个正则比对）。reason 在 content 侧从不显示（sanitizeTriggerSvg 只返回空串或原文），
+     设置页用自己的副本提示用户 —— 所以这里是静态中文常量，不做 T() 顶层求值：
+     语言包是异步载入的，写成 T(...) 只会把第一次的译文钉死、还制造死键。 */
   const SVG_GUARDS = [
-    { re: /^<svg[\s>]/i, negate: true, reason: T('svg_reason_start', '要以 <svg 开头') },
-    { re: /<\/svg>\s*$/i, negate: true, reason: T('svg_reason_end', '要以 </svg> 结尾') },
+    { re: /^<svg[\s>]/i, negate: true, reason: '要以 <svg 开头' },
+    { re: /<\/svg>\s*$/i, negate: true, reason: '要以 </svg> 结尾' },
     {
       re: /<\s*(?:script|foreignObject|iframe|image|use|a|style|animate|set)\b/i,
-    reason: T('svg_reason_forbidden_tag', '不能有 <script> / <foreignObject> / <use> / <image> / <a> / <style> 这类标签')
+      reason: '不能有 <script> / <foreignObject> / <use> / <image> / <a> / <style> 这类标签'
     },
-    { re: /\son[a-z]+\s*=/i, reason: T('svg_reason_event', '不能带 onload / onclick 这类事件属性') },
-    { re: /\b(?:xlink:)?href\s*=/i, reason: T('svg_reason_href', '不能带 href 外链') }
+    { re: /\son[a-z]+\s*=/i, reason: '不能带 onload / onclick 这类事件属性' },
+    { re: /\b(?:xlink:)?href\s*=/i, reason: '不能带 href 外链' }
   ];
 
   /** 通过检查就原样返回，否则返回空串（页面这边不需要原因，设置页会告诉用户） */
@@ -274,14 +278,18 @@
    * 只要面板处于空态，切个语言就把「点 ↻ 翻译」变成「等待结果…」，自相矛盾。
    */
   function refreshShellText() {
-    const srcT = panel.querySelector('[data-act="src"]');
     const closeT = panel.querySelector('[data-act="close"]');
-    if (srcT) srcT.title = T('panel_src_toggle', '显示 / 隐藏原文');
+    const retryT = panel.querySelector('[data-act="retry"]');
     if (closeT) closeT.title = T('panel_close', '关闭 (Esc)');
     if (moreBtn) moreBtn.title = T('panel_more_title', '查看详细信息');
     if (trigger) trigger.title = T('trigger_translate', '翻译选中内容');
+    if (retryT) retryT.title = T('panel_retry', '重新翻译');
+    /* 原文按钮的 title 带「当前显示中 / 隐藏中」，交给 syncSrcBtn 统一写；
+       以前这里用通用文案覆盖，applyState 里先 syncSrcBtn 再 refreshShellText 就被冲掉了。 */
+    syncSrcBtn();
     /* 图钉按钮的 title 也跟着语言走（它由 syncPinBtn 维护，这里补一次） */
     syncPinBtn();
+    refreshStatusText();
   }
   /** 单条模式下的尾部操作条（多条时每条自己带一排，见 slotHtml） */
 
@@ -635,8 +643,19 @@
   }
 
   function setStatus(text, kind) {
-    msgBox.textContent = text || '';
+    const rendered = text || '';
+    msgBox.textContent = rendered;
     msgBox.className = 'rt-msg' + (kind ? ' ' + kind : '');
+    /* 静态 i18n 文案才记元数据；拼出来的动态状态（HTTP · 耗时 · 路径）不记。 */
+    lastStatusI18n = (lastTLookup && lastTLookup.out === rendered) ? lastTLookup.meta : null;
+    lastStatusRenderedText = rendered;
+  }
+
+  /* 切语言时重算状态行：只在它仍是刚才那条静态文案时动手，别覆盖后来写入的实时状态。 */
+  function refreshStatusText() {
+    if (!lastStatusI18n || msgBox.textContent !== lastStatusRenderedText) return;
+    msgBox.textContent = T(lastStatusI18n.key, lastStatusI18n.fallback, lastStatusI18n.params);
+    lastStatusRenderedText = msgBox.textContent;
   }
 
   /* 顶栏那盏灯的四种状态（悬停时给一句话，省得靠猜） */
@@ -886,6 +905,29 @@
     moreBtn.classList.remove('warn');
   }
 
+  /* 顶栏 ↻ 只在「有原文或有图」时才该重发；空态不该隐式触发截图翻译。
+     抽成纯函数，test-lib 直接真跑，而不是拿源码正则钉一段 handler 文本。 */
+  function shouldRetryFromPanel(text, ocr) {
+    return !!text || !!(ocr && ocr.image);
+  }
+
+  /* 重连收尾：忙碌中的槽统一退回 idle，不谎称完成（第十版）。
+     抽成纯函数，让断言能验证「busy → idle、不出现 done、译文保留」。 */
+  function settleSlotsAfterReconnect(list) {
+    for (const s2 of list) {
+      if (s2 && s2.state === 'busy') s2.state = 'idle';
+    }
+    return list;
+  }
+
+  /* 发送失败时把刚标 busy 的槽退回；slotBy 由调用方提供，便于单测注入。 */
+  function rollbackBusySlots(ids) {
+    for (const id of ids) {
+      const sl = slotBy(id);
+      if (sl && sl.state === 'busy') sl.state = sl.text ? 'done' : 'idle';
+    }
+  }
+
   /* ---- 端口通信 ---- */
 
   let port = null;
@@ -965,15 +1007,13 @@
        下一次 handleDisconnect 会撞到 RECONNECT_MAX，那时才报错。 */
     if (!wasBusy) return;
     /* 忙碌中断开：那条请求确实丢了，别让面板永远停在「翻译中…」。
-       **不把槽标成 done**（第十版指出：会把带半截 delta 的槽显示成「完成」+ 残缺译文）
-       —— 有译文的留在原状态让用户判断，没译文的退回 idle。 */
+       **不把槽标成 done**（第十版指出：会把带半截 delta 的槽显示成「完成」+ 残缺译文），
+       统一退回 idle；slotStatus 的 idle 分支不显示半截文本，正好符合「不谎称完成」。 */
     leaveBusy();
-    for (const s2 of slots) {
-      if (s2 && s2.state === 'busy') s2.state = s2.text ? 'idle' : 'idle';
-    }
+    settleSlotsAfterReconnect(slots);
     resetDiag();
     renderSlots();
-      setStatus(T('panel_reconnect_interrupted', '后台被系统回收过，这条请求中断了 —— 请重新翻译一次'), 'warn');
+    setStatus(T('panel_reconnect_interrupted', '后台被系统回收过，这条请求中断了 —— 请重新翻译一次'), 'warn');
     setDot('', T('dot_idle_tip', '空闲'));
   }
 
@@ -1170,6 +1210,9 @@
     if (!msg) return;
 
     if (msg.type === 'ready') {
+      /* 后台回 hello 说明这条连接是活的：连续重连计数归零。
+         以前只在超过上限时归零，火狐每 30 秒回收一次，攒够 4 次就误报「扩展已更新」。 */
+      reconnectTries = 0;
       applyConfigList(msg.configs);
       if (typeof msg.imageConfigId === 'string') imageConfigId = msg.imageConfigId;
       if (Array.isArray(msg.targetLangs)) targetLangs = msg.targetLangs;
@@ -1709,7 +1752,10 @@
 
   /* ---- 翻译 ---- */
 
-  const DIRECT_SRC_NOTE = T('panel_direct_note', '（这张截图直接发给了模型，没有先做外置 OCR）');
+  /* 惰性求值：语言包异步载入，写成顶层常量会把第一次（中文）译文钉死。 */
+  function directSrcNote() {
+    return T('panel_direct_note', '（这张截图直接发给了模型，没有先做外置 OCR）');
+  }
 
   /**
    * 直传那一屏：把截的图贴到原文区。
@@ -1725,11 +1771,11 @@
     img.addEventListener('error', () => {
       img.remove();
       srcBox.classList.remove('has-img');
-      srcBox.textContent = DIRECT_SRC_NOTE;
+      srcBox.textContent = directSrcNote();
     });
     img.src = dataUrl;
     const note = document.createElement('div');
-    note.textContent = DIRECT_SRC_NOTE;
+    note.textContent = directSrcNote();
     srcBox.append(img, note);
   }
 
@@ -1820,7 +1866,7 @@
     if (slots.length > 1) renderSlots();
 
     const p = ensurePort();
-    postOrFail(p, {
+    const sent = postOrFail(p, {
       type: 'translate',
       text: payload,
       configIds: targets,
@@ -1832,6 +1878,12 @@
         image: hasImage ? ocr.image : ''
       }
     });
+    if (!sent) {
+      /* postOrFail 已经调 portGone() 收掉全局 busy；这里把刚标 busy 的槽也退回，
+         否则多槽面板会永远停在「翻译中…」。 */
+      rollbackBusySlots(targets);
+      if (slots.length > 1) renderSlots();
+    }
   }
 
   function openWith(text, anchor) {
@@ -2405,6 +2457,13 @@
   if (retryBtn) {
     retryBtn.addEventListener('click', () => {
       if (busy) return;   // 正在跑就别叠第二条
+      /* 顶栏 ↻ 是「重发当前这条」。既没有原文也没有图时，retryOne() 会退化成
+         retryShot() 去读剪切板截图 —— 那是另一条功能的入口，不该由「翻译」按钮隐式触发。
+         空态直接给一句提示，用户自己决定是划词还是截图。 */
+      if (!shouldRetryFromPanel(currentText, lastOcr)) {
+        setStatus(T('panel_no_text_hint', '先划选文字，或用截图翻译'), 'warn');
+        return;
+      }
       const cid = shownConfigId();
       retryOne(cid);
     });

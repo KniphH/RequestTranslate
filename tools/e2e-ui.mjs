@@ -17,16 +17,12 @@
 
 import http from 'node:http';
 import fs from 'node:fs';
+import { detectBootFailure } from './boot-check.mjs';
+import { writeCount } from './count-utils.mjs';
 
-/** 把 e2e 的通过数写进 .test-counts.json（tools/test-summary.mjs 用） */
-function writeCounts(n) {
-  try {
-    const p = new URL('../.test-counts.json', import.meta.url);
-    let d = {};
-    try { d = JSON.parse(readFileSync(p, 'utf8')); } catch { /* 首次 */ }
-    d['e2e-ui'] = n;
-    writeFileSync(p, JSON.stringify(d));
-  } catch { /* 汇总失败不影响结论 */ }
+/** 把 e2e 的通过数写进 .test-counts.json（一处真相源，SKIP 也如实上报）。 */
+function writeCounts(n, skipped) {
+  writeCount('e2e-ui', n, skipped ? { '_e2e_skipped': true } : undefined);
 }
 import os from 'node:os';
 import path from 'node:path';
@@ -106,7 +102,7 @@ function bail(why, how) {
   console.error("=".repeat(56));
   console.error("");
   if (requireE2e) process.exit(1);
-  writeCounts(0);
+  writeCounts(0, true);
   process.exit(0);
 }
 if (!edge) bail("没找到 Edge/Chrome", "设 E2E_BROWSER 指向 chrome.exe，或装一个 Edge");
@@ -1057,10 +1053,8 @@ try {
      init 抛 ReferenceError → 整个设置页只剩一句「设置页初始化失败：fs is not defined」。
      而当时 e2e 是先 waitForSelector(8000ms) 超时抛异常，**报的是「找不到元素」**，
      真实原因（ReferenceError）藏在页面文字里没被读出来。 */
-  const bootFail = await opt.evaluate(() => {
-    const t = (document.body && document.body.textContent || '').trim();
-    return t.length < 200 && /失败|failed|Error/i.test(t) ? t.slice(0, 200) : '';
-  });
+  const bootText = await opt.evaluate(() => (document.body && document.body.textContent || ''));
+  const bootFail = detectBootFailure(bootText);
   check('设置页没有白屏 / 初始化失败', !bootFail, bootFail);
 
   await opt.waitForSelector('#cfg-list .cfg-item', { timeout: 8000 });
@@ -7234,15 +7228,7 @@ try {
   }
 }
 
-/* 把这一次的通过数写进 .test-counts.json，供 tools/test-summary.mjs 汇总（带时间戳）。
-   第八版判据 4：回应里的数字要能绑定到某一次具体运行，不能引用先前的日志。 */
-try {
-  const { readFileSync: __rf, writeFileSync: __wf } = await import('node:fs');
-  const __p = new URL('../.test-counts.json', import.meta.url);
-  let __d = {};
-  try { __d = JSON.parse(__rf(__p, 'utf8')); } catch { /* 首次 */ }
-  __d['e2e-ui'] = pass;
-  __wf(__p, JSON.stringify(__d));
-} catch { /* 汇总失败不影响测试结论 */ }
+/* 把这一次的通过数写进 .test-counts.json（一处真相源，留档可复核）。 */
+writeCounts(pass, false);
 
 process.exit(fail ? 1 : 0);

@@ -3341,8 +3341,13 @@ section('28. 截图那一步失败点 ↻：重发**刚才那张图**，两条�
   /* runCtrls 是「每条配置一个 controller」的 Map：早退（没模板 / 抛错）和正常结束
      都要把自己摘掉，否则一轮轮翻译下来这个 Map 只增不减。 */
   check('runCtrls 在每个出口都会 delete（早退 + 正常结束）',
-    (bgSrc.match(/runCtrls\.delete\(cid\)/g) || []).length >= 3,
-    '实际 ' + (bgSrc.match(/runCtrls\.delete\(cid\)/g) || []).length + ' 处');
+    (bgSrc.match(/runCtrls\.delete\(wantId\)/g) || []).length >= 3,
+    '实际 ' + (bgSrc.match(/runCtrls\.delete\(wantId\)/g) || []).length + ' 处');
+  /* 第十二版 C4：key 与回包都必须用面板槽位的 wantId，不是解析后的 config.id ——
+     图片直传时多个 wantId 会落到同一条实际配置，用 config.id 会互盖、回包也认不到槽。 */
+  check('runCtrls 与回包统一用 wantId（不以解析后的 config.id 作 key）',
+    /runCtrls\.set\(wantId, ctrl\)/.test(bgSrc) && !/runCtrls\.set\(cid/.test(bgSrc) &&
+    (bgSrc.match(/configId: wantId/g) || []).length >= 4);
   check('有一个专门的重试入口 retryShot', src.includes('function retryShot()'));
   /* 重试入口 2026-10-17 从顶栏搬到了译文尾部（retryOne）；
      这条断言盯的是「没有原文时走 retryShot、而不是重新去读剪切板」这个不变量。 */
@@ -3373,9 +3378,17 @@ section('28. 截图那一步失败点 ↻：重发**刚才那张图**，两条�
     String((src.match(/renderSrcImage\(/g) || []).length));
   check('页面 CSP 挡掉 data: 图时有兜底（挂 img 的 error）',
     /function renderSrcImage[\s\S]{0,600}addEventListener\('error'/.test(src));
-  check('兜底之后那句「没有先做外置 OCR」还在（不然用户不知道发生了什么）',
-    /const DIRECT_SRC_NOTE = T\('panel_direct_note'/.test(src) &&
-    /addEventListener\('error'[\s\S]{0,300}DIRECT_SRC_NOTE/.test(src));
+  check('直传兜底说明随语言切换（不再顶层钉死，真跑函数）', (() => {
+    const tStart = src.indexOf('function T(');
+    const tBody = src.slice(tStart, src.indexOf('\n  }', tStart) + 4);
+    const nStart = src.indexOf('function directSrcNote(');
+    const nBody = src.slice(nStart, src.indexOf('\n  }', nStart) + 4);
+    const run = (text) => {
+      const win = { RTI18n: { t: () => text } };
+      return new Function('window', 'lastTLookup', tBody + '\n' + nBody + '\nreturn directSrcNote();')(win, null);
+    };
+    return run('中文说明') === '中文说明' && run('English note') === 'English note';
+  })());
   check('换回文字原文时会摘掉 has-img（不然那块高度上限一直撑着）',
     /classList\.remove\('has-img'\)/.test(src));
 
@@ -4590,8 +4603,19 @@ await (async () => {
   check('重连有次数上限（连上就断时不会无限重试）',
     /RECONNECT_MAX/.test(contentSrcFirefox) && /reconnectTries >= RECONNECT_MAX/.test(contentSrcFirefox));
   /* 忙碌中断开不能把槽标成 done —— 会把带半截 delta 的槽显示成「完成」+ 残缺译文。 */
-  check('忙碌中断开不把槽标 done（只退回 idle）',
-    /s2\.state = s2\.text \? 'idle' : 'idle'/.test(contentSrcFirefox));
+  check('忙碌中断开不把槽标 done（真跑 settleSlotsAfterReconnect）', (() => {
+    const start = contentSrcFirefox.indexOf('function settleSlotsAfterReconnect(');
+    const body = contentSrcFirefox.slice(start, contentSrcFirefox.indexOf('\n  }', start) + 4);
+    const fn = new Function(body + '\nreturn settleSlotsAfterReconnect;')();
+    const list = [
+      { state: 'busy', text: '半截' },
+      { state: 'busy', text: '' },
+      { state: 'done', text: '完整' }
+    ];
+    const out = fn(list);
+    return out[0].state === 'idle' && out[1].state === 'idle' && out[2].state === 'done' &&
+      out[0].text === '半截' && out.filter((s) => s.state === 'done').length === 1;
+  })());
 
   /* **content.js 的 prefs 初值必须和 store 的 DEFAULT_SETTINGS 一致** ——
      两份手写初值，第十版抓到 fontSize/panelWidth/triggerSize 三个都漂了
@@ -4665,14 +4689,19 @@ await (async () => {
   const enSet = new Set(enKeys2);
   const zhSet = new Set(zhKeys2);
   const used2 = new Set();
-  const scanFiles = ['options.html', 'options.js', 'content.js', 'popup.html', 'popup.js', 'background.js'];
-  /* **扫描面要全**（第十一版判据 2）：4 个 js + 2 个 html + lib 全部 .js。
-     只扫 4 个 .js 时 popup.html 的 9 处中文、lib 内部文案全在分母外，
-     覆盖率会被算高。 */
+  /* **扫描面要全**：页面/弹窗/后台 + lib 全部 .js + offscreen。
+     只扫 6 个文件时 lib 内部文案全在分母外，覆盖率会被算高。 */
+  const { readdirSync } = await import('node:fs');
+  const libFiles = readdirSync(new URL('../lib/', import.meta.url))
+    .filter((f) => f.endsWith('.js')).map((f) => 'lib/' + f);
+  const scanFiles = [
+    'options.html', 'options.js', 'content.js', 'popup.html', 'popup.js',
+    'background.js', 'offscreen.js', ...libFiles
+  ];
   for (const f of scanFiles) {
     const s = readFileSync(new URL('../' + f, import.meta.url), 'utf8');
-    for (const m of s.matchAll(/data-i18n(?:-ph|-html)?="([^"]+)"/g)) used2.add(m[1]);
-    for (const m of s.matchAll(/\bT\('([a-z][a-z0-9_]+)'/g)) used2.add(m[1]);
+    for (const m of s.matchAll(/data-i18n(?:-ph|-html|-title)?="([^"]+)"/g)) used2.add(m[1]);
+    for (const m of s.matchAll(/\bT\('([a-zA-Z][a-zA-Z0-9_]+)'/g)) used2.add(m[1]);
     /* msg 可能被 as 改名（tMsg），两个名字都要认 —— 第十一版 §1 指出这里漏了 tMsg */
     for (const m of s.matchAll(/\b\w*[Mm]sg\('([a-zA-Z][a-zA-Z0-9_]+)'/g)) used2.add(m[1]);
   }
@@ -4683,11 +4712,12 @@ await (async () => {
      文档里的数字只能抄这里。上一轮出现 265/288/157 三个数并存，
      就是因为没人写清「正则是什么、扫了哪些文件」。 */
   console.log("\n—— 口径自检（照抄进文档，别手写）——");
-  console.log(`  test-lib 项数      ${passed + failed}`);
+  console.log(`  已执行断言（到此节）  ${passed + failed}  —— 最终总数以末尾「通过 N 项」为准`);
   console.log(`  zh 有效 key        ${zhKeys2.length}  （_locales/zh_CN/messages.json，去掉 extName/extDesc）`);
   console.log(`  en 有效 key        ${enKeys2.length}  （i18n/en.json 的 strings）`);
   console.log(`  代码里用到的 key    ${used2.size}`);
-  console.log("     口径：扫上述 6 个文件，正则三选一 —— data-i18n*=\"key\" / T('key' / msg('key'");
+  console.log(`     口径：扫 ${scanFiles.length} 个文件（页面/弹窗/后台/offscreen + lib 全部 .js）；`);
+  console.log("            正则 —— data-i18n[-ph|-html|-title]=\"key\" / T('key'（含 camelCase） / \\w*[Mm]sg('key'（含 tMsg）");
   console.log(`  DEFAULT_SETTINGS   ${settingKeys.length} 键  （lib/store.js，只数顶层键）`);
   console.log("     说明：SETTING_MAP 里 20 行是「有独立输入框的」，其余走别的 UI（语言表 / 槽位 / 说明开关）");
   /* key 覆盖关系必须成立：代码用到的 key 都该在 zh 包里 */
@@ -4723,15 +4753,31 @@ await (async () => {
     const optHtml = readFileSync(new URL('../options.html', import.meta.url), 'utf8');
     const optsZh = JSON.parse(readFileSync(new URL('../_locales/zh_CN/messages.json', import.meta.url), 'utf8'));
     const bad = [];
-    for (const m of optHtml.matchAll(/<([a-z]+)[^>]*?\bdata-i18n(?:-html)?="([^"]+)"[^>]*>([\s\S]{0,300}?)<\/\1>/g)) {
-      const key = m[2];
-      const inner = m[3].trim();
+    const pairs = [];
+    /* 非贪婪取到**第一个同名闭合标签**，不再用 {0,300}? 这种固定窗口：
+       729 字的 opt_hint_panelcss 以前整节点匹配不上，直接不进分母 → 断言恒绿。 */
+    for (const m of optHtml.matchAll(/<([a-z]+)[^>]*?\bdata-i18n(?:-html)?="([^"]+)"[^>]*>([\s\S]*?)<\/\1>/g)) {
+      pairs.push([m[2], m[3].trim()]);
+    }
+    /* -title / -ph 比的是**属性值**，不是元素内部文本 —— 以前拿 <label> 里的
+       input+span 去比 title 文案，长度永远对不上，属于分母取错。 */
+    for (const m of optHtml.matchAll(/\bdata-i18n-title="([^"]+)"/g)) {
+      const around = optHtml.slice(Math.max(0, m.index - 300), m.index + 200);
+      const t = around.match(/title="([^"]+)"/);
+      if (t) pairs.push([m[1], t[1].trim()]);
+    }
+    for (const m of optHtml.matchAll(/\bdata-i18n-ph="([^"]+)"/g)) {
+      const around = optHtml.slice(Math.max(0, m.index - 300), m.index + 200);
+      const t = around.match(/placeholder="([^"]+)"/);
+      if (t) pairs.push([m[1], t[1].trim()]);
+    }
+    for (const [key, inner] of pairs) {
       if (!optsZh[key] || !inner) continue;
       const pack = optsZh[key].message.trim();
       if (pack === inner) continue;
       /* 允许 ±20% 的差异（标点、空白），超出就报 */
       const ratio = pack.length / inner.length;
-      if (ratio < 0.8) bad.push(key + '(' + Math.round(ratio * 100) + '%)');
+      if (ratio < 0.8) bad.push(key + '(' + Math.round(ratio * 100) + '% / ' + pack.length + '字 vs ' + inner.length + ')');
     }
     check('语言包的中文值和 options.html 原文等价（不许简写降级）',
       bad.length === 0, bad.slice(0, 6).join(', '));
@@ -4793,14 +4839,20 @@ await (async () => {
   /* 检测块自己的行号：它内部的源码全是正则和引号，自指扫描必然不准，整体跳过。
      这是手段的已知边界，不装作能测自己。 */
   const blockStart = selfSrc.slice(0, selfAnchor).split('\n').length;
+  /* 只跳过检测器自身那一段（到下一个 section 为止），不是「从这里到文件末尾全豁免」——
+     以前用 `aLine >= blockStart` 一刀切，后半段新增的超长区间永远没人管。 */
+  const nextAnchor = selfSrc.indexOf("/* **i18n 的 msg() 不能被同名参数遮蔽", selfAnchor + 1);
+  const blockEnd = nextAnchor > selfAnchor
+    ? selfSrc.slice(0, nextAnchor).split('\n').length
+    : Number.POSITIVE_INFINITY;
   const nestedLines = [];
   const runaway = [];
   for (const a of ranges) {
     const aLine = selfSrc.slice(0, a.from).split('\n').length;
-    /* 检测器自身那一块跳过（自指必然扫不准） */
-    const isSelf = aLine >= blockStart;
+    const isSelf = aLine >= blockStart && aLine <= blockEnd;
+    if (isSelf) continue;   // 检测器自身不参与嵌套/跑飞判定（自指扫不准）
     if (a.to - a.from > 1500) {
-      if (!isSelf) runaway.push('L' + aLine);
+      runaway.push('L' + aLine);
       continue;
     }
     for (const b of ranges) {
@@ -4832,7 +4884,9 @@ await (async () => {
      第十一版 §2 P0-1 就是这么栽的（改名只改 5/8 处，右键菜单整个空掉），
      而当时那条断言只验「importedName !== msg」，照样通过。
      所以这里扫的是**所有调用了旧名的行**，不只管 import 怎么写。 */
-  if (importedAs && importedAs !== 'msg') {
+  /* **无条件**扫全文件：只要还有裸 `msg(` 调用就是 bug，与 import 有没有改名无关。
+     以前把扫描包在 `if (importedAs !== 'msg')` 里，改回不改名时整段检查直接失效。 */
+  {
     const stray = [];
     for (let k = 0; k < bgLines.length; k += 1) {
       const line = bgLines[k];
@@ -4848,19 +4902,164 @@ await (async () => {
   check('background.js 的回调参数 msg 没有遮蔽 i18n 的 msg', !(shadows && importedAs === 'msg'));
 }
 
+section('批次 A 闭环：用户可见修复的行为断言');
+{
+  const cSrc = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
+  const pcSrc = readFileSync(new URL('../lib/panel-core.js', import.meta.url), 'utf8');
+  const cut = (s, name) => {
+    /* 必须锚定「行首两空格 + function」，否则会命中注释里提到的 `function T()`。 */
+    const st = s.indexOf('\n  function ' + name + '(');
+    if (st < 0) throw new Error('找不到函数定义：' + name);
+    return s.slice(st + 1, s.indexOf('\n  }', st + 1) + 4);
+  };
+
+  /* A3：顶栏 ↻ 空态不隐式触发截图翻译 */
+  const shouldRetry = new Function(cut(cSrc, 'shouldRetryFromPanel') + '\nreturn shouldRetryFromPanel;')();
+  check('顶栏 ↻：有原文可重发', shouldRetry('hello', null) === true);
+  check('顶栏 ↻：有图可重发', shouldRetry('', { image: 'data:...' }) === true);
+  check('顶栏 ↻：既无原文也无图 → 不重发（不读剪切板截图）',
+    shouldRetry('', null) === false && shouldRetry('', { image: '' }) === false);
+
+  /* A6：发送失败后回滚 busy 槽 */
+  const slots = [{ configId: 'a', state: 'busy', text: '旧译文' }, { configId: 'b', state: 'busy', text: '' }];
+  const slotBy = (id) => slots.find((s) => s.configId === id);
+  const rollback = new Function('slotBy', cut(cSrc, 'rollbackBusySlots') + '\nreturn rollbackBusySlots;')(slotBy);
+  rollback(['a', 'b', 'missing']);
+  check('发送失败：有旧译文的槽退回 done，空槽退回 idle',
+    slots[0].state === 'done' && slots[1].state === 'idle');
+  check('发送失败：旧译文保留不清空', slots[0].text === '旧译文');
+
+  /* A6：重连收尾不谎称完成 */
+  const settle = new Function(cut(cSrc, 'settleSlotsAfterReconnect') + '\nreturn settleSlotsAfterReconnect;')();
+  const half = [{ state: 'busy', text: '半截' }, { state: 'busy', text: '' }, { state: 'done', text: '完整' }];
+  settle(half);
+  check('重连收尾：busy 全退回 idle、无新增 done、半截译文保留',
+    half[0].state === 'idle' && half[1].state === 'idle' && half[2].state === 'done' && half[0].text === '半截');
+
+  /* A2：状态行的静态 i18n 文案切语言后重算；动态拼接状态不被覆盖 */
+  let lang = 'zh';
+  const win = { RTI18n: { t: () => (lang === 'zh' ? '中文状态' : 'English status') } };
+  const msgBox = { textContent: '', className: '' };
+  const api = new Function('window', 'msgBox', 'lastTLookup', 'lastStatusI18n', 'lastStatusRenderedText',
+    cut(cSrc, 'T') + '\n' + cut(cSrc, 'setStatus') + '\n' + cut(cSrc, 'refreshStatusText') +
+    '\nreturn { T: T, setStatus: setStatus, refreshStatusText: refreshStatusText };')(win, msgBox, null, null, '');
+  api.setStatus(api.T('panel_ext_updated', '扩展已更新'), 'err');
+  check('状态行初始写入静态文案', msgBox.textContent === '中文状态' && msgBox.className.includes('err'));
+  lang = 'en';
+  api.refreshStatusText();
+  check('切语言后状态行静态文案重算', msgBox.textContent === 'English status');
+  api.setStatus('HTTP 200 · 1.3s · data.translations[0]', '');
+  lang = 'zh';
+  api.refreshStatusText();
+  check('动态拼接的状态行不被重算覆盖', msgBox.textContent === 'HTTP 200 · 1.3s · data.translations[0]');
+
+  /* A5：panel-core 的 T() 与 content/options 同口径（三参 + 兜底替换） */
+  const pcT = new Function('window', cut(pcSrc, 'T') + '\nreturn T;')({ RTI18n: null });
+  eq('panel-core T() 兜底文案替换 $1$', pcT('k', '共 $1$ 条', [3]), '共 3 条');
+  eq('panel-core T() 无参数时原样返回', pcT('k', '普通文案'), '普通文案');
+
+  /* A1：PRIVACY 中英与实际联网行为一致，CSS 句子不再串进语言包条目 */
+  const privacy = readFileSync(new URL('../PRIVACY.md', import.meta.url), 'utf8');
+  check('PRIVACY 中文不再声称「不换语言就永远不联网」', !privacy.includes('不换语言就永远不联网'));
+  check('PRIVACY 中文写明点开下拉会取一次清单',
+    /点开（或用键盘聚焦）设置页的语言下拉框/.test(privacy) && /取一次清单/.test(privacy));
+  check('PRIVACY 英文写明 opening/focusing dropdown 会预取',
+    /Opening \(or focusing\) the language dropdown/.test(privacy) && /probes the available packs/.test(privacy));
+  check('PRIVACY 英文 CSS 说明独立成条',
+    /- \*\*Custom panel CSS may load remote resources\*\*/.test(privacy) &&
+    !/dropdown fetches nothing\. If you put an `@import`/.test(privacy));
+
+  /* A4：panel_retry 一 key 两义拆开 */
+  const zhPack = JSON.parse(readFileSync(new URL('../_locales/zh_CN/messages.json', import.meta.url), 'utf8'));
+  const enPack = JSON.parse(readFileSync(new URL('../i18n/en.json', import.meta.url), 'utf8')).strings;
+  check('panel_retry_one 两包都有、与 panel_retry 语义不同',
+    zhPack.panel_retry_one.message === '重试' && enPack.panel_retry_one === 'Retry' &&
+    enPack.panel_retry === 'Translate again');
+  check('顶栏用 panel_retry、译文尾用 panel_retry_one',
+    pcSrc.includes("T('panel_retry', '重新翻译')") && pcSrc.includes("T('panel_retry_one', '重试')"));
+
+  /* B6：白屏检测的反例进测试仓库 —— 不靠「e2e 真机手跑过一次」当证据。 */
+  const { detectBootFailure } = await import('./boot-check.mjs');
+  check('白屏检测：正常长度的设置页不报', detectBootFailure('配置列表 变量 OCR 设置 '.repeat(30)) === '');
+  check('白屏检测：初始化失败文本原样报出来',
+    /fs is not defined/.test(detectBootFailure('设置页初始化失败：fs is not defined')));
+  check('白屏检测：纯空白页面不再假阴', detectBootFailure('   \n  ') !== '');
+  check('白屏检测：短但不含错误词也报可疑', detectBootFailure('加载中') !== '');
+}
+
+section('批次 C 闭环：i18n 补填 / 后台并发 / 口径边界的行为断言');
+{
+  const iSrc = readFileSync(new URL('../lib/i18n.js', import.meta.url), 'utf8');
+  const aSrc = readFileSync(new URL('../lib/adapters.js', import.meta.url), 'utf8');
+  const cssSrc = readFileSync(new URL('../options.css', import.meta.url), 'utf8');
+  const cutFn = (s, name) => {
+    const st = s.indexOf('\n  function ' + name + '(');
+    if (st < 0) throw new Error('找不到函数定义：' + name);
+    return s.slice(st + 1, s.indexOf('\n  }', st + 1) + 4);
+  };
+
+  /* C3：onlyMissing 第二次也要补填新建的 data-i18n-html 节点，且不覆盖已填节点 */
+  const mkEl = (key) => ({ dataset: { i18nHtml: key }, innerHTML: '' });
+  const nodes = [mkEl('k1')];
+  const scope = { querySelectorAll: () => nodes };
+  const tStub = (k) => '<b>' + k + '</b>';
+  const applyHtml = new Function('t', 'sanitizeInlineHtml',
+    cutFn(iSrc, 'applyI18nHtml') + '\nreturn applyI18nHtml;')(tStub, (s) => s);
+  applyHtml(scope);
+  const firstHtml = nodes[0].innerHTML;
+  const fresh = mkEl('k2');
+  nodes.push(fresh);
+  applyHtml(scope, { onlyMissing: true });
+  check('onlyMissing 补填新建的 data-i18n-html 节点', fresh.innerHTML === '<b>k2</b>');
+  check('onlyMissing 不重复覆盖已填节点', nodes[0].innerHTML === firstHtml && nodes[0].dataset.i18nHtmlDone === '1');
+  /* 光测 applyI18nHtml 自己不够：旧 bug 在 **applyI18n 把整条 html 通道跳过了**。
+     这里真跑 applyI18n，盯住第二次（onlyMissing）有没有把 opts 传进 html 通道。 */
+  const htmlCalls = [];
+  const htmlSpy = (scp, opts) => htmlCalls.push(!!(opts && opts.onlyMissing));
+  const emptyScope = { querySelectorAll: () => [] };
+  const applyI18n = new Function('applyI18nHtml', 't', 'document',
+    cutFn(iSrc, 'applyI18n') + '\nreturn applyI18n;')(htmlSpy, (k) => k, emptyScope);
+  applyI18n(emptyScope, { onlyMissing: true });
+  check('第二次 applyI18n 仍走 html 通道且带 onlyMissing',
+    htmlCalls.length === 1 && htmlCalls[0] === true);
+
+  /* C5：Bing session 的 in-flight 共享，且共享抓取不绑任一调用者的 signal */
+  const st = aSrc.indexOf('  async function getSession(');
+  const body = aSrc.slice(st, aSrc.indexOf('\n  }', st) + 4);
+  let fetches = 0;
+  let usedSignal = null;
+  const fetchStub = async (sig) => { fetches += 1; usedSignal = sig; return { token: 'T' }; };
+  const getSession = new Function('fetchSession',
+    'let session = null; let sessionPending = null;\n' + body + '\nreturn getSession;')(fetchStub);
+  const sig1 = new AbortController().signal;
+  const sig2 = new AbortController().signal;
+  const [r1, r2] = await Promise.all([getSession(sig1), getSession(sig2)]);
+  check('并发调用只抓一次 Bing token', fetches === 1 && r1.token === 'T' && r2.token === 'T');
+  check('共享抓取不绑任一调用者的 signal（首个取消不连坐）',
+    usedSignal !== sig1 && usedSignal !== sig2 && usedSignal != null);
+
+  /* C6：39px 是刻意设计（长文案靠 title 悬停看全文），不是待修 bug —— 钉住别误改 */
+  check('hint-slot 固定 39px 与单行省略是刻意设计',
+    /\.hint-slot \{[\s\S]{0,400}height: 39px/.test(cssSrc) && /-webkit-line-clamp: 1/.test(cssSrc));
+
+  /* C7：lib 内部中文是诊断/错误信息，不进 UI 查表面；用户可见文案必须走 T()/msg()，
+     其 key 覆盖已由「代码 key ⊂ zh/en 包」两条断言钉住。 */
+  const { readdirSync } = await import('node:fs');
+  const libSrcs = readdirSync(new URL('../lib/', import.meta.url))
+    .filter((f) => f.endsWith('.js') && f !== 'i18n.js' && f !== 'i18n-msg.js')
+    .map((f) => readFileSync(new URL('../lib/' + f, import.meta.url), 'utf8'));
+  check('除 i18n 引擎自身外，lib 内部不出现 data-i18n（诊断文案不进 UI 查表面）',
+    libSrcs.every((s) => !s.includes('data-i18n')));
+}
+
 console.log('\n' + '='.repeat(46));
 console.log(`通过 ${passed} 项，失败 ${failed} 项`);
 console.log('='.repeat(46));
 
-/* 把这一次的通过数写进 .test-counts.json，供 tools/test-summary.mjs 汇总（带时间戳）。
-   第八版判据 4：回应里的数字要能绑定到某一次具体运行，不能引用先前的日志。 */
+/* 计数走一处真相源：写通过数 + 当时的 HEAD / 工作区状态，汇总时复核。 */
 try {
-  const { readFileSync: __rf, writeFileSync: __wf } = await import('node:fs');
-  const __p = new URL('../.test-counts.json', import.meta.url);
-  let __d = {};
-  try { __d = JSON.parse(__rf(__p, 'utf8')); } catch { /* 首次 */ }
-  __d['test-lib'] = passed;
-  __wf(__p, JSON.stringify(__d));
-} catch { /* 汇总失败不影响测试结论 */ }
+  const { writeCount } = await import('./count-utils.mjs');
+  writeCount('test-lib', passed);
+} catch { /* 计数失败不影响测试结论 */ }
 
 process.exit(failed === 0 ? 0 : 1);

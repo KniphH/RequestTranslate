@@ -488,16 +488,19 @@ chrome.runtime.onConnect.addListener((port) => {
         // 图片直传（勾了「禁用外置 OCR」）时用的是 OCR 栏里选定的那条**图片配置**，
         // 和顶栏那条（翻文字用的）互不干扰 —— 规则和兜底都在 pickRequestConfig 里
         /* 第 4 个参数 = 这次是不是多槽对比（ids.length > 1）。图片模式下它决定
-           是「一律用 imageConfigId」（单条）还是「每槽用自己的 cid」（多槽）。 */
+           是「一律用 imageConfigId」（单条）还是「每槽用自己的配置」（多槽）。 */
         const config = pickRequestConfig(state, wantId, !!(msg.context && msg.context.image), ids.length > 1);
         if (!config) {
       safePost({ type: 'fatal', configId: wantId, message: await tMsg('bg_no_config', '没有任何可用配置，请先到设置页新建一条') });
           return;
         }
         /* 注意：这条路径还没 set 进 runCtrls，不需要清理（见下面 set 的位置）。 */
-        const cid = config.id;
+        /* runCtrls 与所有回包都用 **wantId**（面板槽位的身份），不是解析后的
+           config.id：图片直传时多个不同 wantId 会经 pickRequestConfig 落到同一条
+           实际配置，若以它作 key 就会互盖、先完成者摘掉仍在跑的那条，
+           回包也因 configId 不是槽 id 而认不到槽。 */
         const ctrl = new AbortController();
-        runCtrls.set(cid, ctrl);
+        runCtrls.set(wantId, ctrl);
         // 本次作废的判据：批次过期（用户又触发了一次）或这条被 abort
         const alive = () => myBatch === runBatch && !ctrl.signal.aborted;
 
@@ -517,8 +520,8 @@ chrome.runtime.onConnect.addListener((port) => {
           ? requestChain(config).filter((it) => String(it.imageRequest || '').trim())
           : requestChain(config);
         if (hasImage && !runnable.length) {
-        safePost({ type: 'fatal', configId: cid, message: await tMsg('bg_no_image_template', '这条配置没填「图片请求模板」，没法带图翻译') });
-          runCtrls.delete(cid);
+        safePost({ type: 'fatal', configId: wantId, message: await tMsg('bg_no_image_template', '这条配置没填「图片请求模板」，没法带图翻译') });
+          runCtrls.delete(wantId);
           return;
         }
 
@@ -550,7 +553,7 @@ chrome.runtime.onConnect.addListener((port) => {
             if (!alive()) break;
             safePost({
               type: 'start',
-              configId: cid,
+              configId: wantId,
               configName: config.name,
               text,
               statusText
@@ -566,13 +569,13 @@ chrome.runtime.onConnect.addListener((port) => {
                 signal: ctrl.signal,
                 onDelta: (current) => {
                   if (!alive()) return;
-                  safePost({ type: 'delta', configId: cid, text: current });
+                  safePost({ type: 'delta', configId: wantId, text: current });
                 }
               });
             } catch (err) {
               if (!alive()) return;
-              safePost({ type: 'fatal', configId: cid, message: err && err.message ? err.message : String(err) });
-              runCtrls.delete(cid);
+              safePost({ type: 'fatal', configId: wantId, message: err && err.message ? err.message : String(err) });
+              runCtrls.delete(wantId);
               return;
             }
 
@@ -617,10 +620,10 @@ chrome.runtime.onConnect.addListener((port) => {
            并发 4 槽时这段窗口被 storage 排队进一步放大（第八版 §1 P1-3）。 */
         if (!alive()) return;
 
-        /* **只摘自己那个 controller**：同 cid 可能已被新批次重建，
+        /* **只摘自己那个 controller**：同 wantId 可能已被新批次重建，
            无条件 delete 会把新批次刚建的摘掉，之后 abort 不到它。 */
-        if (runCtrls.get(cid) === ctrl) runCtrls.delete(cid);
-        safePost({ type: 'done', configId: cid, result: { ...result, raw: undefined } });
+        if (runCtrls.get(wantId) === ctrl) runCtrls.delete(wantId);
+        safePost({ type: 'done', configId: wantId, result: { ...result, raw: undefined } });
       };
 
       // 并发跑（不串行）：总耗时取决于最慢的那条，不是加起来

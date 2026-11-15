@@ -21,7 +21,9 @@ import sys
 import shutil
 import tempfile
 import zipfile
+import uuid
 from pathlib import Path
+from pack import slim_messages   # 打包/验包共用同一份 messages.json 剥离规则
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -65,7 +67,11 @@ def main():
             if r.returncode != 0:
                 first = (r.stderr or "").strip().splitlines()
                 problems.append(f"{n} 语法错：{first[1] if len(first) > 1 else first[:1]}")
-        print(f"  语法：{sum(1 for n in names if n.endswith('.js'))} 个 js 全过 node --check")
+        syntax_bad = [p for p in problems if " 语法错：" in p]
+        if syntax_bad:
+            print(f"  语法：发现 {len(syntax_bad)} 个 js 有语法错")
+        else:
+            print(f"  语法：{sum(1 for n in names if n.endswith('.js'))} 个 js 全过 node --check")
 
         # 2. 行号守恒（**只在没跑 esbuild 时有意义**）
         #    剥注释不吞行，所以行数该和仓库一致；但 esbuild 会把多行压成单行，
@@ -120,7 +126,10 @@ def main():
         changed = [n for n, code in texts.items() if again_map.get(n) != code]
         for n in changed:
             problems.append(f"{n} 再剥一次还有变化 —— 包不是干净的（有漏剥的，或剥过头了）")
-        print(f"  幂等：{len(texts)} 个文本文件「再剥一次毫无变化」")
+        if changed:
+            print(f"  幂等：发现 {len(changed)} 个文件再剥一次还有变化")
+        else:
+            print(f"  幂等：{len(texts)} 个文本文件「再剥一次毫无变化」")
 
     # 4. 注释确实少了很多（对照仓库）
     saved = 0
@@ -205,18 +214,20 @@ def main():
     #      c) 与包内同名文件比 md5
     #    仓库改了但没重新打包 → 变换结果不同 → 必然红。
     repo_root = Path(__file__).resolve().parent.parent
-    tmp = repo_root / "dist" / ".verify-src"
     stale = []
     compared = 0
+    # 临时目录放在 dist/ 下、名字带随机后缀：**不能放系统 TEMP** —— esbuild 在
+    # Windows 的 %TEMP% 里写 .esbuild-out.js 会 "Access is denied"（实测），
+    # 于是同源检查被吞成「重跑 esbuild 失败」。带后缀就不会和上次残留撞，
+    # finally 里删不掉也只是留个 .verify-xxxx 目录（gitignore 覆盖 dist/）。
+    tmp = repo_root / "dist" / (".verify-" + uuid.uuid4().hex[:8])
+    tmp.mkdir(parents=True, exist_ok=False)
     try:
-        if tmp.exists():
-            shutil.rmtree(tmp)
-        tmp.mkdir(parents=True, exist_ok=True)
         # a) 从 git HEAD 取每个 .js（不是工作区 —— 未提交改动不该让检查变绿）
         src_names_js = [n for n in names if n.endswith((".js", ".css", ".html"))]
-        # 剥注释只做 .js/.css/.html，json 原样复制 —— 这几类都要走同一套变换再比。
-        src_names = [n for n in names if n.endswith((".js", ".css", ".html"))]
-        same_names = [n for n in names if n.endswith((".json", ".md")) and n != "manifest.json"]
+        # .json/.md 不走剥注释/esbuild，但同样必须与 git HEAD 同源
+        # （manifest.json 按 target 裁过，单独验形态，不在这里比）。
+        raw_names = [n for n in names if n.endswith((".json", ".md")) and n != "manifest.json"]
         got = []
         for n in src_names_js:
             try:
@@ -263,11 +274,42 @@ def main():
                     f"{n} 与「git HEAD 源码重跑变换」的结果不同"
                     " → 源码改过但没重新打包（或包来自别的提交）"
                 )
+        # d) 静态资源也纳入同源：语言包被篡改、说明文件过期都要抓得到。
+        #    messages.json 打包时剥过 description，所以用同一份 slim_messages 规则还原后比对象。
+        norm_raw = lambda b: b.replace(b"\r\n", b"\n")
+        for n in raw_names:
+            try:
+                data = subprocess.run(
+                    ["git", "show", "HEAD:" + n],
+                    cwd=str(repo_root), capture_output=True, check=True
+                ).stdout
+            except subprocess.CalledProcessError:
+                stale.append(f"{n} 在包里但 git HEAD 里没有")
+                continue
+            packed = z.read(n)
+            if n.startswith("_locales/") and n.endswith("/messages.json"):
+                try:
+                    expected = slim_messages(json.loads(data.decode("utf-8")))
+                    actual = json.loads(packed.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    stale.append(f"{n} 不是合法 JSON：{exc}")
+                    continue
+                if actual != expected:
+                    stale.append(f"{n} 与 git HEAD 的 messages 剥离结果不同 → 语言包被改过")
+            elif hashlib.md5(norm_raw(packed)).hexdigest() != hashlib.md5(norm_raw(data)).hexdigest():
+                stale.append(f"{n} 与 git HEAD 不同 → 包里的静态资源被改过")
+            compared += 1
     except Exception as exc:  # noqa: BLE001
         problems.append("同源检查跑挂了：" + str(exc)[:200])
     finally:
-        if tmp.exists():
-            shutil.rmtree(tmp, ignore_errors=True)
+        # 清理**绝不能抛错**：某些环境的批量删除保护会让 rmtree 直接抛 BaseException，
+        # 那样会跳过下面 problems 的打印 —— 夹具只看到「退出码非零 + 没有同源报错」，
+        # 就误判成「检查抓不到旧包」（2026-11-15 实际踩到，打包直接卡住）。
+        try:
+            if tmp.exists():
+                shutil.rmtree(tmp, ignore_errors=True)
+        except BaseException:
+            pass
 
     if stale:
         problems.extend(stale[:12])

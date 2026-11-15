@@ -119,7 +119,12 @@ def strip_sources(files):
 
     tmp = ROOT / "dist" / ".stripped"
     if tmp.exists():
-        shutil.rmtree(tmp)
+        # 清理失败绝不能把打包打断：某些环境的批量删除保护会让 rmtree 抛 BaseException
+        # （2026-11-15 打包实测：run_tests 已通过、下一步清理旧目录时整包中止）。
+        try:
+            shutil.rmtree(tmp, ignore_errors=True)
+        except BaseException:
+            pass
     tmp.mkdir(parents=True, exist_ok=True)
 
     r = subprocess.run(
@@ -163,6 +168,21 @@ def strip_sources(files):
     return tmp
 
 
+def slim_messages(data):
+    """剥掉 messages.json 里给人看的 description（Chrome 不读它）。
+
+    打包与验包共用同一份规则 —— 验包要比对「包里语言包 == git HEAD 源码剥离后的结果」，
+    重写一遍规则就会两边慢慢分叉。
+    """
+    slim = {}
+    for k, v in data.items():
+        e = {"message": v.get("message", "")}
+        if "placeholders" in v:
+            e["placeholders"] = v["placeholders"]
+        slim[k] = e
+    return slim
+
+
 def make_zip(files, out, stripped=None, target="chromium"):
     """写 zip。`stripped` 非空时用剥过注释的版本（那个目录里没有的文件照旧读源码）。"""
 
@@ -186,19 +206,12 @@ def make_zip(files, out, stripped=None, target="chromium"):
             if name.startswith("_locales/") and name.endswith("/messages.json"):
                 # messages.json 里的 description 字段是**给人看的**（Chrome 不读它），
                 # 308 条合计 9.4 KB 源文件、deflate 后 1.4 KB（kniph 2026-11-12）。
-                # 打包时剥掉，源码里保留。
+                # 打包时剥掉，源码里保留；规则见 slim_messages（验包也用它）。
                 loc = json.loads(source(name).read_text(encoding="utf-8"))
-                slim = {}
-                for k, v in loc.items():
-                    e = {"message": v.get("message", "")}
-                    if "placeholders" in v:
-                        e["placeholders"] = v["placeholders"]
-                    slim[k] = e
-                z.writestr(name, json.dumps(slim, ensure_ascii=False, indent=2) + "\n")
+                z.writestr(name, json.dumps(slim_messages(loc), ensure_ascii=False, indent=2) + "\n")
                 continue
             if name != "manifest.json":
                 z.write(source(name), name)
-                continue
                 continue
             # manifest.json 单独处理：按目标浏览器裁 background 段。
             #

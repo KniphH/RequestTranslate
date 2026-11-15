@@ -18,10 +18,11 @@ RequestTranslate 是一款划词翻译浏览器扩展。**开发者不收集、�
 - **本地存储**：配置、API Key、设置都保存在浏览器本地的 `chrome.storage.local`，不同步到任何账号。注意 API Key 是**明文**保存的——不要把导出的配置文件发给别人。
 - **翻译记录**：最近几次翻译的**原文和译文**（默认保留 10 条，可在设置里改成 0 条即完全不记录）同样只存在本地的 `chrome.storage.local`，**不会**写进导出的配置文件，也不上传到任何地方。它在设置页「翻译记录」里可见、可一键清空。
 - **不碰代理设置**：扩展不读取、也不修改浏览器的代理设置（权限列表里没有 `proxy`）。请求怎么走完全由你的系统和代理软件决定。
-- **界面语言包会联网下载**：设置页可以换界面语言，那些语言包**不在安装包里**，
-  选中时才会从本仓库（`raw.githubusercontent.com` / `cdn.jsdelivr.net`）下载一次并缓存在本地。
-  下载的是**纯文案 JSON**（键值对，没有可执行代码），只在你主动选语言时发生，不发任何数据出去。
-  不换语言就永远不联网。
+- **界面语言包会联网下载**：设置页可以换界面语言，那些语言包**不在安装包里**。
+  **点开（或用键盘聚焦）设置页的语言下拉框时**，扩展会先从本仓库
+  （`raw.githubusercontent.com` / `cdn.jsdelivr.net`）取一次清单并逐个核实可用语言
+  （只发 HEAD/GET，不发任何用户数据）；**选中某门语言时**才下载对应的纯文案 JSON 并缓存在本地。
+  只打开设置页、不碰这个下拉框不会联网；同一次会话里核实过的结果不会重复请求。
 - **自定义面板 CSS 可能外连**：设置里的「自定义面板样式」是给你自己写 CSS 的，
   如果那里面写了 `@import` 或 `url(...)`，浏览器会去取对应地址 —— 那是你写的，扩展不代劳也不改写。
 - **关于「零构建」**：运行时零依赖（扩展直接加载解压文件夹即可跑）；打包脚本可选调用 esbuild 压缩体积，
@@ -66,7 +67,8 @@ RequestTranslate is a selection-translation browser extension. **The developer d
 - **Local storage**: Configuration, API keys and settings are stored locally in the browser's `chrome.storage.local` and never synced to any account. Note that API keys are stored **in plain text** — do not share exported configuration files.
 - **Translation history**: The source and translated text of your most recent translations (10 entries by default; set it to 0 to keep none) is also stored only in the local `chrome.storage.local`. It is **not** written into exported configuration files and is never uploaded anywhere. It can be viewed and cleared on the settings page.
 - **No proxy access**: The extension never reads or changes your browser's proxy settings (it does not request the `proxy` permission). How requests are routed is entirely up to your system and your proxy client.
-- **UI language packs are downloaded**: The settings page lets you switch interface language. Those packs are **not bundled**; the one you pick is downloaded once from this repository (`raw.githubusercontent.com` / `cdn.jsdelivr.net`) and cached locally. They are plain key-value JSON with no executable code, the download only happens when you pick a language, and nothing is sent out. **When it happens**: opening (or focusing) the language dropdown in settings preloads one so the list is ready, and picking a language fetches one too. Nothing else triggers a download — simply opening the settings page without touching that dropdown fetches nothing. If you put an `@import` or `url(...)` in it, your browser will fetch that address — it is your CSS, the extension neither adds nor rewrites it.
+- **UI language packs are downloaded**: The settings page lets you switch interface language. Those packs are **not bundled**. **Opening (or focusing) the language dropdown in settings** fetches the index once from this repository (`raw.githubusercontent.com` / `cdn.jsdelivr.net`) and probes the available packs (HEAD/GET only, no user data is sent); **picking a language** then downloads that pack — plain key-value JSON with no executable code — and caches it locally. Simply opening the settings page without touching that dropdown fetches nothing, and the probe result is not repeated within the same session.
+- **Custom panel CSS may load remote resources**: the "custom panel styles" setting exists so you can write your own CSS. If you put an `@import` or `url(...)` in it, your browser will fetch that address — it is your CSS, the extension neither adds nor rewrites it.
 - **About "zero build"**: Zero runtime dependencies (load the unpacked folder and it runs). The packaging script may optionally invoke esbuild to shrink the bundle; that changes neither functionality nor runtime dependencies.
 
 ### What this extension does not do

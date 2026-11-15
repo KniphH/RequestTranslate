@@ -53,19 +53,20 @@ if (!existsSync(FIXTURE)) {
 
   check('拿 1.3.1 旧包跑同源检查，必须非零退出（证明它真能抓旧包）', code !== 0,
     'exit=' + code);
-  check('报错里点名「与 git HEAD 源码重跑变换不同」（或文件差异）',
-    /重跑变换.{0,4}的结果不同|与等价形式哈希不同|文件列表不该差/.test(out),
+  const sameSrcLines = out.split('\n').filter((x) => x.includes('与「git HEAD 源码重跑变换」的结果不同'));
+  /* 逐字对齐真实报错，且**不许靠「文件列表不该差」兜底**：
+     以前正则里留着这个兜底分支，删掉 verify-pack 的同源步骤夹具照样绿 ——
+     那测的是「包里少了个文件」，不是「包是不是从当前源码打的」。 */
+  check('旧包报红来自同源检查（删掉同源步骤就会红）', sameSrcLines.length > 0,
+    '同源报错 ' + sameSrcLines.length + ' 行');
+  check('旧包报红不靠文件列表兜底', !out.includes('文件列表不该差'),
     (out.split('\n').filter((x) => x.indexOf('✗') >= 0)[0] || '(没有 ✗ 行)').trim().slice(0, 120));
 }
 
 try {
-  const { readFileSync: rf, writeFileSync: wf } = await import('node:fs');
-  const p = new URL('../.test-counts.json', import.meta.url);
-  let d = {};
-  try { d = JSON.parse(rf(p, 'utf8')); } catch { /* 首次 */ }
-  d['pack-fixture'] = pass;
-  wf(p, JSON.stringify(d));
-} catch { /* 汇总失败不影响结论 */ }
+  const { writeCount } = await import('./count-utils.mjs');
+  writeCount('pack-fixture', pass);
+} catch { /* 计数失败不影响结论 */ }
 
 console.log('\n通过 ' + pass + ' 项，失败 ' + fail + ' 项');
 process.exit(fail === 0 ? 0 : 1);

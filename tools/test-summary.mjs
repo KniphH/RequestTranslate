@@ -7,7 +7,7 @@
  * 数字从 .test-counts.json 读（各测试脚本自己写的），
  * 因为 npm 的 && 链不会把环境变量传给后面的步骤。
  */
-import { readFileSync, existsSync, unlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
 const FILE = new URL('../.test-counts.json', import.meta.url);
@@ -35,8 +35,26 @@ console.log('='.repeat(56));
 console.log('全量汇总  ' + stamp + '  HEAD ' + head);
 console.log('  ' + (shown.length ? shown.join(' ｜ ') : '（各步没上报数字）'));
 if (total) console.log('  合计 ' + total + ' 项');
+
+const meta = data['_meta'] || {};
+const stale = !!data['_stale'] || (!!meta.head && meta.head !== head);
+const dirty = !!meta.dirty;
+const skipped = !!data['_e2e_skipped'];
+/* SKIP 不是通过：如实标出来，别让 0 被读成「全绿」。 */
+if (skipped) console.log('  ⚠ e2e-ui SKIP：UI 层 0 覆盖，不计入「通过」');
+if (dirty) console.log('  ⚠ 工作区有未提交改动：数字对应当前工作区，不是纯 HEAD');
+if (stale) console.log('  ✗ STALE：写数字时的 HEAD 与当前 HEAD 不一致，本次汇总无效');
 console.log('='.repeat(56));
 
-if (existsSync(FILE)) {
-  try { unlinkSync(FILE); } catch { /* 删不掉无所谓 */ }
-}
+/* **留档**：以前汇总完就 unlinkSync 删掉，数字无从复核。现在把汇总写回去，
+   最终交付可以直接拿 .test-counts.json 核对「哪次运行、哪个提交、多少项」。 */
+try {
+  data['_summary'] = {
+    stamp: stamp, head: head, total: total,
+    skipped: skipped, dirty: dirty, stale: stale,
+    counts: Object.fromEntries(order.filter((k) => data[k] != null).map((k) => [k, data[k]]))
+  };
+  writeFileSync(FILE, JSON.stringify(data, null, 2) + '\n');
+} catch { /* 留档失败不影响输出 */ }
+
+if (stale) process.exit(1);
