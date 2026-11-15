@@ -5108,6 +5108,18 @@ section('变异测试补盲（2026-11-16，注入 bug 实测的 9 个漏网）')
   applyB(scopeB, { onlyMissing: true });
   check('第二次 applyI18n 不覆盖已填节点（文本不会变第二版）',
     nodesB[0].innerHTML === '<b>k#1</b>', nodesB[0].innerHTML);
+
+  const vpSrc = readFileSync(new URL('./verify-pack.py', import.meta.url), 'utf8');
+  const pcSrc2 = readFileSync(new URL('../lib/panel-core.js', import.meta.url), 'utf8');
+  const eSrc2 = readFileSync(new URL('../lib/engine.js', import.meta.url), 'utf8');
+  check('取消走 setErr（两处都带 err_cancelled）',
+    (eSrc2.match(/setErr\('err_cancelled'/g) || []).length >= 2);
+  check('验包比对 .json/.md（raw_names + slim_messages）',
+    /raw_names = \[n for n in names if n\.endswith\(\("\.json", "\.md"\)\) and n != "manifest\.json"\]/.test(vpSrc) &&
+    /slim_messages\(/.test(vpSrc));
+  check('panel-core 的 rt-slot-h 至少有 CSS 定义 + HTML 使用两处',
+    (pcSrc2.match(/\brt-slot-h\b/g) || []).length >= 2,
+    String((pcSrc2.match(/\brt-slot-h\b/g) || []).length));
 }
 
 console.log('\n' + '='.repeat(46));
