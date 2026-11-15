@@ -4737,6 +4737,18 @@ await (async () => {
       bad.length === 0, bad.slice(0, 6).join(', '));
   }
 
+  /* 第十一版 §2：预览的两处兜底写死了旧默认（460 / 20），
+     而且 `|| 46` 把合法的 0（= 不限高度）吞成 46。 */
+  {
+    const optSrc = readFileSync(new URL('../options.js', import.meta.url), 'utf8');
+    check('预览宽度兜底走 DEFAULT_SETTINGS（不写死 460）',
+      !/Number\(s\.panelWidth\) \|\| 460/.test(optSrc) &&
+        /Number\(s\.panelWidth\) \|\| DEFAULT_SETTINGS\.panelWidth/.test(optSrc));
+    check('预览高度不把合法的 0 吞成 46（用 isFinite 判，不用 ||）',
+      !/Number\(s\.panelMaxHeight\) \|\| 46/.test(optSrc) &&
+        /Number\.isFinite\(mhRaw\)/.test(optSrc));
+  }
+
 /* ---- check 不许嵌套（第九版 §2 P2）----
    两条 check 嵌在另一条的实参里时，它们靠副作用执行、失败信息也会错位。
    这种写法语法完全合法，肉眼很难看出来，所以用逐字符扫描钉住。

@@ -740,8 +740,15 @@
         outBox.classList.add('empty');   // 和上面那句必须成对
       }
     } else {
-      /* 多槽：每槽有自己的成败，这个全局错误不往槽里塞，但**要重画一次** ——
-         否则结果区还停在旧译文上，用户看不到「这次挂了」。 */
+      /* 多槽：**把这条全局错误落到还没有自己结果的槽上**（第十一版指出原来只在
+         外层 setStatus 报一句、槽里保持旧译文，用户看见的是上一次的成功结果，
+         以为这次也成功了）。已经有结果的槽不动 —— 那条的成败由它自己说了算。 */
+      for (const s2 of slots) {
+        if (s2 && s2.state !== 'done' && s2.state !== 'fail') {
+          s2.state = 'fail';
+          s2.error = why;
+        }
+      }
       renderSlots();
     }
     setStatus(why, 'err');
@@ -1478,6 +1485,11 @@
   const allSettled = () => slots.every((s) => s.state === 'done' || s.state === 'fail');
 
   /** 多槽时状态栏那句汇总 */
+  /** 多槽全部失败（这时状态栏该是红字，不是普通提示） */
+  function settledAllFailed() {
+    return slots.length > 0 && slots.every((s) => s && s.state === 'fail');
+  }
+
   function settledSummary() {
     const ok = slots.filter((s) => s.state === 'done').length;
     const bad = slots.filter((s) => s.state === 'fail').length;
@@ -1554,7 +1566,7 @@
       if (allSettled()) {
         leaveBusy();
         setDot(slots.some((s2) => s2.state === 'done') ? 'ok' : 'err');
-        setStatus(settledSummary());
+    setStatus(settledSummary(), settledAllFailed() ? 'err' : '');
       }
     }
   }
@@ -1658,7 +1670,7 @@
         renderSlots();
         leaveBusy();
         setDot('ok');
-        setStatus(settledSummary());
+    setStatus(settledSummary(), settledAllFailed() ? 'err' : '');
       }
       keepPanelInView();
       return;

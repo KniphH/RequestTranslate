@@ -2861,10 +2861,15 @@ function renderPanelPreview() {
   /* 宽度 / 字号 / 高度 / 主题：语义与 content.js 的 applyPanelSize / applyFontSize 一致。
      **不再有 maxWidth: 100% 和 transform 缩放** —— 真面板不会因为容器窄就缩自己，
      放不下就由用户拖走，这正是"和网页上一样"的含义。 */
-  const w = Math.min(1600, Math.max(280, Number(s.panelWidth) || 460));
-  const fs = Math.min(48, Math.max(11, Number(s.fontSize) || 20));
-  const h = Math.min(2400, Math.max(0, Number(s.panelHeight) || 0));
-  const mh = Math.min(100, Math.max(0, Number(s.panelMaxHeight) || 46));
+  /* 兜底值必须和 DEFAULT_SETTINGS 一致（280 / 46），不能写自己那一套 */
+  const w = Math.min(1600, Math.max(280, Number(s.panelWidth) || DEFAULT_SETTINGS.panelWidth));
+  /* **不能用 `|| 46`**：0 是合法值（= 不限高度），`||` 会把它吞成 46。
+     判据是「是不是有限数字」，不是「真不真」。 */
+  const mhRaw = Number(s.panelMaxHeight);
+  const mh = Math.min(100, Math.max(0, Number.isFinite(mhRaw) ? mhRaw : DEFAULT_SETTINGS.panelMaxHeight));
+  /* 字号和固定高度（原来这两行的定义被我改没了，函数里引用 fs / h 直接 ReferenceError） */
+  const fs = Math.min(32, Math.max(11, Number(s.fontSize) || DEFAULT_SETTINGS.fontSize));
+  const h = Math.max(0, Number(s.panelHeight) || 0);
 
   panel.style.width = w + "px";
   panel.style.maxWidth = "";

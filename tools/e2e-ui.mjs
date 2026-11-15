@@ -1050,6 +1050,19 @@ try {
   opt.on('pageerror', (e) => errors.push(String((e && e.message) || e)));
 
   await opt.goto(`chrome-extension://${extId}/options.html`, { waitUntil: 'load' });
+  await opt.waitForTimeout(1200);
+
+  /* **先判「白屏 / 初始化失败」再等元素**（2026-11-15 实际栽过）：
+     我改预览的兜底值时把 `const fs` / `const h` 两行覆盖掉了，
+     init 抛 ReferenceError → 整个设置页只剩一句「设置页初始化失败：fs is not defined」。
+     而当时 e2e 是先 waitForSelector(8000ms) 超时抛异常，**报的是「找不到元素」**，
+     真实原因（ReferenceError）藏在页面文字里没被读出来。 */
+  const bootFail = await opt.evaluate(() => {
+    const t = (document.body && document.body.textContent || '').trim();
+    return t.length < 200 && /失败|failed|Error/i.test(t) ? t.slice(0, 200) : '';
+  });
+  check('设置页没有白屏 / 初始化失败', !bootFail, bootFail);
+
   await opt.waitForSelector('#cfg-list .cfg-item', { timeout: 8000 });
   await opt.waitForTimeout(200);
 
