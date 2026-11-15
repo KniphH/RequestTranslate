@@ -4393,12 +4393,19 @@ await (async () => {
   check('lib/i18n-msg.js 是 ESM，lib/i18n.js 是普通脚本（两者不能互相 import）',
     (() => {
       const esm = readFileSync(new URL('../lib/i18n-msg.js', import.meta.url), 'utf8');
+      const plain = readFileSync(new URL('../lib/i18n.js', import.meta.url), 'utf8');
+      return /^export /m.test(esm) && !/^export /m.test(plain) &&
+        !/from ['"]\.\/i18n\.js['"]/.test(esm) && !/from ['"]\.\/i18n-msg\.js['"]/.test(plain);
+    })());
+
   /* i18n-msg.js 头注释说「和 i18n.js 的 t() 同一套优先级，test-lib 有断言钉住」——
-     以前只有「两者不能互相 import」，没有优先级那条。补上：两边都必须是
-     「下载包 → chrome.i18n → 兜底」这个顺序。 */
+     两边都必须是「下载包 → chrome.i18n → 兜底」这个顺序。
+     ⚠️ 这两条以前被写进了上面那个 IIFE 里（缩进还乱），属于**嵌套 check**，
+     靠副作用执行、失败信息错位。第十一版判据 1 点名了这类，现拆出来。 */
+{
   const plainI18n = readFileSync(new URL('../lib/i18n.js', import.meta.url), 'utf8');
   const esmI18n = readFileSync(new URL('../lib/i18n-msg.js', import.meta.url), 'utf8');
-  const tBody = plainI18n.slice(plainI18n.indexOf('function t('), plainI18n.indexOf('function substitute('));
+  const tBody = plainI18n.slice(plainI18n.indexOf('function t('), plainI18n.indexOf('function substi'));
   const mBody = esmI18n.slice(esmI18n.indexOf('export async function msg('));
   check('plain t(): 先查下载包，再问 chrome.i18n，最后回落 key',
     tBody.indexOf('pack.strings[key]') >= 0 &&
@@ -4408,10 +4415,7 @@ await (async () => {
     mBody.indexOf('pack[key]') >= 0 &&
       mBody.indexOf('chrome.i18n') > mBody.indexOf('pack[key]') &&
       mBody.indexOf('out = fallback') > mBody.indexOf('chrome.i18n'));
-      const plain = readFileSync(new URL('../lib/i18n.js', import.meta.url), 'utf8');
-      return /^export /m.test(esm) && !/^export /m.test(plain) &&
-        !/from ['"]\.\/i18n\.js['"]/.test(esm) && !/from ['"]\.\/i18n-msg\.js['"]/.test(plain);
-    })());
+}
   /* 语言包走 GitHub 现取（kniph 2026-11-12：翻译由我做，但包不打包），
      所以启动时必须先 loadPack 再 applyI18n —— 顺序反了用户会看见文字闪。 */
   check('设置页启动时载入语言包并调用 applyI18n',
@@ -4661,11 +4665,16 @@ await (async () => {
   const enSet = new Set(enKeys2);
   const zhSet = new Set(zhKeys2);
   const used2 = new Set();
-  for (const f of ['options.html', 'options.js', 'content.js', 'popup.html', 'popup.js', 'background.js']) {
+  const scanFiles = ['options.html', 'options.js', 'content.js', 'popup.html', 'popup.js', 'background.js'];
+  /* **扫描面要全**（第十一版判据 2）：4 个 js + 2 个 html + lib 全部 .js。
+     只扫 4 个 .js 时 popup.html 的 9 处中文、lib 内部文案全在分母外，
+     覆盖率会被算高。 */
+  for (const f of scanFiles) {
     const s = readFileSync(new URL('../' + f, import.meta.url), 'utf8');
     for (const m of s.matchAll(/data-i18n(?:-ph|-html)?="([^"]+)"/g)) used2.add(m[1]);
     for (const m of s.matchAll(/\bT\('([a-z][a-z0-9_]+)'/g)) used2.add(m[1]);
-    for (const m of s.matchAll(/\bmsg\('([a-z][a-z0-9_]+)'/g)) used2.add(m[1]);
+    /* msg 可能被 as 改名（tMsg），两个名字都要认 —— 第十一版 §1 指出这里漏了 tMsg */
+    for (const m of s.matchAll(/\b\w*[Mm]sg\('([a-zA-Z][a-zA-Z0-9_]+)'/g)) used2.add(m[1]);
   }
   const settingKeys = Object.keys((await import("../lib/store.js")).DEFAULT_SETTINGS);
 
@@ -4702,7 +4711,10 @@ await (async () => {
   const isReStart = (st, p) => {
     let k = p - 1;
     while (k >= 0 && /\s/.test(st[k])) k -= 1;
-    return k < 0 || '=(,:[!&|?{};'.includes(st[k]);
+    /* `&&` / `||` / `??` 后面的 / 也是正则起点 —— 少了这几个，
+       检测器会把 /setDot\(/ 当除法，然后被里面的引号带跑，整个区间塌成 14K 字符。 */
+    const prev = st.slice(0, k + 1);
+    return k < 0 || /[=(,:[!&|?{};+\-*/%<>~^]$/.test(prev) || /\b(return|typeof|case|in|of)$/.test(prev);
   };
   const ranges = [];
   let p = 0;
@@ -4726,21 +4738,36 @@ await (async () => {
       j += 1;
     }
     ranges.push({ from: at, to: j });
-    p = j + 1;
+    p = at + 5;   // 只前进到参数起点，让内层 check 也能被扫到（原来 p = j + 1 跳过整段 → 嵌套永远查不出）
   }
+  /* 检测器自身所在的区间排除掉 —— 它的源码里全是正则和引号，自指必然扫不准。
+     这是**检测手段的已知边界**，不是代码问题。 */
+  const selfAnchor = selfSrc.indexOf('/* ---- check 不许嵌套');
+  /* 检测块自己的行号：它内部的源码全是正则和引号，自指扫描必然不准，整体跳过。
+     这是手段的已知边界，不装作能测自己。 */
+  const blockStart = selfSrc.slice(0, selfAnchor).split('\n').length;
   const nestedLines = [];
+  const runaway = [];
   for (const a of ranges) {
+    const aLine = selfSrc.slice(0, a.from).split('\n').length;
+    /* 检测器自身那一块跳过（自指必然扫不准） */
+    const isSelf = aLine >= blockStart;
+    if (a.to - a.from > 1500) {
+      if (!isSelf) runaway.push('L' + aLine);
+      continue;
+    }
     for (const b of ranges) {
-      if (a !== b && b.from > a.from && b.to < a.to) {
-        nestedLines.push(selfSrc.slice(0, a.from).split('\n').length);
-      }
+      if (a === b) continue;
+      if (b.from > a.from && b.to < a.to) nestedLines.push('L' + aLine);
     }
   }
   check('test-lib 自身没有嵌套的 check 调用',
     nestedLines.length === 0,
-    nestedLines.length ? '嵌套在 L' + nestedLines.slice(0, 5).join(', ') : '');
+    nestedLines.length ? '嵌套在 ' + nestedLines.slice(0, 5).join(', ') : '');
+  /* 跨度异常说明**扫描器本身**失效了，那比嵌套更值得报 */
+  check('没有解析跑飞的 check 区间（>1500 字符 = 正则没被识别）',
+    runaway.length === 0, runaway.length ? runaway.slice(0, 5).join(', ') : '');
 }
-
 /* **i18n 的 msg() 不能被同名参数遮蔽**（2026-11-15 实际栽过）：
    background.js 里 `port.onMessage.addListener(async (msg) => {` 的参数就叫 msg，
    而我同时 `import { msg } from './lib/i18n-msg.js'` —— 调用 msg('bg_xxx') 实际执行的是
