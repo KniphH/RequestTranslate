@@ -159,8 +159,16 @@ const els = {
  * 当前所有属性拼接都用双引号，转单引号不是必需的；但两个转义函数口径不一致的话，
  * 以后谁把某个属性改成单引号包就会漏。统一成一样，少一个需要记的约束。
  */
-function escapeHtml(s) {
-  return String(s ?? '')
+/* warning 有两种形状：字符串（解析器备注）和 { code, text, shape }（engine 的结构化项）。
+   直接插进模板会显示 [object Object]（2026-11-15 实测），统一走这里。 */
+function warnText(w) {
+  if (w && typeof w === 'object') {
+    return (w.code ? T(w.code, w.text || '') : (w.text || '')) + (w.shape || '');
+  }
+  return String(w == null ? '' : w);
+}
+
+function escapeHtml(s) {  return String(s ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -1431,7 +1439,7 @@ function previewBlock(b, vars, ivars) {
     notes.push(T('opt_t_undef', '未定义的变量（按空串替换）：') + info.missing.map((m) => '{{' + m + '}}').join(' '));
   }
   for (const p of info.problems) notes.push(T('opt_t_problem', '问题：') + p);
-  for (const w of info.warnings || []) notes.push(T('opt_t_hintlbl', '提示：') + w);
+  for (const w of info.warnings || []) notes.push(T('opt_t_hintlbl', '提示：') + warnText(w));
   for (const n of info.notes) notes.push(T('opt_t_fix', '修正：') + n);
 
   let out = formatPreview(info.request, notes);
@@ -1445,7 +1453,7 @@ function previewBlock(b, vars, ivars) {
       inotes.push(T('opt_t_undef', '未定义的变量（按空串替换）：') + iinfo.missing.map((m) => '{{' + m + '}}').join(' '));
     }
     for (const p of iinfo.problems) inotes.push(T('opt_t_problem', '问题：') + p);
-    for (const w of iinfo.warnings || []) inotes.push(T('opt_t_hintlbl', '提示：') + w);
+    for (const w of iinfo.warnings || []) inotes.push(T('opt_t_hintlbl', '提示：') + warnText(w));
     for (const n of iinfo.notes) inotes.push(T('opt_t_fix', '修正：') + n);
     out += '\n\n' + T('opt_imgtpl_sep', '══════ 图片请求模板（截图直传那一次用它）══════') + '\n\n' + formatPreview(iinfo.request, inotes);
   }
@@ -1675,7 +1683,7 @@ function testItemHtml(item, r, opts = {}) {
   // 轮换时把「这块试的是哪个 model」摆在最前面 —— 结果好坏都先要看出是哪个
   if (opts.model) badges.unshift(`<span class="badge">${escapeHtml(opts.model)}</span>`);
   if (r.usedPath) badges.push(`<span class="badge">${escapeHtml(r.usedPath)}</span>`);
-  for (const w of r.warnings || []) badges.push(`<span class="badge warn">${escapeHtml(w)}</span>`);
+  for (const w of r.warnings || []) badges.push(`<span class="badge warn">${escapeHtml(warnText(w))}</span>`);
   if (r.missingVars && r.missingVars.length) {
     badges.push(`<span class="badge warn">${T('opt_missing_vars', '未填变量 $1$', [r.missingVars.map(escapeHtml).join(', ')])}</span>`);
   }
@@ -2261,7 +2269,7 @@ function renderOcrPreview() {
 
   const parts = chain.map((item) => {
     const req = previewOcrRequest(item, OCR_SAMPLE_IMAGE, vars);
-    const notes = [...(req.warnings || [])];
+    const notes = (req.warnings || []).map(warnText);
     if (req.style) notes.unshift(T('opt_style_prefix', '写法：') + (req.style === 'raw' ? T('opt_style_raw', '原始 HTTP 报文') : 'curl') + T('opt_style_auto', '（自动识别）'));
     if (/{{image(Base64|UrlEncoded)?}}/.test(String(item.request || ''))) {
     notes.push(T('opt_note_fake_image', '上面 {{image}} 的位置是一张假的示例图，真截图是一整段 data URL；「测试」跑完后的「实际请求」里是那一份真的'));
