@@ -4961,10 +4961,10 @@ section('批次 A 闭环：用户可见修复的行为断言');
   /* A1：PRIVACY 中英与实际联网行为一致，CSS 句子不再串进语言包条目 */
   const privacy = readFileSync(new URL('../PRIVACY.md', import.meta.url), 'utf8');
   check('PRIVACY 中文不再声称「不换语言就永远不联网」', !privacy.includes('不换语言就永远不联网'));
-  check('PRIVACY 中文写明语言包不在安装包里、缓存缺条目会补',
-    /语言包不在安装包里/.test(privacy) && /静默补一次/.test(privacy) && /核对一次仓库/.test(privacy));
-  check('PRIVACY 英文写明 packs are not bundled、缓存缺条目会补',
-    /UI language packs are not bundled/.test(privacy) && /quietly refreshes it/.test(privacy) && /checks the repository once/.test(privacy));
+  check('PRIVACY 中文写明语言包完全下载、不在安装包里',
+    /语言包完全从仓库下载/.test(privacy) && /不在安装包里/.test(privacy) && /重新选一次语言/.test(privacy));
+  check('PRIVACY 英文写明 packs are downloaded in full、not bundled',
+    /UI language packs are downloaded in full/.test(privacy) && /not bundled/.test(privacy) && /select the language again/.test(privacy));
   check('PRIVACY 英文 CSS 说明独立成条',
     /- \*\*Custom panel CSS may load remote resources\*\*/.test(privacy) &&
     !/dropdown fetches nothing\. If you put an `@import`/.test(privacy));
@@ -5062,10 +5062,11 @@ section('语言包下发 / 入口去重（2026-11-15 实测反馈）');
   /* 语言包**不内置**（kniph 2026-11-15 明确要求），仍从仓库下发；这里钉住别又塞回包里。 */
   check('语言包不随包分发（pack.py 的 DIRS 不含 i18n）',
     !/DIRS\s*=\s*\[[^\]]*"i18n"/.test(packPy));
-  check('缓存语言包缺条目时会静默补一次（localKeyCount + downloadPack）',
-    /async function localKeyCount\(/.test(iSrc2) &&
-    /have < need - 2/.test(iSrc2) &&
-    /await downloadPack\(cached\.lang\)/.test(iSrc2));
+  check('loadPack 只读缓存、不发起网络（下载只由选语言 / 核对清单触发）', (() => {
+    const st = iSrc2.indexOf('async function loadPack(');
+    const body = iSrc2.slice(st, iSrc2.indexOf('\n  }', st) + 4);
+    return !/fetchAny|downloadPack|fetch\(/.test(body);
+  })());
   check('popup 只保留底部「打开完整设置」（顶部齿轮已删）',
     !/id="btn-open"/.test(popupHtml2) && /id="link-options"/.test(popupHtml2));
   check('语言代码表说明可以「不再显示」（data-hint 齐全）',
