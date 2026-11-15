@@ -13,6 +13,7 @@ npm run check          # 两项静态检查
 npm test               # 全量：以上 + 打包夹具 + 汇总（**只在打包 / 发版前跑**）
 python tools/pack.py --xpi
 python tools/verify-pack.py dist/<zip>
+python tools/mutation-test.py   # 变异测试：注入 20 个 bug，看断言能不能抓住
 ```
 
 平时只跑受改动影响的那一层；全量交给 `pack.py`。
@@ -23,7 +24,7 @@ python tools/verify-pack.py dist/<zip>
 |---|---|
 | 版本 | 1.3.2（`manifest.json`，唯一来源） |
 | 包体积 | zip 约 123 KB / xpi 约 122 KB（32 个文件） |
-| 断言 | 各层合计约 1825 项（打包时以末尾汇总为准） |
+| 断言 | 各层合计约 1835 项（打包时以末尾汇总为准） |
 | 语言 | 只内置中文；英文等语言包从仓库下载，**不进包** |
 | 双包 | zip / xpi 29 个共同文件逐字节一致，与源码逐文件 md5 对齐 |
 
@@ -35,7 +36,7 @@ python tools/verify-pack.py dist/<zip>
 | 项 | 达标条件 | 现在 |
 |---|---|---|
 | 已知问题 | 台账清零；每条都能「指一条命令复核」 | ✅ |
-| 断言 | 关键路径有反例：注入 bug 必须报红 | ✅ 9 组证伪 |
+| 断言 | 注入 20 个 bug 必须全被抓（`python tools/mutation-test.py`） | ✅ 20 / 20 |
 | 数字 | 绑 HEAD、带时间戳、留档，不手写 | ✅ `.test-counts.json` |
 | 错误路径 | 用户看得到的错误都按语言显示 | ✅ 16 条 key |
 | 包 | 双包一致、与源码同源、篡改报红 | ✅ 实测 |
@@ -70,6 +71,7 @@ python tools/verify-pack.py dist/<zip>
 | `CURRENT.md` | 本文件：现状 + 判定标准 |
 | `HISTORY.md` | 设计原则、关键决策、踩坑清单 |
 | `TODO.md` | 在等信号的事、已否决的事 |
+| `tools/mutation-test.py` | 变异测试：一次注入 20 个 bug，验证断言盲区 |
 | `DEVELOPMENT.md` | 实现细节、目录结构、测试与开发流程 |
 | `BILIBILI-TRANSLATE.md` | 内置 bilibili 通道怎么工作 |
 | `CUSTOM-PANEL-*.md` | 面板自定义（折叠 / 悬浮 / 演示） |
