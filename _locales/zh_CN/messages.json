@@ -2331,5 +2331,83 @@
   },
   "bg_clip_unavailable": {
     "message": "读不到剪切板，浏览器没放开剪贴板权限？"
+  },
+  "bing_page_failed": {
+    "message": "抓 Bing 翻译页失败：HTTP $1$",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bing_parse_failed": {
+    "message": "没能从 bing.com/translator 页面里解析出鉴权参数（Bing 可能改版了）"
+  },
+  "bing_token_expired": {
+    "message": "Bing 的 token 过期了，已自动重新获取并重试"
+  },
+  "bing_empty": {
+    "message": "Bing 返回了空响应。通常是 token 失效或被限流，重试一次一般就好；如果每次都空，八成是请求走了代理 —— 节点把这个接口掐了，换节点也一样。在代理客户端里给 bing.com 加一条直连规则（DOMAIN-SUFFIX,bing.com,DIRECT）即可。"
+  },
+  "bing_not_json": {
+    "message": "Bing 返回的不是 JSON：$1$",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "parse_no_url": {
+    "message": "没有解析出 URL：请确认请求里包含完整的 https:// 地址"
+  },
+  "parse_bad_url": {
+    "message": "URL 看起来不是绝对地址：\"$1$\"",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "parse_get_body": {
+    "message": "GET 请求带了 body，浏览器会丢掉它"
+  },
+  "parse_at_file": {
+    "message": "请求体写的是 @文件 —— curl 会去读本地文件，扩展读不了，会把这段 @… 原样当请求体发出去"
+  },
+  "parse_upload": {
+    "message": "-F / --form / -T 这类上传文件的参数要读本地文件，扩展不支持，这一段已忽略"
+  },
+  "parse_urlencode": {
+    "message": "--data-urlencode 的值没有做 URL 编码（curl 会编，扩展按原样发）—— 需要编码请自己在模板里写好"
+  },
+  "err_cancelled": {
+    "message": "已取消"
+  },
+  "err_send_failed": {
+    "message": "请求发送失败：$1$（检查 URL、是否被代理拦了、或者目标站点是否允许扩展访问）",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "err_no_extract": {
+    "message": "请求成功但没提取到译文。返回结构：$1$",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "err_read_failed": {
+    "message": "读响应出错：$1$",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "warn_aborted_partial": {
+    "message": "已手动中断，以下是已收到的部分"
   }
 }

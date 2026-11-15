@@ -334,7 +334,7 @@ console.log('\n11. 带 # 注释的 curl（就是用户给的那个例子）');
 }'`;
   const r = await runRequest({ requestText: src, vars });
   eq('注释行不影响请求', r.text, '整体返回');
-  check('给出了自动修复的提示', r.warnings.some((w) => w.includes('#')), r.warnings);
+  check('给出了自动修复的提示', r.warnings.some((w) => String((w && w.text) || w).includes('#')), r.warnings);
   const last = received[received.length - 1];
   check('实际发出的 body 是干净 JSON',
     !last.body.includes('#') && JSON.parse(last.body).model === 'Ling-3.0-flash', last.body);
@@ -350,7 +350,9 @@ console.log('\n12. 报错与异常');
 }
 {
   const r = await runRequest({ requestText: curlFor('/weird'), vars });
-  check('结构对不上时给出结构说明', (r.error || '').includes('foo'), r.error);
+  check('结构对不上时给出结构说明',
+    (r.error || '').includes('没提取到译文') && String(r.errorParams || '').includes('foo'),
+    (r.error || '') + ' | ' + JSON.stringify(r.errorParams || []));
 }
 {
   const r = await runRequest({ requestText: 'curl http://127.0.0.1:1/nope', vars });
@@ -448,7 +450,7 @@ console.log('\n15. 内置适配器（Bing 免费通道）');
   const before = received.length;
   const r = await runRequest({ adapter: 'bing', vars: { text: 'RETRY_ME', targetLang: 'zh-Hans' } });
   eq('重试后拿到了译文', r.text, '【译】RETRY_ME');
-  check('给出了自动重试的提示', r.warnings.some((w) => w.includes('token')), r.warnings);
+  check('给出了自动重试的提示', r.warnings.some((w) => String((w && w.text) || w).includes('token')), r.warnings);
   eq('重试过程共四次请求', received.slice(before).length, 4);
 }
 {

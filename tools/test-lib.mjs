@@ -3505,16 +3505,16 @@ section('28. 截图那一步失败点 ↻：重发**刚才那张图**，两条�
      这条断言同时钉住「真的会 push」和「真的被带出去」。 */
   const warnOf = (src) => parseRequest(src).warnings || [];
   check('curl 的 -d @file 会给出提示（不再静默发 @文件）',
-    warnOf('curl https://x -d @body.json').some((w) => /@文件/.test(w)),
+    warnOf('curl https://x -d @body.json').some((w) => /@文件/.test((w && w.text) || w)),
     JSON.stringify(warnOf('curl https://x -d @body.json')));
   check('curl 的 --data-binary @file 同样给提示',
-    warnOf('curl https://x --data-binary @b.json').some((w) => /@文件/.test(w)));
+    warnOf('curl https://x --data-binary @b.json').some((w) => /@文件/.test((w && w.text) || w)));
   check('curl 的 -F / --form / -T 给「不支持上传文件」的提示',
-    warnOf('curl https://x -F a=@b.png').some((w) => /不支持/.test(w)) &&
-      warnOf('curl https://x -T ./a.json').some((w) => /不支持/.test(w)) &&
-      warnOf('curl https://x --form k=v').some((w) => /不支持/.test(w)));
+    warnOf('curl https://x -F a=@b.png').some((w) => /不支持/.test((w && w.text) || w)) &&
+      warnOf('curl https://x -T ./a.json').some((w) => /不支持/.test((w && w.text) || w)) &&
+      warnOf('curl https://x --form k=v').some((w) => /不支持/.test((w && w.text) || w)));
   check('同一条参数写多次只提示一次（不刷屏）',
-    warnOf('curl https://x -F a=1 -F b=@c.png').filter((w) => /不支持/.test(w)).length === 1);
+    warnOf('curl https://x -F a=1 -F b=@c.png').filter((w) => /不支持/.test((w && w.text) || w)).length === 1);
   check('正常 curl 不会平白多出提示', warnOf('curl https://x -d "a=1"').length === 0,
     JSON.stringify(warnOf('curl https://x -d "a=1"')));
   /* 带出去这一环：引擎的 runRequest 和 previewRequest 都要带上 */
@@ -3524,7 +3524,7 @@ section('28. 截图那一步失败点 ↻：重发**刚才那张图**，两条�
   check('previewRequest 也返回 warnings（设置页预览要看得见）',
     /warnings: parsed\.warnings \|\| \[\]/.test(engSrc));
   const pvWarn = previewRequest('curl https://x -d @body.json', {}, '');
-  check('预览这条路真的带出了提示', (pvWarn.warnings || []).some((w) => /@文件/.test(w)),
+  check('预览这条路真的带出了提示', (pvWarn.warnings || []).some((w) => /@文件/.test((w && w.text) || w)),
     JSON.stringify(pvWarn.warnings));
 
   /* connectPort 里那句 postMessage(hello) 也必须是包住的（kniph 2026-10-18 复查）。
@@ -3764,7 +3764,7 @@ section('28. 截图那一步失败点 ↻：重发**刚才那张图**，两条�
      否则「token 过期已重试」会和一条 HTTP 500 同时显示（kniph 2026-10-18 通读）。 */
   const adapterSrc = readFileSync(new URL('../lib/adapters.js', import.meta.url), 'utf8');
   check('Bing 重试提示只在重试成功时才加（不靠「有没有 body」判断）',
-    /if \(res\.ok && raw\.trim\(\)\) \{\s*\n\s*result\.warnings\.push\('Bing 的 token 过期了/.test(adapterSrc),
+    /if \(res\.ok && raw\.trim\(\)\) \{\s*\n\s*result\.warnings\.push\(\{\s*code: 'bing_token_expired'/.test(adapterSrc),
     /if \(raw\.trim\(\)\) result\.warnings\.push/.test(adapterSrc) ? '旧写法还在' : 'ok');
 
   const badIterMsg = async (v) => {

@@ -525,7 +525,23 @@
     "opt_test_fail_chain_n": "No translation from any of the $1$ request(s)",
     "diag_no_content": "No content found in the response; the structure is: ",
     "bg_no_image": "No image in the clipboard",
-    "bg_clip_unavailable": "Cannot read the clipboard — did the browser deny clipboard permission?"
+    "bg_clip_unavailable": "Cannot read the clipboard — did the browser deny clipboard permission?",
+    "bing_page_failed": "Could not load the Bing translator page: HTTP $1$",
+    "bing_parse_failed": "Could not parse the auth parameters from bing.com/translator (Bing may have changed)",
+    "bing_token_expired": "Bing token expired; re-fetched and retried",
+    "bing_empty": "Bing returned an empty response. Usually the token expired or you were rate-limited — one retry is normally enough. If it is always empty, the request is probably going through a proxy whose node blocks this endpoint; add a direct rule for bing.com in your proxy client (DOMAIN-SUFFIX,bing.com,DIRECT).",
+    "bing_not_json": "Bing returned something that is not JSON: $1$",
+    "parse_no_url": "No URL parsed — make sure the request contains a full https:// address",
+    "parse_bad_url": "URL does not look absolute: \"$1$\"",
+    "parse_get_body": "A GET request has a body; the browser will drop it",
+    "parse_at_file": "The body is @file — curl would read a local file, which an extension cannot do, so this @… is sent as the body",
+    "parse_upload": "-F / --form / -T need local files, which an extension does not support; this part was ignored",
+    "parse_urlencode": "--data-urlencode values are not URL-encoded (curl would encode them; here they are sent as-is) — encode them yourself in the template if needed",
+    "err_cancelled": "Cancelled",
+    "err_send_failed": "Request failed: $1$ (check the URL, whether a proxy is blocking it, or whether the site allows extension access)",
+    "err_no_extract": "Request succeeded but no translation was extracted. Structure: $1$",
+    "err_read_failed": "Failed to read the response: $1$",
+    "warn_aborted_partial": "Stopped manually; below is what arrived before that"
   },
   "placeholders": {
     "panel_switched_to": {

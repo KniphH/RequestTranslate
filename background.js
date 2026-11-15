@@ -335,6 +335,26 @@ chrome.runtime.onConnect.addListener((port) => {
   /** 这次请求带图吗（图片直传 / 截图直传同一判据） */
   const hasImageInContext = (m) => !!(m.context && m.context.image);
 
+  /** 把 result 里的 error / warnings 按当前语言渲染一次（边界层做，显示层拿到的都是串）。 */
+  /** 错误对象（可能带 i18n code）按当前语言渲染。 */
+  async function localizeErr(err) {
+    if (!err) return '';
+    const raw = err.message ? err.message : String(err);
+    return err.code ? tMsg(err.code, raw, err.extra != null ? [err.extra] : []) : raw;
+  }
+
+  async function localizeResult(r) {
+    if (!r) return r;
+    if (Array.isArray(r.problems) && r.problems.length) {
+      r.error = (await Promise.all(r.problems.map((p) => tMsg(p.code, p.text, p.params || [])))).join('；');
+    } else if (r.errorCode) {
+      r.error = await tMsg(r.errorCode, r.error, r.errorParams || []);
+    }
+    r.warnings = await Promise.all((r.warnings || []).map((w) =>
+      (w && typeof w === 'object' && w.code) ? tMsg(w.code, w.text, w.params || []) : w));
+    return r;
+  }
+
   const safePost = (msg) => {
     try {
       port.postMessage(msg);
@@ -574,7 +594,7 @@ chrome.runtime.onConnect.addListener((port) => {
               });
             } catch (err) {
               if (!alive()) return;
-              safePost({ type: 'fatal', configId: wantId, message: err && err.message ? err.message : String(err) });
+              safePost({ type: 'fatal', configId: wantId, message: await localizeErr(err) });
               runCtrls.delete(wantId);
               return;
             }
@@ -623,7 +643,7 @@ chrome.runtime.onConnect.addListener((port) => {
         /* **只摘自己那个 controller**：同 wantId 可能已被新批次重建，
            无条件 delete 会把新批次刚建的摘掉，之后 abort 不到它。 */
         if (runCtrls.get(wantId) === ctrl) runCtrls.delete(wantId);
-        safePost({ type: 'done', configId: wantId, result: { ...result, raw: undefined } });
+        safePost({ type: 'done', configId: wantId, result: await localizeResult({ ...result, raw: undefined }) });
       };
 
       // 并发跑（不串行）：总耗时取决于最慢的那条，不是加起来

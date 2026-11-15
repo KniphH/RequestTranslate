@@ -163,9 +163,23 @@ const els = {
    直接插进模板会显示 [object Object]（2026-11-15 实测），统一走这里。 */
 function warnText(w) {
   if (w && typeof w === 'object') {
-    return (w.code ? T(w.code, w.text || '') : (w.text || '')) + (w.shape || '');
+    const text = w.code ? T(w.code, w.text || '', w.params || []) : (w.text || '');
+    return text + (w.shape || '');
   }
   return String(w == null ? '' : w);
+}
+
+/** result 里的 error / warnings 按当前语言渲染一次（background 走同一套逻辑）。 */
+function localizeResult(r) {
+  if (!r) return r;
+  if (Array.isArray(r.problems) && r.problems.length) {
+    r.error = r.problems.map((p) => T(p.code, p.text, p.params || [])).join('；');
+  } else if (r.errorCode) {
+    r.error = T(r.errorCode, r.error, r.errorParams || []);
+  }
+  r.warnings = (r.warnings || []).map((w) =>
+    (w && typeof w === 'object' && w.code) ? T(w.code, w.text, w.params || []) : w);
+  return r;
 }
 
 function escapeHtml(s) {  return String(s ?? '')
@@ -1438,7 +1452,7 @@ function previewBlock(b, vars, ivars) {
   if (info.missing.length) {
     notes.push(T('opt_t_undef', '未定义的变量（按空串替换）：') + info.missing.map((m) => '{{' + m + '}}').join(' '));
   }
-  for (const p of info.problems) notes.push(T('opt_t_problem', '问题：') + p);
+  for (const p of info.problems) notes.push(T('opt_t_problem', '问题：') + warnText(p));
   for (const w of info.warnings || []) notes.push(T('opt_t_hintlbl', '提示：') + warnText(w));
   for (const n of info.notes) notes.push(T('opt_t_fix', '修正：') + n);
 
@@ -1452,7 +1466,7 @@ function previewBlock(b, vars, ivars) {
     if (iinfo.missing.length) {
       inotes.push(T('opt_t_undef', '未定义的变量（按空串替换）：') + iinfo.missing.map((m) => '{{' + m + '}}').join(' '));
     }
-    for (const p of iinfo.problems) inotes.push(T('opt_t_problem', '问题：') + p);
+    for (const p of iinfo.problems) inotes.push(T('opt_t_problem', '问题：') + warnText(p));
     for (const w of iinfo.warnings || []) inotes.push(T('opt_t_hintlbl', '提示：') + warnText(w));
     for (const n of iinfo.notes) inotes.push(T('opt_t_fix', '修正：') + n);
     out += '\n\n' + T('opt_imgtpl_sep', '══════ 图片请求模板（截图直传那一次用它）══════') + '\n\n' + formatPreview(iinfo.request, inotes);
@@ -1583,6 +1597,7 @@ async function runTest() {
       } catch (err) {
         result = { ok: false, status: 0, ms: 0, text: '', error: String(err && err.message), warnings: [], raw: '' };
       }
+      result = localizeResult(result);
       sent += 1;
       els.testResult.insertAdjacentHTML(
         'beforeend',
@@ -3180,13 +3195,13 @@ async function onHistoryAction(e) {
   btn.textContent = T('opt_translating', '翻译中…');
     try {
       const vars = buildVars(state, String(h.src || ''), {});
-      const r = await runRequest({
+      const r = localizeResult(await runRequest({
         requestText: requestTemplateFor(cfg, {}),
         adapter: cfg.adapter,
         vars,
         path: cfg.path,
         responseMode: cfg.responseMode,
-      });
+      }));
       if (r && r.text) {
         /* 把新结果写回这条记录，并记下这次用的是哪条配置 */
         h.dst = String(r.text).slice(0, 5000);
