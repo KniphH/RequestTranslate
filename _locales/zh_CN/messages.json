@@ -2409,5 +2409,8 @@
   },
   "warn_aborted_partial": {
     "message": "已手动中断，以下是已收到的部分"
+  },
+  "panel_tts_no_voice": {
+    "message": "听不到声音：系统里没装这个语言的语音包（Windows 设置 → 时间和语言 → 语音 → 添加语音）"
   }
 }

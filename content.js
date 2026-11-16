@@ -2649,15 +2649,32 @@
         refreshActs();
       }
     };
-    u.onerror = () => {
+    u.onerror = (e) => {
       if (speakingKey === cid) {
         speakingKey = '';
         refreshActs();
+      }
+      const err = (e && e.error) || '';
+      if (!voices.length || err === 'synthesis-failed' || err === 'voice-unavailable') {
+        setStatus(T('panel_tts_no_voice',
+          '听不到声音：系统里没装这个语言的语音包（Windows 设置 → 时间和语言 → 语音 → 添加语音）'), 'warn');
       }
     };
     speakingKey = cid;
     refreshActs();
     synth.speak(u);
+    /* **说不响就得说清楚**：有些浏览器在没有可用语音时既不报错也不出声（Chrome 实测），
+       按钮点下去看起来就是坏的。900ms 后仍没开始读 → 明说缺语音包
+       （kniph 2026-11-16：Chrome / 火狐没反应、Edge 正常，根因是这台机器没装 TTS 引擎）。 */
+    setTimeout(() => {
+      if (speakingKey !== cid) return;
+      if (!synth.speaking && !synth.pending) {
+        speakingKey = '';
+        refreshActs();
+        setStatus(T('panel_tts_no_voice',
+          '听不到声音：系统里没装这个语言的语音包（Windows 设置 → 时间和语言 → 语音 → 添加语音）'), 'warn');
+      }
+    }, 900);
   }
 
   /**
