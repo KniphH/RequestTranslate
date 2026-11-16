@@ -77,6 +77,24 @@ to try a local build temporarily, open `about:debugging` → "Load Temporary Add
 
 ---
 
+## Switching the interface to English
+
+The extension ships with **Chinese only** — that's the source text and it keeps the package small. Every other language, English included, is a **language pack downloaded from the repo** the first time you pick it. Nothing extra is bundled.
+
+1. Open the extension's **Settings** page.
+2. Scroll to the very bottom, to the group labelled **界面语言** ("Interface language").
+3. Pick **English**. The pack downloads immediately — network access is required, and the line under the dropdown shows the result.
+4. Settings, the panel and the popup switch to English as soon as it finishes.
+
+Notes:
+
+- **If a label or dialog is still Chinese**, pick English **again**. Your local copy of the pack was downloaded before that string was added; re-selecting fetches the current one.
+- Once downloaded, the pack is stored locally — no network after that, and it survives restarts. Clearing the extension's data means downloading it again.
+- Chinese is built in and needs no download, so switching back is instant.
+- The pack is a plain JSON file of UI strings; it changes **the interface only**, never what gets sent to your translation endpoint.
+
+---
+
 ## First run
 
 **Works out of the box**
