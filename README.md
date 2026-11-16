@@ -19,6 +19,8 @@
 <a href="https://microsoftedge.microsoft.com/addons/detail/kbkgflnmkghalnfhgdjefbalgbljlpod"><img alt="Microsoft Edge" src="https://img.shields.io/badge/dynamic/json?label=Microsoft%20Edge&query=%24.version&url=https%3A%2F%2Fmicrosoftedge.microsoft.com%2Faddons%2Fgetproductdetailsbycrxid%2Fkbkgflnmkghalnfhgdjefbalgbljlpod&style=for-the-badge&logo=microsoftedge&logoColor=white&color=0078D7"></a>
 <a href="https://addons.mozilla.org/firefox/addon/requesttranslate/"><img alt="Firefox Add-ons" src="https://img.shields.io/amo/v/requesttranslate?style=for-the-badge&logo=firefoxbrowser&logoColor=white"></a>
 
+**简体中文** · [English](README.en.md)
+
 ## 它是什么
 
 <img src="docs/shots/00-overview.png" width="100%" alt="选词 → 小圆点 → 面板；配置就是一段请求文本">
