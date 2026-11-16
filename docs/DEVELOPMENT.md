@@ -1,5 +1,7 @@
 # RequestTranslate 开发说明
 
+**简体中文** · [English](DEVELOPMENT.en.md)
+
 面向改这个仓库的人。**README 只讲怎么用，这里讲怎么实现的、怎么验证的。**
 
 零依赖、零构建，MV3，直接「加载解压缩的扩展」。
