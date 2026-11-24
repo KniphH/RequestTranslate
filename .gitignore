@@ -12,6 +12,9 @@ tools/_*.css
 tools/_*.png
 tools/cmp_*.png
 docs/*.png
+
+# 商店上架素材（本地留着发版用，不进仓库 —— 仓库里没人引用）
+docs/store/
 tools/e2e*.log
 tools/*.log
 tools/CM*.txt
@@ -19,10 +22,16 @@ tools/MSG*.txt
 tools/*.png
 tools/_*
 tools/addassert.mjs
-%SystemDrive%/
 
 # Chrome / Edge 打包与 DNR 编译产物（会反复生成，每次让 git status 变脏）
 _metadata/
 
 # 测试汇总的临时计数（tools/test-summary.mjs 用）
 .test-counts.json
+
+# 内部工作文件：本地留着给我和 agent 看，不进仓库（对外文档看 docs/DEVELOPMENT.md）
+docs/CURRENT.md
+docs/TODO.md
+docs/HISTORY.md
+docs/RELEASE-*.md
+docs/REVIEW-*.md

@@ -28,6 +28,8 @@ jobs:
         run: node tools/test-engine.mjs
       - name: 注释剥离器
         run: node tools/test-strip.mjs
+      - name: 验包反例夹具
+        run: node tools/test-pack-fixture.mjs
       - name: manifest / 包结构抽查
         run: |
           node -e "const m=require('./manifest.json'); if(!m.commands || !m.commands['translate-selection']) process.exit(1); console.log('manifest ok, version', m.version)"

@@ -70,8 +70,8 @@ function collectJsClasses(src) {
  */
 function usedClassSelectors(src) {
   const out = [];
-  for (const m of src.matchAll(/querySelector(?:All)?\('\.([A-Za-z0-9_-]+)'\)/g)) out.push(m[1]);
-  for (const m of src.matchAll(/\.closest\('\.([A-Za-z0-9_-]+)'\)/g)) out.push(m[1]);
+  for (const m of src.matchAll(/querySelector(?:All)?\(\s*['"]\.([A-Za-z0-9_-]+)['"]\s*\)/g)) out.push(m[1]);
+  for (const m of src.matchAll(/\.closest\(\s*['"]\.([A-Za-z0-9_-]+)['"]\s*\)/g)) out.push(m[1]);
   return [...new Set(out)];
 }
 
@@ -86,9 +86,16 @@ for (const { js, html } of PAIRS) {
 
   // HTML 里定义的所有 id
   const ids = new Set([...htmlSrc.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
+  // 运行时拼出的固定 id（nameId / hint.id / el.id = '...'）也是真实存在的。
+  for (const m of jsSrc.matchAll(/\b(?:id|nameId):\s*['"]([A-Za-z0-9_-]+)['"]/g)) ids.add(m[1]);
+  for (const m of jsSrc.matchAll(/\.id\s*=\s*['"]([A-Za-z0-9_-]+)['"]/g)) ids.add(m[1]);
   // 写死的 + 脚本拼出来的，都算「有定义」
   const classes = collectHtmlClasses(htmlSrc);
   for (const c of collectJsClasses(jsSrc)) classes.add(c);
+  // 面板骨架/槽位的类名由 panel-core.js 生成，两栏页面共用；一并算作已定义。
+  if (fs.existsSync(path.join(ROOT, 'lib/panel-core.js'))) {
+    for (const c of collectJsClasses(read('lib/panel-core.js'))) classes.add(c);
+  }
 
   const issues = [];
 
@@ -99,8 +106,12 @@ for (const { js, html } of PAIRS) {
   }
 
   // document.getElementById('xxx')
-  for (const m of jsSrc.matchAll(/getElementById\('([A-Za-z0-9_-]+)'\)/g)) {
-    if (!ids.has(m[1])) issues.push(`getElementById('${m[1]}') —— HTML 里没有这个 id`);
+  for (const m of jsSrc.matchAll(/getElementById\(\s*(['"])([A-Za-z0-9_-]+)\1\s*\)/g)) {
+    const q = m[1];
+    if (!ids.has(m[2])) issues.push(`getElementById(${q}${m[2]}${q}) —— HTML 里没有这个 id`);
+  }
+  for (const m of jsSrc.matchAll(/querySelector(?:All)?\(\s*(['"])#([A-Za-z0-9_-]+)\1\s*\)/g)) {
+    if (!ids.has(m[2])) issues.push(`querySelector(${m[1]}#${m[2]}${m[1]}) —— HTML 里没有这个 id`);
   }
 
   // querySelector('.xxx') / querySelectorAll('.xxx') / closest('.xxx')

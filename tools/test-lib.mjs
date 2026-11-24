@@ -30,7 +30,7 @@ const {
 const { uid, normalizeRequestItem, mainRequest, allRequests, requestChain, requestTemplateFor } = await import('../lib/requests.js');
 // 导出文件口令加密（node 22 自带 webcrypto，和扩展里的 Web Crypto 同源同 API）
 const { encryptExport, decryptExport, isEncryptedExport } = await import('../lib/crypto.js');
-const { previewRequest, maskRequest, readResponseBody } = await import('../lib/engine.js');
+const { previewRequest, maskRequest, readResponseBody, fixJsonBody } = await import('../lib/engine.js');
 const { adoptPanelOwned, PANEL_OWNED_SETTING_KEYS } = await import('../lib/store.js');
 const { toBingLang, hasAdapter } = await import('../lib/adapters.js');
 const {
@@ -920,8 +920,13 @@ section('13. 按钮样式：content.js 里的副本必须和 lib 一致');
     squash(src).includes(squash(TRIGGER_SVG_SAMPLE)));
   check('content.js 里也没留下笔尖', !src.includes('s-nib') && !src.includes('M8.3 3.1h7.4'));
 
+  const guardBlock = src.slice(src.indexOf('const SVG_GUARDS = ['), src.indexOf('];', src.indexOf('const SVG_GUARDS = [')));
+  const contentNegates = [...guardBlock.matchAll(/\{\s*re:\s*(\/[^\n]+?\/[a-z]*),\s*(negate:\s*true)?/g)]
+    .map((m) => ({ re: squash(m[1]), negate: !!m[2] }));
   for (const g of SVG_GUARDS) {
     check(`安全检查带过去了：${g.re}`, squash(src).includes(squash(g.re.toString())));
+    const hit = contentNegates.find((x) => x.re === squash(g.re.toString()));
+    check(`安全检查的 negate 语义也一致：${g.re}`, !!hit && hit.negate === !!g.negate, JSON.stringify(contentNegates));
   }
 }
 
@@ -1200,6 +1205,42 @@ section('15. 截图 OCR：供应商状态 / 请求体 / 取文字');
       !String(okRes.request.headers.Authorization).includes('sk-1234567890'),
       okRes.request.headers.Authorization);
     check('原始响应原样留着', String(okRes.raw).includes('认出来的字'));
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+
+  /* ---- 读流中途 abort：半截文本不能当成功结果 ---- */
+  try {
+    let read = 0;
+    const aborter = Object.assign(new Error('aborted'), { name: 'AbortError' });
+    globalThis.fetch = async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/event-stream' },
+      body: {
+        getReader: () => ({
+          read: async () => {
+            if (read++ === 0) {
+              return { done: false, value: new TextEncoder().encode('data: {"choices":[{"delta":{"content":"半截"}}]}\n\n') };
+            }
+            throw aborter;
+          },
+          cancel: async () => {}
+        })
+      }
+    });
+    const aborted = await runOcr({
+      provider: {
+        name: 'abort-test',
+        request: 'curl https://x/y -H "Content-Type: text/event-stream" -d "{}"',
+        responsePath: ''
+      },
+      dataUrl: 'data:image/png;base64,AAA',
+      vars: {}
+    }).then(() => null, (e) => e);
+    check('OCR 读流中 abort 以 AbortError 结束，不返回半截成功', aborted && aborted.name === 'AbortError',
+      aborted && aborted.message);
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -2140,7 +2181,7 @@ section('15f. 设置页的「图片配置」那条线也认后备');
   /* 抽 key 之后 label 里是 ${T('opt_label_name', '名称')}，判据跟着改成「两栏都用同一个
      模板出来的 label，且模板里走的是查表」—— 断言意图不变（不许手抄两份）。 */
   check('两栏的「名称」label 是同一个模板出来的（只有 id 不同）',
-    /<label for="\$\{nameId\}">\$\{T\('opt_label_name'/.test(opt) &&
+    /<label for="\$\{nameId\}">\$\{escapeHtml\(T\('opt_label_name'/.test(opt) &&
       !stripComments(optHtml).includes('<label for="f-name">'));
   /* 「供应商」这个说法只在 OCR 栏有，配置栏叫「配置」 —— 同一个东西两个名字
      （kniph 2026-10-14：「『供应商』也改成『配置』」）。判据：HTML 里再没有这个词。 */
@@ -2522,6 +2563,13 @@ section('19. 导出 / 导入：换台设备能把配置原样搬过去');
     JSON.stringify({ kind: 'some-other-app', configs: [{ id: 'a' }] }), /kind/);
 
   /* 老版本（1.0.0 起其实就带 kind）和手写文件可能没有 kind —— 不能因为这个就拒 */
+  /* 损坏文件里 vars: [null] 不能读到 v.name 才炸；loadState 与 importState 共用归一化。 */
+  const nullVars = importState(JSON.stringify({
+    configs: [{ id: 'a', name: 'A', request: 'GET https://x' }],
+    vars: [null, 3, { name: 'ok', value: 1 }]
+  }));
+  eq('导入损坏 vars 不抛 TypeError，只保留对象项', JSON.stringify(nullVars.vars), JSON.stringify([{ name: 'ok', value: '1' }]));
+
   const noKind = importState(JSON.stringify({ configs: [{ id: 'a', name: 'A' }] }));
   eq('没有 kind 也放行（手写的文件）', noKind.configs.length, 1);
 }
@@ -2729,6 +2777,11 @@ section('20. 「临时直连」已彻底移除：权限 / 模块 / 调用点都�
     'rt-frame-sel'.length > 0 && bridge.includes('rt-frame-sel') && content.includes('rt-frame-sel'));
   check('顶层收消息有开关（prefs.frameBridge 关了就忽略）',
     /prefs\.frameBridge\) return/.test(content));
+  check('桥在发送侧也读开关，未读存档前不泄露选区',
+    bridge.includes("chrome.storage.local.get('state')") &&
+      /let bridgeEnabled = false/.test(bridge) && /if \(!bridgeEnabled\) return/.test(bridge));
+  check('iframe 内滚动会重报当前选区坐标',
+    /addEventListener\('scroll'[\s\S]*?rectOf\(sel\)[\s\S]*?true\)/.test(bridge));
   check('manifest 声明三条快捷键：翻译选区默认 Alt+T，两条截图默认不设键',
     manifest.commands && manifest.commands['translate-selection'] &&
       manifest.commands['translate-selection'].suggested_key.default === 'Alt+T' &&
@@ -2790,7 +2843,9 @@ section('22. 按钮：贴鼠标 + 自动消失');
      手里那个 lastMouse 是旧的，得清掉，改用光标那一端定位。 */
   check('有 mousemove 监听（鼠标位置只能自己记）',
     /addEventListener\('mousemove'/.test(src));
-  check('键盘改选区时把旧鼠标坐标清掉', src.includes('if (e.key !== \'Escape\') lastMouse = null;'));
+  check('键盘改选区时切到 caret 路径并保留鼠标兜底',
+    src.includes("if (e.key !== 'Escape') lastSelByKeyboard = true;") &&
+      /if \(lastSelByKeyboard\) \{[\s\S]{0,180}caretRect\(sel\)[\s\S]{0,180}lastMouse/.test(src));
   check('键盘这一路用光标那一端（focusNode / focusOffset）', src.includes('sel.focusNode'));
   check('Shadow DOM 里连光标都量不到时不硬贴左上角',
     /if \(!b \|\| \(b\.width === 0 && b\.height === 0\)\) return null;/.test(src));
@@ -3011,6 +3066,17 @@ section('25. 管模型的变量填多行 = 换 model 重试（每个一行）');
     JSON.stringify(multiReq.url));
   check('同一次还顺手把 GEMINI_API_KEY 打码了（key 走变量跟随）',
     multiReq.url.includes('key=AQ.Ab8…（已隐藏）'), JSON.stringify(multiReq.url));
+
+  /* OCR 模板路径与翻译路径共用同一个 JSON 修复器。 */
+  {
+    const bad = '{"messages":[{"content":"第一行\n第二行"}]}';
+    const fixed = fixJsonBody(bad);
+    check('裸换行 JSON 由共享修复器修好，并给出提示', fixed.body !== bad && fixed.notes.length > 0,
+      JSON.stringify(fixed));
+    check('修复后的 body 能 JSON.parse', (() => {
+      try { JSON.parse(fixed.body); return true; } catch { return false; }
+    })());
+  }
 
   /* engine 自己也得挂这一步：OCR 那条路（buildOcrRequest）走的是另一处组装 */
   check('OCR 的组装也过 firstModelVars（否则 OCR 预览里一样会串四个 model）',
@@ -3867,7 +3933,7 @@ section('28. 截图那一步失败点 ↻：重发**刚才那张图**，两条�
   {
     const optSrcMax = readFileSync(new URL('../options.js', import.meta.url), 'utf8');
     check('设置页 #s-max 清空时退回 8000，不写 0',
-      /key: 'maxChars'[\s\S]{0,200}save: \(el\) => Number\(el\.value\) \|\| 8000/.test(optSrcMax));
+      /key: 'maxChars'[\s\S]{0,200}save: \(el\) => clampInputNumber\(el, 8000, 100, 200000\)/.test(optSrcMax));
     const popupSrcMax = readFileSync(new URL('../popup.js', import.meta.url), 'utf8');
     check('popup.js 用 maxChars 时有和另外两处一样的守卫',
       /Math\.max\(1, Number\(state\.settings\.maxChars\) \|\| 8000\)/.test(popupSrcMax));
@@ -3888,54 +3954,25 @@ section('28. 截图那一步失败点 ↻：重发**刚才那张图**，两条�
      ② 「第一次列表为空、第二次才有」这个时序不能改变结果。
    改动那两个函数时，这里要一起改（否则断言会失去意义，注释里写清楚）。 */
 {
-  // —— 复刻：与 content.js 的 speechTagsFor / pickVoice 逐字一致 ——
+  // 抠 content.js 的真实现执行；不再维护第二份算法。
+  const cRealSrc = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
+  const cutFn = (name) => {
+    const at = cRealSrc.indexOf('function ' + name + '(');
+    if (at < 0) return '';
+    let i = cRealSrc.indexOf('{', at), depth = 0;
+    for (; i < cRealSrc.length; i += 1) {
+      if (cRealSrc[i] === '{') depth += 1;
+      else if (cRealSrc[i] === '}' && --depth === 0) return cRealSrc.slice(at, i + 1);
+    }
+    return '';
+  };
+  const speechTagsFor = new Function(cutFn('speechTagsFor') + '\nreturn speechTagsFor;')();
   const SPEECH_DIALECT_TAGS = ['zh-hk', 'zh-tw', 'zh-hant', 'yue', 'hk', 'tw'];
-  function speechTagsFor(lang) {
-    const s = String(lang || '').toLowerCase();
-    if (s.includes('繁体') || s.includes('繁體') || s.includes('zh-tw') || s.includes('zh-hant')) {
-      return ['zh-TW', 'zh-HK'];
-    }
-    if (s.includes('英')) return ['en-US', 'en-GB', 'en'];
-    if (s.includes('日')) return ['ja-JP', 'ja'];
-    if (s.includes('韩') || s.includes('朝鲜')) return ['ko-KR', 'ko'];
-    if (s.includes('法')) return ['fr-FR', 'fr'];
-    if (s.includes('德')) return ['de-DE', 'de'];
-    if (s.includes('俄')) return ['ru-RU', 'ru'];
-    if (s.includes('西班牙')) return ['es-ES', 'es'];
-    if (s.includes('葡萄牙')) return ['pt-BR', 'pt'];
-    if (s.includes('意大利')) return ['it-IT', 'it'];
-    if (s.includes('中文') || s.includes('简体') || s.includes('zh') || !s) {
-      return ['zh-CN', 'zh-Hans', 'zh'];
-    }
-    if (s.startsWith('en')) return ['en-US', 'en-GB', 'en'];
-    if (s.startsWith('ja')) return ['ja-JP', 'ja'];
-    if (s.startsWith('ko')) return ['ko-KR', 'ko'];
-    return ['zh-CN', 'zh-Hans', 'zh'];
-  }
-  function pickVoice(voices, tags) {
-    if (!voices || !voices.length) return null;
-    const norm = (v) => String(v.lang || '').toLowerCase().replace(/_/g, '-');
-    for (const tag of tags) {
-      const t = tag.toLowerCase();
-      const exact = voices.filter((v) => norm(v) === t);
-      if (exact.length) return exact.find((v) => v.localService) || exact[0];
-    }
-    for (const tag of tags) {
-      const t = tag.toLowerCase();
-      const prefix = voices.filter((v) => {
-        const L = norm(v);
-        if (!L.startsWith(t.split('-')[0])) return false;
-        if (SPEECH_DIALECT_TAGS.some((d) => L.includes(d))) return false;
-        return true;
-      });
-      if (prefix.length) return prefix.find((v) => v.localService) || prefix[0];
-    }
-    return null;
-  }
+  const pickVoice = new Function('SPEECH_DIALECT_TAGS', cutFn('pickVoice') + '\nreturn pickVoice;')(SPEECH_DIALECT_TAGS);
   const V = (lang, name, local) => ({ lang, name: name || lang, localService: !!local });
 
   check('简体中文 → 候选标签是普通话（没有笼统的 zh）',
-    JSON.stringify(speechTagsFor('简体中文')) === JSON.stringify(['zh-CN', 'zh-Hans', 'zh']),
+    JSON.stringify(speechTagsFor('简体中文')) === JSON.stringify(['zh-CN', 'zh-Hans']),
     JSON.stringify(speechTagsFor('简体中文')));
 
   /* 粤语语音排在列表**最前面**（Windows 上常见）—— 普通话目标也必须跳过它 */
@@ -4211,6 +4248,13 @@ await (async () => {
   eq('迁完版本号是最新的', a.version, STORAGE_VERSION);
 
   /* 用户调过的必须留着 —— 这是这条迁移唯一真正危险的地方 */
+  /* 已是最新版的存档不能再跑 v12/v13 改名：用户把内置项改成老默认名，是自定义。 */
+  box = { version: STORAGE_VERSION, configs: [{ id: 'builtin-bing', name: 'Bing 翻译（free）' }], vars: [], settings: { targetLang: 'ZH-HANS', targetNames: {} }, ocr: {} };
+  const current = await loadState();
+  eq('当前版本不再重写已改回老默认名的配置', current.configs[0].name, 'Bing 翻译（free）');
+  eq('当前版本不把语言代码误当旧名字写回 targetNames',
+    JSON.stringify(current.settings.targetNames), '{}');
+
   box = { version: 9, configs: [], vars: [], settings: { ...OLD, triggerSize: 60, fontSize: 24 }, ocr: {} };
   const b = await loadState();
   eq('用户调过的按钮大小(60)不会被冲掉', b.settings.triggerSize, 60);
@@ -4269,6 +4313,9 @@ await (async () => {
   eq('非白名单标签整个转义', sanitizeInlineHtml('<script>a</script>'), '&lt;script&gt;a&lt;/script&gt;');
   check('style/href 一个不留', !/style=|href=/.test(sanitizeInlineHtml('<b style="x" href="y">a</b>')));
   eq('纯文本原样', sanitizeInlineHtml('就一句话'), '就一句话');
+  eq('属性值里的 > 不会提前截断文案', sanitizeInlineHtml('<b title="a>b">粗</b> 后文'), '<b>粗</b> 后文');
+  eq('无引号的恶意属性整段丢弃，不残留事件处理器', sanitizeInlineHtml('<b onclick=alert(1)>粗</b>'), '<b>粗</b>');
+  eq('注释整段转义，不生成节点', sanitizeInlineHtml('a<!-- x > y -->b'), 'a&lt;!-- x &gt; y --&gt;b');
 
   /* ---- inline()：options.js 的包装，含 RTI18n 未加载时的降级 ---- */
   const optSrc2 = readFileSync(new URL('../options.js', import.meta.url), 'utf8');
@@ -4286,6 +4333,20 @@ await (async () => {
   eq('esc() 转 &', escFn('a&b'), 'a&amp;b');
   eq('esc() 转双引号', escFn('a"b'), 'a&quot;b');
   eq('esc() 转单引号', escFn("a'b"), 'a&#39;b');
+
+  /* 外部语言包即使带了引号，也只能成为属性/文本里的字符，不能拼出新属性。 */
+  const oldI18n = window.RTI18n;
+  window.RTI18n = { t: () => "x' onmouseover='alert(1)" };
+  const shell = window.RTPanelCore.shellHtml();
+  const acts = window.RTPanelCore.actsHtml('a', '译文', false);
+  window.RTI18n = oldI18n;
+  check('面板骨架：语言包引号被转义，不能注入事件属性',
+    !shell.includes("title='x' onmouseover=") && shell.includes('&#39;'));
+  check('操作按钮：属性和文本两处都转义',
+    !acts.includes("title='x' onmouseover=") && !acts.includes("<span>x' onmouseover="));
+  check('截图提示与设置页历史按钮也经过转义/白名单清洗',
+    contentSrc.includes('window.RTPanelCore.esc(SHOT_TIP)') &&
+      optSrc2.includes("title=\"${escapeHtml(T('opt_copy_this_translation'"));
   /* 两个 content script 都排在 i18n.js 后面 —— 顺序反了 panel-core 拿不到 T() */
   check('manifest 里 i18n.js 排在 panel-core 和 content.js 之前',
     (() => {
@@ -4746,6 +4807,23 @@ await (async () => {
       /await loadPopupPack\(\)[\s\S]{0,200}applyPopupI18n\(\)/.test(popupJs));
   }
 
+  /* **切回中文必须把语言代码表的名字也重建回中文**（kniph 2026-11-24 报的）：
+     切英文正常、切回中文后名字仍是英文 —— 因为切回那条分支只 clearPack()，
+     而 targetNames 里存的是切英文时写进去的英文名，清包不影响它。 */
+  {
+    const optSrc = readFileSync(new URL('../options.js', import.meta.url), 'utf8');
+    const from = optSrc.indexOf('if (!code) {');
+    /* `const now = api.currentPack` 在文件里出现两次，必须取这个分支**之后**那个 */
+    const to = optSrc.indexOf('const now = api.currentPack', from);
+    const seg = optSrc.slice(from, to > from ? to : from + 1200);
+    check('切回中文时 clearPack 之后会重建 targetNames',
+      /clearPack\(\)/.test(seg) && /state\.settings\.targetNames = defaultTargetNames/.test(seg));
+    check('重建时用 api.t（无包时回落到 chrome.i18n 的中文名）',
+      /defaultTargetNames\(\(k\) => api\.t\(k\)\)/.test(seg));
+    check('重建后会存盘（不然重载又变回英文）',
+      /targetNames = defaultTargetNames[\s\S]{0,200}await saveState\(state\)/.test(seg));
+  }
+
   /* **语言包的值必须和 HTML 原文等价**（第十一版 §2：约 30 处被简写降级 ——
      结论留着、操作指引丢了，applyI18n 一跑就把详细版换成简版，用户静默降级）。
      语义上没法自动比，但可以比**长度比例**：简写通常只剩 1/3。 */
@@ -4915,6 +4993,24 @@ section('批次 A 闭环：用户可见修复的行为断言');
 
   /* 顶栏 ↻ 已删（2026-11-16）：重试只在结果尾部，这条断言随之取消。 */
 
+  /* 关闭面板后，迟到的 OCR 结果不能重新启动翻译。直接执行 content.js 的真函数。 */
+  let lateTranslateHits = 0;
+  const closedPort = new Function('panelClosedByUser', 'translate',
+    cut(cSrc, 'onPortMessage') + '\nreturn onPortMessage;')(true, () => { lateTranslateHits += 1; });
+  for (const type of ['ocr-status', 'ocr-error', 'ocr-text', 'ocr-image']) {
+    closedPort({ type, text: '迟到原文', dataUrl: 'data:image/png;base64,AA==' });
+  }
+  eq('关闭后四类 OCR 回包全部被丢弃，不再发翻译请求', lateTranslateHits, 0);
+
+  /* 图片指纹直接跑真实现：同尺寸换内容必须换 key，短串不能越界。 */
+  const fingerprint = new Function(cut(cSrc, 'imageFingerprint') + '\nreturn imageFingerprint;')();
+  const imgA = 'data:image/png;base64,' + 'A'.repeat(80);
+  const imgB = 'data:image/png;base64,' + 'A'.repeat(40) + 'B' + 'A'.repeat(39);
+  check('同长度不同图片内容得到不同指纹', fingerprint(imgA) !== fingerprint(imgB));
+  check('相同图片指纹稳定', fingerprint(imgA) === fingerprint(imgA));
+  check('短 dataURL 与空值不越界、不抛错',
+    fingerprint('data:x') === fingerprint('data:x') && fingerprint('') === '');
+
   /* A6：发送失败后回滚 busy 槽 */
   const slots = [{ configId: 'a', state: 'busy', text: '旧译文' }, { configId: 'b', state: 'busy', text: '' }];
   const slotBy = (id) => slots.find((s) => s.configId === id);
@@ -4952,6 +5048,81 @@ section('批次 A 闭环：用户可见修复的行为断言');
   const pcT = new Function('window', cut(pcSrc, 'T') + '\nreturn T;')({ RTI18n: null });
   eq('panel-core T() 兜底文案替换 $1$', pcT('k', '共 $1$ 条', [3]), '共 3 条');
   eq('panel-core T() 无参数时原样返回', pcT('k', '普通文案'), '普通文案');
+
+  /* 三份 T() 用同一组输入实测：下载包优先、缺 key 回落、$1$ / $1 两种写法都一致。 */
+  {
+    const extractTop = (src, name) => {
+      const hit = new RegExp('^\\s*function ' + name + '\\([^)]*\\) \\{', 'm').exec(src);
+      const at = hit ? hit.index + (hit[0].length - hit[0].trimStart().length) : -1;
+      let i = src.indexOf('{', at), depth = 0;
+      for (; i < src.length; i += 1) {
+        if (src[i] === '{') depth += 1;
+        else if (src[i] === '}' && --depth === 0) return src.slice(at, i + 1);
+      }
+      return '';
+    };
+    const optSource = readFileSync(new URL('../options.js', import.meta.url), 'utf8');
+    const optOuter = optSource;
+    const mk = (src, isContent) => new Function('window', (isContent ? 'let lastTLookup;' : '') +
+      extractTop(src, 'T') + '\nreturn T;');
+    const pack = { t: (key, params) => key === 'hit' ? '译:' + (params || []).join('|') : key };
+    const missing = { t: (key) => key };
+    const cases = [
+      [null, 'k', '共 $1$ 条', [3]],
+      [null, 'k', '位置 $1', [7]],
+      [missing, 'k', '回落 $1$', ['x']],
+      [pack, 'hit', '兜底 $1$', [9]]
+    ];
+    for (const rt of [null, missing, pack]) {
+      const fns = [
+        mk(cSrc, true)({ RTI18n: rt }),
+        mk(pcSrc, false)({ RTI18n: rt }),
+        mk(optSource, false)({ RTI18n: rt })
+      ];
+      const got = cases.map(([, k, f, a]) => JSON.stringify(fns.map((f2) => f2(k, f, a))));
+      check('三份 T() 输出一致（' + (rt === pack ? '有语言包' : rt ? '缺 key' : '无语言包') + '）',
+        got.every((x) => JSON.parse(x).every((v) => v === JSON.parse(x)[0])));
+    }
+  }
+
+  /* 设置页预览的语言下拉必须走共享名字表，不再直接显示代码。 */
+  const optNowAll = readFileSync(new URL('../options.js', import.meta.url), 'utf8');
+  check('效果预览的语言候选走 currentLangMap()/targetDisplayOf',
+    /const rows = currentLangMap\(\)/.test(optNowAll) && /o\.textContent = row\.name \|\| row\.code/.test(optNowAll));
+  check('目标语言或显示名变化会重绘效果预览',
+    /state\.settings\.targetLang = value;[\s\S]{0,220}renderPanelPreview\(\)/.test(optNowAll) &&
+      /delete state\.settings\.targetNames\[code\];[\s\S]{0,80}renderPanelPreview\(\)/.test(optNowAll));
+  check('名字为空时三处都回落到内置名/代码，不再只在设置页留空',
+    /return langDisplayName\(code, T\) \|\| code/.test(optNowAll));
+
+  /* 数字输入按 HTML 的 min/max 钳制。直接跑真函数。 */
+  {
+    const optNow = readFileSync(new URL('../options.js', import.meta.url), 'utf8');
+    const at = optNow.indexOf('function clampInputNumber(');
+    let i = optNow.indexOf('{', at), depth = 0, end = i;
+    for (; i < optNow.length; i += 1) {
+      if (optNow[i] === '{') depth += 1;
+      else if (optNow[i] === '}' && --depth === 0) { end = i + 1; break; }
+    }
+    const clamp = new Function(optNow.slice(at, end) + '\nreturn clampInputNumber;')();
+    eq('数字下限：50 被钳到 100', clamp({ value: '50' }, 8000, 100, 200000), 100);
+    eq('数字上限：300000 被钳到 200000', clamp({ value: '300000' }, 8000, 100, 200000), 200000);
+    eq('清空输入框回默认值', clamp({ value: '' }, 8000, 100, 200000), 8000);
+    eq('非法数字回默认值', clamp({ value: 'abc' }, 280, 280, 1600), 280);
+  }
+
+  /* ARIA：四个页签和四个面板双向对应，键盘可切换。 */
+  {
+    const h = readFileSync(new URL('../options.html', import.meta.url), 'utf8');
+    check('页签是 tablist / tab / tabpanel 结构', /role="tablist"/.test(h) &&
+      (h.match(/role="tab"/g) || []).length === 4 && (h.match(/role="tabpanel"/g) || []).length === 4);
+    check('每个页签都有 aria-controls，指向存在的 tabpanel',
+      [...h.matchAll(/id="tab-[a-z]+"[^>]*aria-controls="(panel-[a-z]+)"/g)]
+        .every((m) => h.includes('id="' + m[1] + '"')));
+    check('bindTabs 同步 aria-selected / tabindex，并支持方向键',
+      /setAttribute\('aria-selected'/.test(readFileSync(new URL('../options.js', import.meta.url), 'utf8')) &&
+      /ArrowLeft/.test(readFileSync(new URL('../options.js', import.meta.url), 'utf8')));
+  }
 
   /* A1：PRIVACY 中英与实际联网行为一致，CSS 句子不再串进语言包条目 */
   const privacy = readFileSync(new URL('../PRIVACY.md', import.meta.url), 'utf8');
@@ -5128,6 +5299,27 @@ section('变异测试补盲（2026-11-16，注入 bug 实测的 9 个漏网）')
   check('panel-core 的 rt-slot-h 至少有 CSS 定义 + HTML 使用两处',
     (pcSrc2.match(/\brt-slot-h\b/g) || []).length >= 2,
     String((pcSrc2.match(/\brt-slot-h\b/g) || []).length));
+}
+
+section('批次 D 闭环：隐私、跨浏览器边界与文档一致性');
+{
+  const optD = readFileSync(new URL('../options.js', import.meta.url), 'utf8');
+  const bgD = readFileSync(new URL('../background.js', import.meta.url), 'utf8');
+  const ctD = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
+  const pkgD = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  const devDoc = readFileSync(new URL('../docs/DEVELOPMENT.md', import.meta.url), 'utf8');
+  const verifyD = readFileSync(new URL('../tools/verify-pack.py', import.meta.url), 'utf8');
+  const amoD = readFileSync(new URL('../firefox/AMO-提交清单.md', import.meta.url), 'utf8');
+  check('分享导出会扫描模板正文里的硬编码密钥', /templates\.some\(templateLooksLikeSecret\)/.test(optD) && optD.includes('opt_export_share_hardcoded'));
+  check('导入选择框不再显示请求原文，只露域名', /requestHostOf\(c\.request/.test(optD) && !/const host = String\(\(c\.request/.test(optD));
+  check('Firefox 头改写只处理扩展后台请求（tabId < 0）', /details\.tabId >= 0\) return \{\}/.test(bgD));
+  check('收起态眼睛按钮有读屏名', /eye\.setAttribute\('aria-label', eye\.title\)/.test(optD));
+  check('RTL 选区会设置面板 dir，并反转贴边方向', /getComputedStyle\(node\)\.direction/.test(ctD) && /panelDirection === 'rtl'/.test(ctD) && /panel\.dir = panelDirection/.test(ctD));
+  check('配置下拉回滚时显式重绘并同步 value', /renderConfigOptions\(\);\s*cfgSelect\.value = cfgMode === 'image'/.test(ctD));
+  check('package 只把 esbuild 放在 devDependencies（运行时仍零依赖）', !!pkgD.devDependencies && !!pkgD.devDependencies.esbuild && !pkgD.dependencies);
+  check('开发文档不再声称 devDependencies 为空', !/devDependencies[^\n]{0,20}都是空的/.test(devDoc));
+  check('AMO 清单承认可能用 esbuild，且不再声称双语语言包', /esbuild/.test(amoD) && !/双语/.test(amoD));
+  check('无参验包只选当前版本的运行包，排除 SOURCE', /request-translate-\{version\}\.zip/.test(verifyD) && !/sorted\(\(ROOT \/ "dist"\)\.glob/.test(verifyD));
 }
 
 console.log('\n' + '='.repeat(46));

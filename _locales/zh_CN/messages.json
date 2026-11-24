@@ -244,15 +244,15 @@
     "description": "右键菜单：翻译选中文字"
   },
   "ocr_note_baidu": {
-    "message": "个人认证每月 1000 次免费。access_token 用 API Key + Secret Key 去官方鉴权接口换，30 天过期，过期重换一个再粘进 URL。",
+    "message": "个人认证每月 1000 次；token 30 天过期，重换后粘进 URL。",
     "description": "OCR 内置供应商的备注"
   },
   "ocr_note_openai_vl": {
-    "message": "任何按 OpenAI 格式收图的接口：改地址和模型名就行，Key 在「变量」页签的 apiKey 里填。",
+    "message": "任何 OpenAI 格式收图的接口；Key 填 apiKey。",
     "description": "OCR 内置供应商的备注"
   },
   "ocr_note_siliconflow": {
-    "message": "DeepSeek-OCR 在硅基流动上免费。Key 在「变量」页签的 apiKey 里填，和翻译配置共用。",
+    "message": "硅基流动免费；Key 填「变量」里的 apiKey。",
     "description": "OCR 内置供应商的备注"
   },
   "ocr_preview_summary_img": {
@@ -347,7 +347,7 @@
     "description": "占位符/响应格式标签的说明"
   },
   "opt_chip_image_extra_desc": {
-    "message": "图片那一段（含前导逗号），写在 content 数组最后；没图时是空串。用它就能让一段模板同时翻文字和翻图",
+    "message": "图片那段（含逗号），放 content 最后；没图时是空串。",
     "description": "设置页"
   },
   "opt_chip_imageb64": {
@@ -367,7 +367,7 @@
     "description": "占位符/响应格式标签的说明"
   },
   "opt_chip_target_code_desc": {
-    "message": "映射成接口要的代码，内置是 DeepL 的 language code。换服务就在请求文本里写 #@lang 表，键写语言代码",
+    "message": "接口要的语言代码，内置是 DeepL 的；换服务写 #@lang。",
     "description": "设置页"
   },
   "opt_chip_targetcode": {
@@ -599,30 +599,30 @@
     "html": true
   },
   "opt_hint_imgcfg_test": {
-    "message": "不选文件就直接点：用<b>剪切板里的第一张图</b>（Win + Shift + S 截图后回这儿点一下）。发的是左边选中那条的「图片请求模板」，和实际右键截图翻译时同一套。",
+    "message": "不选文件就用剪切板第一张图；发的是左边选中的图片模板。",
     "description": "设置页：整段说明（含内联标签，走 data-i18n-html）",
     "html": true
   },
   "opt_hint_maxh": {
-    "message": "只在上一条是「自适应」时有用：译文太长时正文区到这儿就不再长，多出来的滚着看。单位 vh（窗口高度的百分之几），默认 46；填 0 = 不限。",
+    "message": "自适应时的上限，单位 vh，默认 46；0 = 不限。",
     "description": "设置页：各项说明"
   },
   "opt_hint_ocr_direct": {
-    "message": "<b>模型具有多模态时，无需中转 OCR</b>：截图直接交给左边选中的那条图片配置去翻，不走上面那条。左边只列<b>填了「图片请求模板」</b>的配置；一条都没填时退回顶栏当前那条（那条多半不支持看图）。",
+    "message": "多模态模型可跳过 OCR：截图直接交给左边选中的图片配置。",
     "description": "设置页：整段说明（含内联标签，走 data-i18n-html）",
     "html": true
   },
   "opt_hint_ocr_test": {
-    "message": "不选文件就直接点：用<b>剪切板里的第一张图</b>（Win + Shift + S 截图后回这儿点一下）。发的是上面那段请求模板，和实际右键时同一套。",
+    "message": "不选文件就用剪切板第一张图；发的是上面那段模板。",
     "description": "设置页：整段说明（含内联标签，走 data-i18n-html）",
     "html": true
   },
   "opt_hint_panelcss": {
-    "message": "这段 CSS 会<strong>注入到面板自己的 shadow root 里</strong>。面板不在页面 DOM 中，所以把它贴到 Stylus / user.css 是<strong>无效的</strong> —— 只能写在这儿。<br>可用的钩子：<code>#rt-panel</code>（面板本体，id 选择器优先级高于预设，一般不用 <code>!important</code>）、<code>[data-rt-theme=\"dark\"]</code> 与 <code>[data-rt-theme=\"light\"]</code>（按主题分别写）、<code>.rt-head</code> <code>.rt-cfg</code> <code>.rt-lang</code> <code>.rt-out</code> <code>.rt-src</code> <code>.rt-slot</code> <code>.rt-slot-h</code> <code>.rt-slot-name</code> <code>.rt-slot-b</code> <code>.rt-acts</code> <code>.rt-act</code> <code>.rt-foot</code> <code>.rt-msg</code> <code>.rt-more</code> <code>.rt-diag</code> <code>.d-k</code> <code>.d-v</code> <code>.rt-btn</code> <code>.rt-dot</code>。这些名字<strong>不会改</strong>（真要改会给别名）。",
+    "message": "只对面板生效：面板在 shadow root 里，贴到 Stylus 无效。<br>主要钩子 <code>#rt-panel</code> <code>.rt-head</code> <code>.rt-src</code> <code>.rt-out</code> <code>.rt-slot</code> <code>.rt-acts</code> <code>.rt-foot</code> <code>.rt-diag</code> <code>.rt-btn</code>，名字不会改。",
     "description": "设置页：整段说明（含内联标签，走 data-i18n-html）"
   },
   "opt_hint_trigidle": {
-    "message": "出现后鼠标一直不动，过这么多秒就自己消失（鼠标动一下、或者停在按钮上，都不算）。填 0 = 不消失。",
+    "message": "鼠标不动这么久就消失；0 = 不消失。",
     "description": "设置页：各项说明"
   },
   "opt_hint_trigleave": {
@@ -630,21 +630,21 @@
     "description": "设置页：各项说明"
   },
   "opt_hint_trigstyle": {
-    "message": "划词后出现在选区旁边那个小按钮的样子，只影响按钮本身。<b>地球</b>是线性图标，颜色跟着<b>主题</b>走；<b>自定义</b>不给底座 —— 整块就是你粘进下面那段 SVG。",
+    "message": "小按钮的样子；地球跟主题配色，自定义不给底座。",
     "description": "设置页：整段说明（含内联标签，走 data-i18n-html）",
     "html": true
   },
   "opt_hint_trigsvg": {
-    "message": "粘 <code>&lt;svg&gt;…&lt;/svg&gt;</code> 进来，替换掉预设里的图标 /「译」字；<b>底座还是用上面选的那个预设</b>，想连底座都自己说了算就选<b>「自定义」</b>。颜色写 <code>currentColor</code> 跟着主题走。",
+    "message": "粘 <code>&lt;svg&gt;…&lt;/svg&gt;</code> 替换图标；底座仍用上面选的预设。",
     "description": "设置页：整段说明（含内联标签，走 data-i18n-html）",
     "html": true
   },
   "opt_hint_uilang": {
-    "message": "只影响界面文字，不改翻译的目标语言。语言包约 10~40 KB，从 GitHub 现取，不占扩展体积；下载失败会保持当前语言。",
+    "message": "只改界面文字；语言包约 10~40 KB，从 GitHub 现取。",
     "description": "设置页：各项说明"
   },
   "opt_hint_vars": {
-    "message": "这里定义的值可以在请求模板里用 <code>{{名字}}</code> 引用，比如把 API Key 写成 <code>Bearer {{apiKey}}</code>。同名的话，下面这些会覆盖内置变量。<br>值里<b>一行写一个</b>时（模板里用到的那个含 <code>model</code> 的变量，比如 <code>model</code> / <code>GEMINI_MODEL</code>），翻译会从第一个开始试，哪个先返回译文就用哪个；只有一行就是普通单值。",
+    "message": "这里定义的值可在模板里用 <code>{{名字}}</code> 引用；同名时以下面的为准。",
     "description": "设置页：整段说明（含内联标签，走 data-i18n-html）",
     "html": true
   },
@@ -697,7 +697,7 @@
     "description": "设置页"
   },
   "opt_imgtpl_hint": {
-    "message": "<b>填了这段（主请求或哪条后备都行），这条配置才会出现在 OCR 栏的「图片配置」列表里。</b>它管翻图，上面那段继续管划词翻译；留空就回退到上面那段。<br>写成多模态的样子，比如：<code>{\"role\":\"user\",\"content\":[{\"type\":\"image_url\",\"image_url\":{\"url\":\"{{image}}\"}},{\"type\":\"text\",\"text\":\"把图里的文字翻成{{target}}，只输出译文\"}]}</code><br>这段里 <code>{{text}}</code> 是空串 —— 直传时图片本身就是原文。",
+    "message": "填了才会出现在 OCR 栏的「图片配置」里；管翻图，留空则回退到上面那段。",
     "description": "图片请求模板下方的说明"
   },
   "opt_imgtpl_ph": {
@@ -790,8 +790,15 @@
     "message": "这个代码已经在表里了。",
     "description": "语言代码表"
   },
+  "opt_export_share_hardcoded": {
+    "message": "请求模板正文里像是写死了密钥。分享版只能清空变量里的值，无法安全改模板；仍要导出吗？"
+  },
+  "opt_lang_map_bad_code": {
+    "message": "语言代码只能用字母开头，由字母、数字、- 或 _ 组成。",
+    "description": "语言代码表"
+  },
   "opt_lang_map_hint": {
-    "message": "左边是接口要的<code>代码</code>（内置那套是 DeepL 的 language code），右边是它显示成什么、也是 <code>{{target}}</code> 的值。<b>可以随便改</b>，也能加自己的一行。",
+    "message": "左=接口要的代码（内置是 DeepL 的），右=显示名，也是 <code>{{target}}</code> 的值。",
     "description": "语言代码表"
   },
   "opt_lang_map_label": {
@@ -972,7 +979,7 @@
     "description": "设置页"
   },
   "opt_note_fake_image": {
-    "message": "上面 {{image}} 的位置是一张假的示例图，真截图是一整段 data URL；「测试」跑完后的「实际请求」里是那一份真的",
+    "message": "预览里的示例图，实际会换成真截图。",
     "description": "设置页"
   },
   "opt_ocr_configs": {
@@ -996,11 +1003,11 @@
     "description": "设置页"
   },
   "opt_path_hint_ocr": {
-    "message": "点号 + 下标，例如百度的 <code>words_result</code>（一行一个对象，会按行拼成一段）。留空时依次尝试各家常见的返回结构。",
+    "message": "点号 + 下标，如百度的 <code>words_result</code>；留空自动探测。",
     "description": "响应提取路径下方说明（OCR）"
   },
   "opt_path_hint_text": {
-    "message": "点号 + 下标，例如 <code>data.translations[0].translatedText</code>。留空时会依次尝试各家常见的返回结构。",
+    "message": "点号 + 下标，如 <code>data.translations[0].translatedText</code>；留空自动探测。",
     "description": "响应提取路径下方说明（文本）"
   },
   "opt_ph_209": {
@@ -1626,11 +1633,11 @@
     "description": "设置页 title 区域"
   },
   "opt_tpl_hint_ocr": {
-    "message": "除占位符外一字不改地发出去；<b>提示词直接写在请求文本里</b>，不是占位符。三个图片占位符的区别见上面那排标签的悬停提示 —— 百度那类表单接口要 <code>{{imageUrlEncoded}}</code>（base64 里的 <code>+</code> 不转成 <code>%2B</code> 会被当空格）。Key 走 <code>{{apiKey}}</code>，别写死在模板里。",
+    "message": "除占位符外原样发出；提示词直接写在文本里，不是占位符。",
     "description": "请求模板下方的说明（OCR）"
   },
   "opt_tpl_hint_text": {
-    "message": "curl 和原始 HTTP 报文都行，除占位符外一字不改地发出去。JSON 里不能有裸换行（写 <code>\\n</code>），双引号写 <code>\\\"</code>；行首 <code>#</code> 是注释。",
+    "message": "curl 或原始报文都行，除占位符外原样发出；JSON 里换行写 <code>\\n</code>。",
     "description": "请求模板下方的说明（文本翻译）"
   },
   "opt_tpl_not_filled": {
@@ -2351,6 +2358,36 @@
   },
   "bing_not_json": {
     "message": "Bing 返回的不是 JSON：$1$",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bing_http_error": {
+    "message": "Bing 返回 HTTP $1$ $2$ —— $3$",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      },
+      "3": {
+        "content": "$3"
+      }
+    }
+  },
+  "bing_no_translation": {
+    "message": "Bing 没返回译文，响应结构：$1$",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bing_failed": {
+    "message": "Bing 翻译失败：$1$",
     "placeholders": {
       "1": {
         "content": "$1"

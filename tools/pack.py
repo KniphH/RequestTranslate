@@ -36,6 +36,7 @@ import base64
 import hashlib
 import io
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -398,6 +399,7 @@ def run_tests():
         # 虽然不影响结论，但会刷一屏吓人的红字（kniph 2026-10-17 换环境时撞到）。
         encoding="utf-8",
         errors="replace",
+        env={ **os.environ, "RT_REQUIRE_E2E": "1" },
     )
     if r.returncode != 0:
         print(r.stdout[-4000:])
@@ -455,8 +457,8 @@ def main():
 
     # 火狐包：**不能再直接拷 zip** —— 两者的 manifest 必须不同。
     #
-    # 仓库里那份 manifest 同时写了 service_worker 和 scripts，那是给「本地加载」和
-    # 「一份源码两端用」的；但商店/AMO 校验不接受多余字段（Edge 实测直接拒整包）。
+    # 仓库里那份 manifest 只写 Chromium 的 service_worker；火狐包在出包时注入 scripts。
+    # 商店/AMO 校验不接受另一种浏览器的后台字段（Edge 实测直接拒整包）。
     # 所以 zip 和 xpi 各自按自己的 target 出包，manifest 分别裁一次。
     if args.xpi:
         xpi = out.with_suffix(".xpi")

@@ -363,7 +363,20 @@ chrome.runtime.onConnect.addListener((port) => {
     }
   };
 
-  port.onMessage.addListener(async (msg) => {
+  port.onMessage.addListener((msg) => {
+    handleMessage(msg).catch(async (err) => {
+      const ocr = msg && msg.type === 'ocr';
+      const configId = msg && (msg.configId || (Array.isArray(msg.configIds) ? msg.configIds[0] : ''));
+      safePost({
+        type: ocr ? 'ocr-error' : 'fatal',
+        ...(configId ? { configId } : {}),
+        message: (await localizeErr(err).catch(() => '')) ||
+          ('后台处理失败：' + ((err && err.message) || String(err)))
+      });
+    });
+  });
+
+  async function handleMessage(msg) {
     if (!msg || typeof msg !== 'object') return;
 
     if (msg.type === 'abort') {
@@ -649,7 +662,7 @@ chrome.runtime.onConnect.addListener((port) => {
       // 并发跑（不串行）：总耗时取决于最慢的那条，不是加起来
       await Promise.all(ids.map((id) => runOne(id)));
     }
-  });
+  }
 
   port.onDisconnect.addListener(() => {
     for (const c of runCtrls.values()) c.abort();
@@ -687,6 +700,8 @@ function installBiliHeaders() {
   try {
     wr.onBeforeSendHeaders.addListener(
       (details) => {
+        /* 只改扩展后台发起的请求（tabId = -1）；网页自己的同名请求必须原样放行。 */
+        if (typeof details.tabId === 'number' && details.tabId >= 0) return {};
         const hs = details.requestHeaders || [];
         const put = (name, value) => {
           const hit = hs.find((x) => x.name.toLowerCase() === name.toLowerCase());

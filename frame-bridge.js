@@ -14,19 +14,34 @@
  * 子 frame 的消息时，把「来源 iframe 元素在自己文档里的 rect」追加进 trail 再往
  * parent 发。顶层把 trail 逐层累加 + rect，就是顶层视口里的真实位置。
  *
- * postMessage 用 '*'：选区文本是用户在父页面看得见的内容（它就渲染在页面上），
- * 经此转发不构成额外泄露；跨域父页的 origin 无法查询，没有更窄的写法。
+ * 桥在发送前自己读 frameBridge 开关：顶层接收侧再检查一次只是第二道，
+ * 不能让已关闭的跨域选区文本先落到父页面的 message 事件里。
+ * iframe 内滚动也上报同一选区的新坐标，避免按钮停在旧位置。
  *
- * 已知限制：iframe 内部滚动不会通知顶层 —— 按钮可能停在旧位置几秒，
- * 下一次 selectionchange 会修正（划词按钮本来几秒就自动消失，可接受）。
+
+
  */
 (() => {
   if (window.top === window) return; // 顶层：UI 由 content.js 负责，桥不干活
 
   let lastText = '';
   let debounce = 0;
+  /* 未读到存档前不发送，避免「用户已关闭」时启动窗口期漏出选区。 */
+  let bridgeEnabled = false;
+  const enabledFromState = (state) => !state || !state.settings || state.settings.frameBridge !== false;
+  try {
+    chrome.storage.local.get('state').then((got) => {
+      bridgeEnabled = enabledFromState(got && got.state);
+    }).catch(() => { /* 扩展上下文失效时保持不发送 */ });
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.state) {
+        bridgeEnabled = enabledFromState(changes.state.newValue);
+      }
+    });
+  } catch { /* 扩展上下文失效时保持不发送 */ }
 
   const send = (msg) => {
+    if (!bridgeEnabled) return;
     try {
       window.parent.postMessage(msg, '*');
     } catch {
@@ -67,6 +82,19 @@
       }
     }, 120);
   });
+
+  /* iframe 内部滚动不一定触发 selectionchange；同一文本也按新几何上报一次。 */
+  window.addEventListener('scroll', () => {
+    if (!bridgeEnabled || !lastText) return;
+    clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      const sel = window.getSelection();
+      const text = (sel && sel.toString()) || '';
+      if (text === lastText && text.trim()) {
+        send({ type: 'rt-frame-sel', text, rect: rectOf(sel), trail: [] });
+      }
+    }, 120);
+  }, true);
 
   // 中转：更深一层的 iframe 的消息经我往上送（每层把自己的 offset 记进 trail）
   window.addEventListener('message', (e) => {

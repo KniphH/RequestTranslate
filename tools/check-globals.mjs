@@ -256,7 +256,9 @@ for (const rel of TARGETS) {
 
   const raw = fs.readFileSync(full, 'utf8');
   const src = stripComments(raw);
-  const declared = collectDeclared(src);
+  /* 声明从原文收集：剥离器遇到新写法的正则时曾把后半文件误吞，导致整片函数被误报。
+     调用仍只在剥离后的正文里找，注释里的例子不会被当成调用。 */
+  const declared = collectDeclared(raw);
 
   const missing = new Map();
 

@@ -70,14 +70,14 @@ https://github.com/KniphH/RequestTranslate/blob/main/PRIVACY.md
 
 ## 六、代码是否「压缩/混淆」
 
-**答「否」**。实测包内代码只是剥掉了注释，没有 minify：
+**按实际情况答**：包内会剥注释；若构建机装了 esbuild，JS 还会压缩（不做混淆）。源码包与构建脚本一并提交，可复现：
 
 ```
 content.js     3022 行，平均行长 22 字符
 options.js     3571 行，平均行长 24 字符
 ```
 
-压缩过的代码会有极长的单行（几千字符）。我们最长 261 字符，正常代码。
+压缩只做语法级缩短，不含字符串加密、控制流混淆或远程加载。审核请以 SOURCE 包对照。
 
 ## 七、提交后会怎样
 
@@ -102,7 +102,7 @@ options.js     3571 行，平均行长 24 字符
 - [x] `gecko.id` 有：`requesttranslate@kniph.github.io`
 - [x] `strict_min_version` 140.0（火狐 140+ 才认数据收集声明）
 - [x] `web-ext lint` 0 error（33 条 warning 都是预期内的）
-- [x] 双语 `_locales`（en / zh_CN）
+- [x] 安装包只内置 `_locales/zh_CN`；英文等语言包由用户按需下载，不进包
 - [x] `LICENSE`（MIT）+ `PRIVACY.md` 都在包里
 - [ ] 隐私政策已推到 GitHub 的 main 分支并且能打开
 

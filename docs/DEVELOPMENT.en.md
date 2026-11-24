@@ -344,7 +344,7 @@ Approaches tried and **measured as ineffective**: reducing two forced layouts to
 | About to pack / release | **`npm test` full run** (all four layers) |
 
 ```bash
-npm test              # full run: static checks 2 + test-lib 1166 + test-engine 90 + test-strip 19 + e2e 558 + pack-fixture 3
+npm test              # full run: static checks + all test layers; counts live in .test-counts.json
                       # trust the trailing summary (timestamped, pinned to HEAD); archived in .test-counts.json
 
 # packing (runs the full suite first)
@@ -384,7 +384,7 @@ export PYTHONIOENCODING=utf-8
 
 **Sandbox note**: `test:ui` launches Edge with `--remote-debugging-pipe`, which is "pipe capture" — a file sandbox that forbids it shows `spawn EPERM` (a sandbox boundary, not a missing dependency). It works under `danger-full-access`; under `workspace-write` e2e can't run, and the other four layers are unaffected.
 
-Broken down: `test-lib` 1166, `test-engine` 90, `test-strip` 19, `e2e-ui` 558, `pack-fixture` 3, plus two static checks. Each layer covers a different blind spot:
+Read `.test-counts.json` for the per-layer counts (plus two static checks); the documents do not keep a second copy. Each layer covers a different blind spot:
 
 - **`check-globals`** — syntax checking can't see a call to `bindConfigList()` that was never written; only runtime blows up. It strips comments, strings and regex literals, then compares every call against every declaration. You can also target files: `node tools/check-globals.mjs lib/engine.js`. Add new `lib/*.js` to the target list (including `offscreen.js`). Recognising **destructured object parameters** (`function f({ a, b })`) needs its own regex — with only `\(([^()]*)\)` the whole `{ a, b }` remains, every piece keeps its braces, nothing is recognised, and `a` / `b` get reported as undefined (`moveButton({ … onMove })` hit this).
 - **`check-dom`** — compares JS's `$('#id')` / `querySelector('.x')` / `closest('.x')` against class names **written in HTML plus** those built in JS, guarding against "selector points at nothing, startup dies on null". Regex trap: `querySelectorAll?` makes the `?` apply only to the last `l`, so **plain `querySelector('.x')` was never scanned at all** — write `querySelector(?:All)?`.

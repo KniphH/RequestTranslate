@@ -38,10 +38,11 @@ def main():
     if len(sys.argv) > 1:
         zpath = Path(sys.argv[1]).resolve()
     else:
-        zips = sorted((ROOT / "dist").glob("request-translate-*.zip"), key=lambda p: p.stat().st_mtime)
-        if not zips:
-            sys.exit("dist 里没有包，先跑 python tools/pack.py")
-        zpath = zips[-1].resolve()
+        # 无参只验当前 manifest 版本的运行包；SOURCE / xpi / 其它版本一律排除。
+        version = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))["version"]
+        zpath = (ROOT / "dist" / f"request-translate-{version}.zip").resolve()
+        if not zpath.is_file():
+            sys.exit(f"dist 里没有 request-translate-{version}.zip，先跑 python tools/pack.py")
 
     print(f"验包：{zpath}")
     z = zipfile.ZipFile(zpath)

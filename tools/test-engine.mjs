@@ -37,6 +37,13 @@ const server = http.createServer(async (req, res) => {
 
   const path = url.pathname;
 
+  // 服务端把请求里的密钥回显到错误体：错误文案必须打码
+  if (path === '/echo-key') {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end('{"error":"bad key: sk-test-123"}');
+    return;
+  }
+
   // 1. 标准 SSE（OpenAI 流式）
   if (path === '/sse') {
     res.writeHead(200, { 'Content-Type': 'text/event-stream' });
@@ -405,16 +412,27 @@ console.log('\n14. 诊断信息（首字耗时 / 有没有在思考）');
   check('解析就失败时也返回统计字段', typeof r.ms === 'number' && r.mode !== undefined, r);
 }
 
+console.log('\n14.5 错误回显里的密钥必须打码');
+{
+  const r = await runRequest({ requestText: curlFor('/echo-key'), vars });
+  check('400 错误文案不含原文密钥', !String(r.error || '').includes('sk-test-123'), r.error);
+  check('错误文案保留了打码标记', String(r.error || '').includes('已隐藏'), r.error);
+  check('错误参数里也没有原文密钥',
+    !JSON.stringify(r.errorParams || []).includes('sk-test-123'), r.errorParams);
+}
+
 console.log('\n15. 内置适配器（Bing 免费通道）');
 {
   setBingBase(base);
   resetBingSession();
+  const plain = await runRequest({ requestText: curlFor('/json'), vars });
   const before = received.length;
-
   const r = await runRequest({
     adapter: 'bing',
     vars: { text: 'Hello adapter', targetLang: '简体中文' }
   });
+  eq('适配器与引擎的 result 字段集合完全一致',
+    JSON.stringify(Object.keys(r).sort()), JSON.stringify(Object.keys(plain).sort()));
 
   eq('译文取回', r.text, '【译】Hello adapter');
   eq('格式标成 adapter', r.mode, 'adapter');

@@ -98,7 +98,7 @@ MUTS = [
 
     ("验包：.json/.md 不再参与同源比对", "tools/verify-pack.py",
      '        raw_names = [n for n in names if n.endswith((".json", ".md")) and n != "manifest.json"]',
-     "        raw_names = []", ["node", "tools/test-lib.mjs"]),
+     "        raw_names = []", ["node", "tools/test-pack-fixture.mjs"]),
 ]
 
 
@@ -132,7 +132,10 @@ def main():
     for i, desc, res, detail in rows:
         print(f"{i:>2} {desc:<44} {res:<6} {detail}")
     print("-" * 96)
-    print(f"抓住 {caught} / {len([r for r in rows if r[2] != 'MISS'])}")
+    print(f"抓住 {caught} / {len(MUTS)}")
+    # 门禁：漏抓任何一条（含原文没找到）都非零退出。
+    if caught != len(MUTS):
+        sys.exit(1)
 
 
 if __name__ == "__main__":

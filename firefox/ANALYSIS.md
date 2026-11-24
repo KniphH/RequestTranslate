@@ -15,7 +15,7 @@
 | 其中 `await` 风格 | **23 处 —— 写法不用改**（理由见第二节） |
 | manifest 改动 | 加 `background.scripts`、加 `browser_specific_settings`（约 8 行） |
 | 最低 Firefox 版本 | **140**（由 `options_page` 与 `data_collection_permissions` 共同顶上来） |
-| 构建链 | **不动**（零依赖零构建，`firefox/` 目录不进 Edge 包） |
+| 构建链 | **不动**（运行时零依赖；打包脚本可选 esbuild，`firefox/` 目录不进 Edge 包） |
 | 建议版本号 | 与 Edge 同步 `1.3.0`，用 `-fx` 后缀区分产物文件名 |
 
 **一句话**：这比旧清单预估的简单得多 —— 唯一的硬骨头是剪切板读图，而它在 Firefox 上**反而更好做**。

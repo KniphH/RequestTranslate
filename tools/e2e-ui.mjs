@@ -18,6 +18,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import { detectBootFailure } from './boot-check.mjs';
+import { OCR_PROVIDERS } from '../lib/ocr.js';
 import { writeCount } from './count-utils.mjs';
 
 /** 把 e2e 的通过数写进 .test-counts.json（一处真相源，SKIP 也如实上报）。 */
@@ -75,7 +76,7 @@ function loadChromium() {
   return null;
 }
 
-const edge = findEdge();
+const edge = process.env.E2E_BROWSER || findEdge();
 const chromium = edge ? loadChromium() : null;
 
 /* **环境缺失必须红，不能绿**：以前这里 exit(0)，新机器/CI 上会显示「全部通过」，
@@ -4120,7 +4121,11 @@ try {
     });
   };
   const tops = [];
-  for (const id of ['builtin-siliconflow', 'builtin-baidu-ocr', 'builtin-openai-vl']) {
+  const ocrIds = OCR_PROVIDERS.map((p) => p.id);
+  for (const legacy of ['builtin-siliconflow', 'builtin-baidu-ocr', 'builtin-openai-vl']) {
+    check('旧 OCR 配置仍在清单里：' + legacy, ocrIds.includes(legacy));
+  }
+  for (const id of ocrIds) {
     tops.push(await ocrTopFor(id));
   }
   check('切到哪一条（含备注空的那条）请求块都不动',
@@ -4149,7 +4154,8 @@ try {
         args: [
           `--disable-extensions-except=${ROOT}`,
           `--load-extension=${ROOT}`,
-          '--window-size=1200,900',
+          '--window-size=933,900',
+          '--window-position=-933,-287',
           '--no-first-run',
           '--no-default-browser-check'
         ]
@@ -6012,7 +6018,7 @@ try {
         responseMode: 'text'
       }];
       st.activeConfigId = 'e2e-lang';
-      st.settings.targetLang = '简体中文';
+      st.settings.targetLang = 'ZH-HANS';
       st.settings.fontSize = 20;
       st.settings.panelWidth = 460;
       await chrome.storage.local.set({ state: st });
@@ -6415,7 +6421,7 @@ try {
       // 变量：model 填两行 —— 就是「换 model 重试」的全部开关
       st.vars = [{ name: 'model', value: 'bad-model\ngood-model' }];
       st.activeConfigId = 'e2e-model';
-      st.settings.targetLang = '简体中文';
+      st.settings.targetLang = 'ZH-HANS';
       st.settings.fontSize = 20;
       st.settings.panelWidth = 460;
       await chrome.storage.local.set({ state: st });

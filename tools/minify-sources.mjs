@@ -9,7 +9,7 @@
 //   —— 同时对每个 .js 跑一次 `node --check`，剥坏了当场退出非零
 //   —— 最后一行输出 JSON：{"<相对路径>": <剥后字节数>, ...}
 
-import { mkdirSync, readFileSync, writeFileSync, mkdtempSync, existsSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, mkdtempSync, existsSync, rmSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -39,6 +39,7 @@ if (!names.length) {
 }
 
 const tmp = mkdtempSync(join(tmpdir(), 'rt-strip-'));
+process.on('exit', () => rmSync(tmp, { recursive: true, force: true }));
 const sizes = {};
 let before = 0;
 let after = 0;

@@ -100,6 +100,10 @@
       的查询接口 —— 坐标只挂在事件对象上，只能自己记一个。用它干两件事：按钮贴鼠标、
       以及「键盘改选区」时把它清掉（那会儿手里这个是旧坐标，会指到别处去）。 */
   let lastMouse = null;
+  /** 最近一次选区变化是否来自键盘；键盘路径优先贴 caret，caret 量不到才退回鼠标位置。 */
+  let lastSelByKeyboard = false;
+  /** 当前选区所在方向的文本方向；面板位置与 dir 都用它。 */
+  let panelDirection = 'ltr';
   /** 最近一次右键的位置。右键菜单的 onClicked 不给坐标，面板只能记着用户点在哪儿 */
   let lastRightClick = null;
   /** iframe 里最近的选区（frame-bridge.js 经 postMessage 报上来的，坐标已换算成
@@ -523,10 +527,12 @@
     const edge = EDGE * k;
     const vw = window.innerWidth;
 
-    // 默认贴选区右下；右边放不下就翻到选区左侧
-    let x = anchor ? anchor.right + gap : vw - rw - edge;
+    // LTR 贴选区右下、放不下翻左侧；RTL 反过来（从右往左读，贴左下再翻右侧）。
+    let x = anchor ? (panelDirection === 'rtl' ? anchor.left - rw - gap : anchor.right + gap) : vw - rw - edge;
     const y = anchor ? anchor.bottom + 10 * k : 80 * k;
-    if (anchor && x + rw > vw - edge) x = anchor.left - rw - gap;
+    if (anchor && (panelDirection === 'rtl' ? x < edge : x + rw > vw - edge)) {
+      x = panelDirection === 'rtl' ? anchor.right + gap : anchor.left - rw - gap;
+    }
 
     const p = clampPanel(x, y);
     panel.style.left = p.x + 'px';
@@ -571,6 +577,7 @@
     // 先显示再定位：面板高度是内容撑出来的，藏着的时候量到的是 0，
     // 夹取会以为它塞得下而贴着底边放，结果底部被切掉。
     panel.classList.add('show');
+    panel.dir = panelDirection;
     placePanel(anchor);
     keepPanelInView();
   }
@@ -1238,8 +1245,9 @@
        会把刚回退的槽状态又标成 busy/fail，并在看不见的面板上重绘。
        ready 不在此列：那是配置/语言列表，随时该更新。 */
     if (panelClosedByUser) {
-      if (msg.type === 'delta' || msg.type === 'start' ||
-          msg.type === 'done' || msg.type === 'fatal') return;
+      /* OCR 回包也要挡：尤其 ocr-text / ocr-image 会接着调 translate()，
+         只挡翻译流的四个类型会在关闭后继续发请求。ready 仍照常更新配置。 */
+      if (msg.type !== 'ready') return;
     }
 
     if (msg.type === 'start') {
@@ -2037,7 +2045,7 @@
 </style>
 <div class="veil"></div>
 <div class="sel"></div>
-<div class="tip">${SHOT_TIP}</div>
+<div class="tip">${window.RTPanelCore.esc(SHOT_TIP)}</div>
 `;
     const sel = root.querySelector('.sel');
 
@@ -2208,6 +2216,10 @@
     // isCollapsed 会是 true，但 toString() 照样能拿到文字 —— 拿 isCollapsed 挡会误杀。
     const text = sel.toString().trim();
     if (!text || text.length < 1) return null;
+    try {
+      const node = sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement);
+      panelDirection = node && getComputedStyle(node).direction === 'rtl' ? 'rtl' : 'ltr';
+    } catch { panelDirection = 'ltr'; }
     // 这里原本有一句 `if (isEditable(sel.anchorNode)) return null;`（初衷是「不打扰
     // 输入框里的编辑」），2026-11-06 去掉 —— 因为它的效果**不一致**，实测 anchorNode 归属：
     //   · <input> / <textarea> 里划词，选区被重定目标到 BODY，anchorNode 是 BODY 而不是
@@ -2224,6 +2236,13 @@
     // 但**面板**的锚是另一回事（2026-10-16 分离）：面板该贴**选中的内容**，
     // 贴鼠标的话用户划完词面板就杵在手边、把选中的文字盖住 —— 所以这里顺手把
     // 选区末行的几何量也量出来（panelRect，量不到就 null，面板退回鼠标位置）。
+    if (lastSelByKeyboard) {
+      const care = caretRect(sel);
+      if (care) return { text, anchor: { rect: care } };
+      if (lastMouse) {
+        return { text, atMouse: true, anchor: { rect: pointRect(lastMouse.x, lastMouse.y) }, panelRect: null };
+      }
+    }
     if (lastMouse) {
       let panelRect = null;
       try {
@@ -2336,6 +2355,7 @@
 
   document.addEventListener('mouseup', (e) => {
     if (e.composedPath && e.composedPath().includes(host)) return;
+    lastSelByKeyboard = false;
     lastMouse = { x: e.clientX, y: e.clientY };
     onSelectionMaybeChanged();
   }, true);
@@ -2368,8 +2388,8 @@
 
   document.addEventListener('keyup', (e) => {
     if (e.key === 'Shift' || e.key === 'Escape' || e.shiftKey) {
-      // 键盘改的选区：鼠标坐标是上一次动作留下的旧值，清掉它，让按钮去贴光标那一行
-      if (e.key !== 'Escape') lastMouse = null;
+      // 键盘改的选区：优先贴 caret；caret 量不到（Shadow DOM / 输入框）时保留最后鼠标位置兜底。
+      if (e.key !== 'Escape') lastSelByKeyboard = true;
       onSelectionMaybeChanged();
     }
   }, true);
@@ -2851,6 +2871,8 @@
       currentConfigId = snap.currentConfigId;
       imageConfigId = snap.imageConfigId;
       slots = snap.slots;
+      renderConfigOptions();
+      cfgSelect.value = cfgMode === 'image' ? imageConfigId : currentConfigId;
       return;
     }
     renderConfigOptions();

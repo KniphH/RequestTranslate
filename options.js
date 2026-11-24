@@ -18,6 +18,7 @@ import {
   PANEL_OWNED_SETTING_KEYS,
   adoptPanelOwned,
   getConfig,
+  DEFAULT_SETTINGS,
   normalizeSlots,
 } from './lib/store.js';
 
@@ -35,7 +36,14 @@ function T(key, fallback, params) {
     const got = api.t(key, params);
     if (got && got !== key) return got;
   }
-  return fallback;
+  let out = fallback == null ? '' : String(fallback);
+  if (params && params.length) {
+    out = out.replace(/\$(\d+)\$?/g, (m, n) => {
+      const v = params[Number(n) - 1];
+      return v == null ? m : String(v);
+    });
+  }
+  return out;
 }
 
 /**
@@ -193,7 +201,7 @@ function escapeHtml(s) {  return String(s ?? '')
 
 init().catch((err) => {
   document.body.innerHTML =
-    '<pre style="padding:24px;color:#f87171">' + T('opt_err_boot', '设置页初始化失败：') + escapeHtml(err && err.message) + '</pre>';
+    '<pre style="padding:24px;color:#f87171">' + inline(T('opt_err_boot', '设置页初始化失败：')) + escapeHtml(err && err.message) + '</pre>';
 });
 
 async function init() {
@@ -265,7 +273,7 @@ function editorHeadHtml({ nameId, placeholder, top, bottom }) {
     <div class="hint-slot">${top.map(hint).join('')}</div>
     <div class="editor-head">
       <div class="field grow">
-        <label for="${nameId}">${T('opt_label_name', '名称')}</label>
+        <label for="${nameId}">${escapeHtml(T('opt_label_name', '名称'))}</label>
         <input id="${nameId}" type="text" placeholder="${escapeHtml(placeholder)}" autocomplete="off">
       </div>
     </div>
@@ -328,9 +336,16 @@ function renderEditorHeads() {
 function bindTabs() {
   document.querySelectorAll('.tab').forEach((btn) => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('is-active', b === btn));
+      document.querySelectorAll('.tab').forEach((b) => {
+        const on = b === btn;
+        b.classList.toggle('is-active', on);
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+        b.tabIndex = on ? 0 : -1;
+      });
       document.querySelectorAll('.tabpanel').forEach((p) => {
-        p.classList.toggle('is-active', p.dataset.panel === btn.dataset.tab);
+        const on = p.dataset.panel === btn.dataset.tab;
+        p.classList.toggle('is-active', on);
+        p.toggleAttribute('hidden', !on);
       });
       // 「图片配置」那个列表是配置栏那份数据的**过滤视图**：刚在配置栏填过 / 清空过
       // 图片模板的话，切回来得重算一次，不然这边还停在上一版（预览同理）
@@ -342,7 +357,19 @@ function bindTabs() {
       // 不然存档里的多行值还缩在一条缝里（kniph 报过）
       if (btn.dataset.tab === 'vars') growVarValues();
       // 设置页签刚显示出来 —— 之前藏着的预览量不到尺寸，这里补画一次
-      if (btn.dataset.tab === 'settings' && pvNeedsRender) renderPanelPreview();
+      if (btn.dataset.tab === 'settings') renderPanelPreview();
+    });
+
+    btn.addEventListener('keydown', (e) => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+      const tabs = [...document.querySelectorAll('.tab')];
+      const at = tabs.indexOf(btn);
+      const next = e.key === 'Home' ? 0
+        : e.key === 'End' ? tabs.length - 1
+        : (at + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+      e.preventDefault();
+      tabs[next].focus();
+      tabs[next].click();
     });
   });
 }
@@ -897,13 +924,13 @@ const CHIPS = [
   {
     ins: '{{targetCode}}',
     k: 'opt_chip_targetcode',
-      t: T('opt_chip_target_code_desc', '映射成接口要的代码，内置是 DeepL 的 language code。换服务就在请求文本里写 #@lang 表，键写语言代码'),
+      t: T('opt_chip_target_code_desc', `接口要的语言代码，内置是 DeepL 的；换服务写 #@lang。`),
   },
   { ins: '{{image}}', t: '截图翻译直传模式下的图片（data URL）；普通翻译时是空串', k: 'opt_chip_image' },
   {
     ins: '{{imagePart}}',
     k: 'opt_chip_imagepart',
-      t: T('opt_chip_image_extra_desc', '图片那一段（含前导逗号），写在 content 数组最后；没图时是空串。用它就能让一段模板同时翻文字和翻图'),
+      t: T('opt_chip_image_extra_desc', `图片那段（含逗号），放 content 最后；没图时是空串。`),
   },
   { ins: '{{url}}', t: '页面地址', k: 'opt_chip_url' },
   { ins: '{{title}}', t: '页面标题', k: 'opt_chip_title' },
@@ -1032,12 +1059,12 @@ function blockHtml(item, idx, lastIdx, opts = {}) {
           dismiss: ocr ? 'ocr-tpl' : 'cfg-tpl',
           hint: ocr
             ? T('opt_tpl_hint_ocr',
-                '除占位符外一字不改地发出去；<b>提示词直接写在请求文本里</b>，不是占位符。' +
+                `除占位符外原样发出；提示词直接写在文本里，不是占位符。` +
                 '三个图片占位符的区别见上面那排标签的悬停提示 —— 百度那类表单接口要 ' +
                 '<code>{{imageUrlEncoded}}</code>（base64 里的 <code>+</code> 不转成 <code>%2B</code> 会被当空格）。' +
                 'Key 走 <code>{{apiKey}}</code>，别写死在模板里。')
             : T('opt_tpl_hint_text',
-                'curl 和原始 HTTP 报文都行，除占位符外一字不改地发出去。' +
+                `curl 或原始报文都行，除占位符外原样发出；JSON 里换行写 <code>\\n</code>。` +
                 'JSON 里不能有裸换行（写 <code>\\n</code>），双引号写 <code>\\"</code>；行首 <code>#</code> 是注释。')
         })}
         ${ocr ? '' : templateFieldHtml({
@@ -1052,7 +1079,7 @@ function blockHtml(item, idx, lastIdx, opts = {}) {
           chips: opts.chips,
           dismiss: 'img-tpl',
           hint: T('opt_imgtpl_hint',
-            '<b>填了这段（主请求或哪条后备都行），这条配置才会出现在 OCR 栏的「图片配置」列表里。</b>' +
+            `填了才会出现在 OCR 栏的「图片配置」里；管翻图，留空则回退到上面那段。` +
             '它管翻图，上面那段继续管划词翻译；留空就回退到上面那段。<br>' +
             '写成多模态的样子，比如：' +
             '<code>{"role":"user","content":[{"type":"image_url","image_url":{"url":"{{image}}"}},{"type":"text","text":"把图里的文字翻成{{target}}，只输出译文"}]}</code><br>' +
@@ -1067,8 +1094,8 @@ function blockHtml(item, idx, lastIdx, opts = {}) {
           <label>${escapeHtml(T('opt_label_path', '响应提取路径（留空自动识别）'))}</label>
           <input class="rb-path" type="text" spellcheck="false" placeholder="choices[0].message.content" value="${escapeHtml(item.path)}">
           <p class="hint" data-hint="${ocr ? 'ocr-path' : 'cfg-path'}">${ocr
-            ? T('opt_path_hint_ocr', '点号 + 下标，例如百度的 <code>words_result</code>（一行一个对象，会按行拼成一段）。留空时依次尝试各家常见的返回结构。')
-            : T('opt_path_hint_text', '点号 + 下标，例如 <code>data.translations[0].translatedText</code>。留空时会依次尝试各家常见的返回结构。')}</p>
+            ? T('opt_path_hint_ocr', `点号 + 下标，如百度的 <code>words_result</code>；留空自动探测。`)
+            : T('opt_path_hint_text', `点号 + 下标，如 <code>data.translations[0].translatedText</code>；留空自动探测。`)}</p>
         </div>
       </div>
     </div>`;
@@ -1573,8 +1600,8 @@ async function runTest() {
   /* 这枚徽章只交代「这条链上一共有几条」—— 不是「要试几条」。
      写成「按顺序试 2 条」会被读成「两条都会发」，可实际拿到译文就停（kniph 报过这个歧义）。 */
   head.innerHTML =
-    `<span class="badge">${T('opt_chain', '链上共 $1$ 条请求', [String(chain.length)])}</span>` +
-    (rotating ? `<span class="badge">${T('opt_tryall', 'model 逐个试，最多发 $1$ 次', [String(total)])}</span>` : '');
+    `<span class="badge">${inline(T('opt_chain', '链上共 $1$ 条请求', [String(chain.length)]))}</span>` +
+    (rotating ? `<span class="badge">${inline(T('opt_tryall', 'model 逐个试，最多发 $1$ 次', [String(total)]))}</span>` : '');
   els.testResult.appendChild(head);
 
   let got = false;
@@ -1641,7 +1668,7 @@ function requestBlockHtml(req) {
     `${req.method} ${req.url}\n` +
     Object.entries(req.headers || {}).map(([k, v]) => `${k}: ${v}`).join('\n') +
     (req.body ? '\n\n' + truncateText(req.body, 2000) : '');
-  return `<div class="row"><div class="row-title">${T('opt_row_actual', '实际请求')}</div><pre>${escapeHtml(text)}</pre></div>`;
+  return `<div class="row"><div class="row-title">${inline(T('opt_row_actual', '实际请求'))}</div><pre>${escapeHtml(text)}</pre></div>`;
 }
 
 /**
@@ -1705,13 +1732,13 @@ function testItemHtml(item, r, opts = {}) {
 
   if (r.error) {
     rows.push(
-      `<div class="row"><div class="row-title">${T('opt_row_error', '错误')}</div><pre class="err-text">${escapeHtml(r.error)}</pre></div>`
+      `<div class="row"><div class="row-title">${inline(T('opt_row_error', '错误'))}</div><pre class="err-text">${escapeHtml(r.error)}</pre></div>`
     );
   }
 
   if (r.text) {
     rows.push(
-      `<div class="row"><div class="row-title">${T('opt_row_text', '提取到的译文')}</div><pre class="translated">${escapeHtml(r.text)}</pre></div>`
+      `<div class="row"><div class="row-title">${inline(T('opt_row_text', '提取到的译文'))}</div><pre class="translated">${escapeHtml(r.text)}</pre></div>`
     );
   }
 
@@ -1720,7 +1747,7 @@ function testItemHtml(item, r, opts = {}) {
   if (r.raw) {
     const raw = truncateText(r.raw, 8000);
     rows.push(
-      `<div class="row"><div class="row-title">${T('opt_row_raw', '原始响应')}</div><pre>${escapeHtml(raw)}</pre></div>`
+      `<div class="row"><div class="row-title">${inline(T('opt_row_raw', '原始响应'))}</div><pre>${escapeHtml(raw)}</pre></div>`
     );
   }
 
@@ -1857,6 +1884,7 @@ function renderVars() {
       eye.className = 'row-eye' + (isSecretVar(v.name) ? '' : ' off');
       eye.innerHTML = EYE_OFF_SVG;
   eye.title = T('opt_click_to_edit', '点开编辑');
+      eye.setAttribute('aria-label', eye.title);
       eye.addEventListener('click', () => {
         editingVarIdx = idx;
         renderVars();
@@ -2243,7 +2271,7 @@ function renderOcrEditor() {
 }
 
 /* ---- OCR 的「完整请求」预览 ---- */
-/* 和配置栏那个「渲染预览」一个意思：**别让人猜扩展到底发了什么**。
+/* 和配置栏那个「请求预览」一个意思：**别让人猜扩展到底发了什么**。
    OCR 也是一段可编辑的模板了 —— 摊出来才看得清。
    图片位置塞一张**假的**小图：真截图是几十万字符的 data URL，摊出来没法读。 */
 
@@ -2287,7 +2315,7 @@ function renderOcrPreview() {
     const notes = (req.warnings || []).map(warnText);
     if (req.style) notes.unshift(T('opt_style_prefix', '写法：') + (req.style === 'raw' ? T('opt_style_raw', '原始 HTTP 报文') : 'curl') + T('opt_style_auto', '（自动识别）'));
     if (/{{image(Base64|UrlEncoded)?}}/.test(String(item.request || ''))) {
-    notes.push(T('opt_note_fake_image', '上面 {{image}} 的位置是一张假的示例图，真截图是一整段 data URL；「测试」跑完后的「实际请求」里是那一份真的'));
+    notes.push(T('opt_note_fake_image', `预览里的示例图，实际会换成真截图。`));
     }
     const head = chain.length > 1 ? '—— ' + (item.main ? T('opt_main_req', '主请求') : (item.name || T('opt_fallback_word', '后备'))) + ' ——' : '';
     return head ? head + '\n' + formatPreview(req, notes) : formatPreview(req, notes);
@@ -2602,7 +2630,7 @@ async function runOcrTest() {
   const rows = [];
   if (err) {
     rows.push(
-      `<div class="row"><div class="row-title">${T('opt_row_error', '错误')}</div><pre class="err-text">${escapeHtml(
+      `<div class="row"><div class="row-title">${inline(T('opt_row_error', '错误'))}</div><pre class="err-text">${escapeHtml(
         (err && err.message) || String(err)
       )}</pre></div>`
     );
@@ -2621,7 +2649,7 @@ async function runOcrTest() {
   const raw = (err && err.raw) || (r && r.raw);
   if (raw) {
     rows.push(
-      `<div class="row"><div class="row-title">${T('opt_row_raw', '原始响应')}</div><pre>${escapeHtml(
+      `<div class="row"><div class="row-title">${inline(T('opt_row_raw', '原始响应'))}</div><pre>${escapeHtml(
         truncateText(raw, 8000)
       )}</pre></div>`
     );
@@ -2676,7 +2704,7 @@ const SETTING_MAP = [
     // 清空输入框时退回默认 8000 —— 写 0 是「一个字都不发」，而 popup 那边
     // slice(0, 0) 会把选中的文字整个吞掉（2026-10-18 复查）
     sel: '#s-max', key: 'maxChars', kind: 'number',
-    load: (v) => v, save: (el) => Number(el.value) || 8000
+    load: (v) => v, save: (el) => clampInputNumber(el, 8000, 100, 200000)
   },
   {
     sel: '#s-framebridge', key: 'frameBridge', kind: 'checked',
@@ -2700,20 +2728,20 @@ const SETTING_MAP = [
   },
   {
     sel: '#s-width', key: 'panelWidth', kind: 'number',
-    load: (v) => v, save: (el) => Number(el.value) || 0
+    load: (v) => v, save: (el) => clampInputNumber(el, DEFAULT_SETTINGS.panelWidth, 280, 1600)
   },
   {
     sel: '#s-height', key: 'panelHeight', kind: 'number',
-    load: (v) => v, save: (el) => Number(el.value) || 0
+    load: (v) => v, save: (el) => clampInputNumber(el, 0, 0, 2000)
   },
   {
     // 缺席按 46 算 —— 这条是新加的，老存档里没有这个字段（46 就是原来写死的那个值）
     sel: '#s-maxh', key: 'panelMaxHeight', kind: 'number',
-    load: (v) => v ?? 46, save: (el) => Number(el.value) || 0
+    load: (v) => v ?? 46, save: (el) => clampInputNumber(el, DEFAULT_SETTINGS.panelMaxHeight, 0, 100)
   },
   {
     sel: '#s-font', key: 'fontSize', kind: 'number',
-    load: (v) => v, save: (el) => Number(el.value) || 0
+    load: (v) => v, save: (el) => clampInputNumber(el, DEFAULT_SETTINGS.fontSize, 11, 48)
   },
   {
     sel: '#s-theme', key: 'theme', kind: 'value',
@@ -2810,7 +2838,7 @@ const PV_SAMPLE_OUT =
 
 let pvBuilt = false;
 /** 页签隐藏时跳过了渲染，等切过去要补一次 */
-let pvNeedsRender = false;
+
 
 function renderPanelPreview() {
   const host = document.getElementById("panel-preview");
@@ -2976,14 +3004,14 @@ function renderPanelPreview() {
     if (langSel) {
       /* 候选和真面板同一份（lib/template.js 的 TARGET_PRESETS）——
          只填当前语言的话，预览的下拉是空的，点开看不到东西。 */
-  const lang = s.targetLang || T('opt_default_lang_name', '简体中文');
-      const cands = TARGET_PRESETS.slice();
-      if (!cands.includes(lang)) cands.push(lang);
+  const lang = s.targetLang || 'ZH-HANS';
+      const rows = currentLangMap();
+      if (!rows.some((r) => r.code === lang)) rows.unshift({ code: lang, name: targetDisplayOf(lang) });
       langSel.textContent = "";
-      for (const v of cands) {
+      for (const row of rows) {
         const o = document.createElement("option");
-        o.value = v;
-        o.textContent = v;
+        o.value = row.code;
+        o.textContent = row.name || row.code;
         langSel.appendChild(o);
       }
       langSel.value = lang;
@@ -3113,11 +3141,11 @@ function renderHistory() {
     : all;
 
   if (!all.length) {
-    list.innerHTML = '<p class="hint">' + T('opt_hist_empty', '还没有记录（或上面把条数设成了 0）。') + '</p>';
+    list.innerHTML = '<p class="hint">' + inline(T('opt_hist_empty', '还没有记录（或上面把条数设成了 0）。')) + '</p>';
     return;
   }
   if (!items.length) {
-    list.innerHTML = '<p class="hint">' + T('opt_hist_nomatch_a', '没有匹配「') + escapeHtml(q) + T('opt_hist_nomatch_b', '」的记录。') + '</p>';
+    list.innerHTML = '<p class="hint">' + inline(T('opt_hist_nomatch_a', '没有匹配「')) + escapeHtml(q) + inline(T('opt_hist_nomatch_b', '」的记录。')) + '</p>';
     return;
   }
 
@@ -3146,7 +3174,7 @@ function renderHistory() {
         `<div class="h-src">${escapeHtml(h.src)}</div>` +
         `<div class="h-dst">${escapeHtml(h.dst)}</div>` +
         `<div class="h-acts">` +
-      `<button type="button" class="ghost h-act" data-act="copy" title="${T('opt_copy_this_translation', '复制这条译文')}">${T('opt_copy_translation', '复制译文')}</button>` +
+      `<button type="button" class="ghost h-act" data-act="copy" title="${escapeHtml(T('opt_copy_this_translation', '复制这条译文'))}">${inline(T('opt_copy_translation', '复制译文'))}</button>` +
         `<button type="button" class="ghost h-act" data-act="redo" title="${escapeHtml(redoHint(h))}">重翻</button>` +
         `</div>` +
         '</div>'
@@ -3494,6 +3522,20 @@ function bindSettings() {
  * 返回 null = 用户取消；否则 { configs, merge }。
  * merge 的判据是 name（分享版里的 id 两边都不同，用 id 判断会一条都合并不上）。
  */
+/** 导入列表只露域名：第一行可能是带 key 的查询串或认证头片段。 */
+function requestHostOf(text) {
+  const m = /https?:\/\/[^\s'"\\]+/i.exec(String(text || ''));
+  if (!m) return '';
+  try { return new URL(m[0]).host; } catch { return ''; }
+}
+
+function templateLooksLikeSecret(text) {
+  const s = String(text || '');
+  return /\bsk-[A-Za-z0-9_-]{8,}/.test(s) ||
+    /(?:api[-_]?key|access[-_]?token|secret)\s*[:=]\s*["']?(?!\{\{)[A-Za-z0-9._-]{12,}/i.test(s) ||
+    /Authorization\s*:\s*Bearer\s+(?!\{\{)[A-Za-z0-9._-]{12,}/i.test(s);
+}
+
 function pickImportConfigs(parsed, exportedAt) {
   return new Promise((resolve) => {
     const dlg = $('#import-dialog');
@@ -3514,8 +3556,8 @@ function pickImportConfigs(parsed, exportedAt) {
     /* 默认全勾（原行为是「全都要」，不能因为加了勾选就让老用户多点一次）。
        已存在的同名配置在副标题里标一下，用户能看出「这条会覆盖」 */
     list.innerHTML = parsed.configs.map((c, i) => {
-    const dup = mine.has(c.name) ? `<span class="imp-sub">${T('opt_import_dup', '同名，导入后会覆盖现有的这条')}</span>` : '';
-      const host = String((c.request || '').split('\n')[0] || '').trim().slice(0, 60);
+    const dup = mine.has(c.name) ? `<span class="imp-sub">${inline(T('opt_import_dup', '同名，导入后会覆盖现有的这条'))}</span>` : '';
+      const host = requestHostOf(c.request || '');
       return ('<label class="imp-row">' +
         `<input type="checkbox" data-ci="${i}" checked>` +
         `<span><span class="imp-name">${escapeHtml(c.name || T('opt_unnamed', '(未命名)'))}</span>` +
@@ -3739,8 +3781,19 @@ async function bindUiLang() {
     // 还没探测完就选了（比如键盘快速操作）—— 先补探测，别拿旧的 value 去下载
     if (!probed) { await probeOnce(); }
     if (!code) {
-      // 选「中文（内置）」= 清掉下载的包
+      /* 选「中文（内置）」= 清掉下载的包，**并且把语言代码表的名字重建回中文**。
+         第十一版之后 kniph 报的 bug：切英文正常，切回中文却仍是英文名字 ——
+         因为这里只 clearPack() 没重建 targetNames，而 targetNames 里存的是
+         切英文时写进去的英文名（上面 r.ok 分支干的），清包不影响它。 */
       await api.clearPack();
+      try {
+        /* 包里已经没了 → t 回落到 chrome.i18n（zh_CN），名字自然是中文。
+           tOfPack 用 api.t 而不是包内字符串，这样「没有包」时也能拿到中文名。 */
+        state.settings.targetNames = defaultTargetNames((k) => api.t(k));
+        await saveState(state);
+      } catch {
+        /* 重置失败不该挡住切回中文本身 */
+      }
       say(T('opt_ui_lang_reset', '已切回内置中文，正在重载…'));
       setTimeout(() => location.reload(), 600);
       return;
@@ -3814,6 +3867,15 @@ function bindImportExport() {
         cleared += 1;
       }
     }
+    const templates = [];
+    for (const c of shared.configs || []) {
+      templates.push(c.request, c.imageRequest);
+      for (const f of c.fallbacks || []) templates.push(f.request, f.imageRequest);
+    }
+    for (const p of (shared.ocr && shared.ocr.providers) || []) templates.push(p.request);
+    const hardcoded = templates.some(templateLooksLikeSecret);
+    if (hardcoded && !confirm(T('opt_export_share_hardcoded',
+      '请求模板正文里像是写死了密钥。分享版只能清空变量里的值，无法安全改模板；仍要导出吗？'))) return;
     downloadJson(exportState(shared));
     setSaveStatus(
       cleared
@@ -4044,10 +4106,9 @@ function targetDisplayOf(code) {
   const names = (state.settings && state.settings.targetNames) || {};
   /* 「名字 === 代码」当成留空（老存档被默认值填过一遍） */
   const saved = names[code];
-  if (saved && saved !== code) return saved;
-  const builtin = langDisplayName(code, T);
-  /* langDisplayName 查不到时返回 code 本身 —— 那就是「没有内置名」（地区变体），留空 */
-  return builtin && builtin !== code ? builtin : '';
+  if (saved) return saved;
+  /* 和面板 / 弹窗同一判据：没有自定义名就显示内置名；内置也没有时显示代码本身。 */
+  return langDisplayName(code, T) || code;
 }
 
 function newOption(value, text) {
@@ -4081,6 +4142,7 @@ function setTargetLang(value) {
   panelTouched.add('targetLang'); // 面板顶栏那个下拉也写它，页面动过就以页面为准
   scheduleSave();
   updatePreview();
+  renderPanelPreview();
 }
 
 /**
@@ -4160,6 +4222,7 @@ function setLangMapName(code, value) {
   const v = String(value || '').trim();
   if (v && v !== code) state.settings.targetNames[code] = v;
   else delete state.settings.targetNames[code];
+  renderPanelPreview();
   /* 下拉里那一项跟着改 */
   const opt = [...els.langSelect.options].find((o) => o.value === code);
   if (opt) opt.textContent = targetDisplayOf(code);
@@ -4180,10 +4243,24 @@ function moveLang(code, delta) {
 }
 
 /** 加一行：代码 + 名字 */
+const LOOKS_LIKE_CODE = /^[A-Za-z]{2,8}(?:[-_][A-Za-z0-9]{1,8})*$/;
+
+/** 数字输入按 HTML 的 min/max 钳制；清空时用调用方给的默认值。 */
+function clampInputNumber(el, fallback, min, max) {
+  const raw = String(el.value ?? '').trim();
+  const n = Number(raw);
+  if (!raw || !Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(n)));
+}
+
 function addLangRow(rawCode, rawName) {
   const code = String(rawCode || '').trim().toUpperCase();
   const name = String(rawName || '').trim();
   if (!code) return false;
+  if (!LOOKS_LIKE_CODE.test(code)) {
+    alert(T('opt_lang_map_bad_code', '语言代码只能用字母开头，由字母、数字、- 或 _ 组成。'));
+    return false;
+  }
   if (currentLangMap().some((r) => r.code === code)) {
     alert(T('opt_lang_map_dup', '这个代码已经在表里了。'));
     return false;
