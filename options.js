@@ -56,6 +56,8 @@ function inline(html) {
    （store.js 和 ocr.js 都 import 它，谁也不用反过来依赖谁）。 */
 import { uid, allRequests, requestChain, requestTemplateFor } from './lib/requests.js';
 import { runRequest, previewRequest } from './lib/engine.js';
+import { fillUiIcons, uiIcon } from './lib/ui-icons.js';
+import { bindOptionsNavigation, bindSettingsDirectory, narrowOptions, openOptionsDetail } from './lib/options-navigation.js';
 import { encryptExport, decryptExport, isEncryptedExport } from './lib/crypto.js';
 import { ADAPTERS } from './lib/adapters.js';
 import { BUILTIN_VAR_HINTS, VAR_HINT_KEYS, TARGET_PRESETS, orderedLangCodes, defaultTargetNames, langDisplayName, isSecretVar, modelCandidates, modelVarFor } from './lib/template.js';
@@ -79,6 +81,7 @@ import {
 let state = null;
 let editingId = '';
 let editingOcrId = '';
+let activeConfigChanged = false;
 let saveTimer = null;
 /** 保存序号：async persist 会交错，落盘前比对，过期放弃 */
 let saveSeq = 0;
@@ -130,7 +133,6 @@ const els = {
   imgcfgList: $('#imgcfg-list'),
   imgcfgFoot: $('#imgcfg-foot'),
   ocrHead: $('#ocr-head'),
-  imgcfgHint: null,
   oName: null,
   oNote: null,
   ocrListTitle: $('#ocr-list-title'),
@@ -215,7 +217,23 @@ async function init() {
      是后面所有绑定要用的，晚一步取就是 null。 */
   renderEditorHeads();
 
+  fillUiIcons();
+  for (const element of document.querySelectorAll('[data-ui-label]')) {
+    const label = T(element.dataset.uiLabel, element.textContent.trim());
+    element.setAttribute('aria-label', label);
+    element.title = label;
+  }
+  bindOptionsNavigation();
   bindTabs();
+  bindFilePicker(els.ocrTestImg);
+  bindFilePicker(els.fileImport);
+  $('#theme-toggle').addEventListener('click', () => {
+    state.settings.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    $('#s-theme').value = state.settings.theme;
+    applyTheme();
+    persist(false);
+  });
+  matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => applyTheme());
   bindConfigList();
   bindEditor();
   bindOcr();
@@ -229,8 +247,12 @@ async function init() {
   renderOcrList();
   renderOcrEditor();
   renderVars();
+  renderBuiltinVariables();
   renderSettings();
-  syncGroupCounts();
+  setSaveStatus(T('opt_ui_saved', '已保存'), true);
+  bindSettingsDirectory(document.querySelector('[data-panel="settings"]'), key => T(key, ''), key => {
+    if (key === 'panel' && pvNeedsRender) renderPanelPreview();
+  });
   renderPanelPreview();
   applyHintHides();
 
@@ -244,83 +266,17 @@ async function init() {
   applyHintHides();
 }
 
-/* ---- 右栏头部：两栏**共用这一份** ----
-
-   结构固定是「一句说明 → 名称 → 一句说明」，每一段说明待在一个**固定占位的槽**里
-   （`.hint-slot`，见 options.css）。两栏各传自己的句子和 id，剩下的结构 / 类名 / 槽全在一处。
-
-   为什么要抽成一个函数（kniph 2026-10-14：「你完全可以把代码进行一个复用啊」）：
-   原来两栏各写一份，于是「配置栏靠多加一句话、OCR 栏靠给备注留 min-height」这种
-   一边一套的补丁就长出来了 —— 顾头不顾尾，两边行数一变就出现高度差。现在只有一处
-   能改，改了两边一起变，**想让它们不齐都做不到**。
-
-   槽为什么必须固定占位：说明**能被用户收掉**（`.hint-off` = `display: none`）、
-   备注**时有时无**（自建那条是空的）—— 靠文字的自然高度凑，一收一空就散了。 */
-function editorHeadHtml({ nameId, placeholder, top, bottom }) {
-  const hint = (h) =>
-    `<p class="hint wide"${h.id ? ` id="${h.id}"` : ''}` +
-    `${h.hint ? ` data-hint="${h.hint}"` : ''}${h.hidden ? ' hidden' : ''}` +
-    `${h.htmlKey ? ` data-i18n-html="${h.htmlKey}"` : ''}>${inline(h.html || '')}</p>`;
-  return `
-    <div class="hint-slot">${top.map(hint).join('')}</div>
-    <div class="editor-head">
-      <div class="field grow">
-        <label for="${nameId}">${T('opt_label_name', '名称')}</label>
-        <input id="${nameId}" type="text" placeholder="${escapeHtml(placeholder)}" autocomplete="off">
-      </div>
-    </div>
-    <div class="hint-slot">${hint(bottom)}</div>`;
-}
-
-/* `top` 里可以放**互斥**的几句（直传 / 不走直传），同一个槽 —— 换哪句都不影响下面的位置。 */
 function renderEditorHeads() {
-  els.cfgHead.innerHTML = editorHeadHtml({
-    nameId: 'f-name',
-    placeholder: T('opt_ph_cfgname', '例如：DeepSeek 翻译 / 本地 Ollama'),
-    top: [
-      {
-        hint: 'cfg-intro',
-        htmlKey: 'opt_cfg_intro',
-        html: T('opt_cfg_intro', '照着内置那条改：换地址、模型名、提示词，<b>占位符别动</b>。')
-      }
-    ],
-    bottom: {
-      hint: 'cfg-requests',
-      htmlKey: 'opt_cfg_requests',
-      html: T('opt_cfg_requests', '一条配置能挂好几条请求：<b>主请求</b>先发，它挂了就按顺序试勾上的<b>后备请求</b>。')
-    }
-  });
-
-  els.ocrHead.innerHTML = editorHeadHtml({
-    nameId: 'o-name',
-    placeholder: T('opt_ph_ocrname', '例如：硅基流动'),
-    top: [
-      {
-        id: 'o-hint',
-        hint: 'ocr',
-        htmlKey: 'opt_ocr_intro',
-        html: T('opt_ocr_intro', '<b>「翻译剪切板中的截图」</b>和<b>「框选截图翻译」</b>都先用这里<b>选中</b>的配置把图转成文字，再交给「配置」翻译。')
-      },
-      {
-        id: 'imgcfg-hint',
-        hint: 'imgcfg',
-        hidden: true,
-        htmlKey: 'opt_ocr_direct_intro',
-        html: T('opt_ocr_direct_intro', '现在是<b>图片直传</b>：截图不过 OCR，直接交给左边选中那条的<b>「图片请求模板」</b>去翻。')
-      }
-    ],
-    /* 这一条的备注（内置那几条自带，只读；自建那条是空的）。跟着选中项走，
-       放在名称旁边 —— 以前在整栏最底下，等看见它时人早就写完了。 */
-    bottom: { id: 'o-note' }
-  });
-
-  /* 上面刚画出来的那几个，画完才有 —— 用容器里的 querySelector 取。
-     ⚠️ 别在别处按 id 直接取它们：check-dom 会拿那个 id 去 HTML 里找、找不着就报错
-     （它认的是「HTML 里写死的 id」，认不到脚本拼出来的 —— class 那边倒是认）。 */
-  els.name = els.cfgHead.querySelector('#f-name');
-  els.oName = els.ocrHead.querySelector('#o-name');
-  els.oNote = els.ocrHead.querySelector('#o-note');
-  els.imgcfgHint = els.ocrHead.querySelector('#imgcfg-hint');
+  function nameField(host, id, placeholder) {
+    host.innerHTML = `<label class="field name-field"><span>${escapeHtml(T('opt_ui_config_name', '配置名称'))}</span><input id="${id}" type="text" placeholder="${escapeHtml(placeholder)}" autocomplete="off"></label>`;
+    return host.querySelector('input');
+  }
+  els.name = nameField(els.cfgHead, 'f-name', T('opt_ph_cfgname', '例如：DeepSeek 翻译 / 本地 Ollama'));
+  els.oName = nameField(els.ocrHead, 'o-name', T('opt_ph_ocrname', '例如：硅基流动'));
+  els.oNote = document.createElement('p');
+  els.oNote.id = 'o-note';
+  els.oNote.className = 'subtle';
+  els.ocrBlocks.after(els.oNote);
 }
 
 /* ---- Tab ---- */
@@ -328,7 +284,12 @@ function renderEditorHeads() {
 function bindTabs() {
   document.querySelectorAll('.tab').forEach((btn) => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach((b) => b.classList.toggle('is-active', b === btn));
+      document.querySelectorAll('.tab').forEach(b => {
+        b.classList.toggle('is-active', b === btn);
+        if (b === btn) b.setAttribute('aria-current', 'page');
+        else b.removeAttribute('aria-current');
+      });
+      document.querySelector('[data-panel="' + btn.dataset.tab + '"]').classList.remove('show-detail');
       document.querySelectorAll('.tabpanel').forEach((p) => {
         p.classList.toggle('is-active', p.dataset.panel === btn.dataset.tab);
       });
@@ -340,31 +301,49 @@ function bindTabs() {
       }
       // 变量栏的值输入框是按内容撑高的，但藏着的标签量不到高度 —— 显示出来了补量一次，
       // 不然存档里的多行值还缩在一条缝里（kniph 报过）
-      if (btn.dataset.tab === 'vars') growVarValues();
       // 设置页签刚显示出来 —— 之前藏着的预览量不到尺寸，这里补画一次
       if (btn.dataset.tab === 'settings' && pvNeedsRender) renderPanelPreview();
     });
   });
 }
 
+function bindFilePicker(input) {
+  const picker = input.closest('.file-picker');
+  const name = picker.querySelector('[data-file-name]');
+  const fullName = picker.querySelector('.file-full-name');
+  const clear = picker.querySelector('[data-file-clear]');
+  const closeName = () => {
+    fullName.hidden = true;
+    name.setAttribute('aria-expanded', 'false');
+  };
+  input.addEventListener('change', () => {
+    const file = input.files[0];
+    picker.toggleAttribute('data-chosen', !!file);
+    picker.querySelector('[data-file-placeholder]').hidden = !!file;
+    clear.hidden = name.hidden = !file;
+    name.textContent = fullName.textContent = name.title = file?.name || '';
+    closeName();
+  });
+  name.addEventListener('click', () => {
+    fullName.hidden = !fullName.hidden;
+    name.setAttribute('aria-expanded', String(!fullName.hidden));
+  });
+  clear.addEventListener('click', () => {
+    input.value = '';
+    input.dispatchEvent(new Event('change', {bubbles: true}));
+    input.focus();
+  });
+  picker.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !fullName.hidden) closeName();
+  });
+  document.addEventListener('click', event => {
+    if (!picker.contains(event.target)) closeName();
+  });
+}
+
 /* ---- 配置列表 ---- */
 
-/* 拖动手柄的图标（两列三点）。真正的手柄只有一个 10×14 的 svg，
-   点上去别的地方不响应 —— 见下面 .cfg-grip 的说明 */
-const GRIP_SVG =
-  '<svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden="true">' +
-  '<circle cx="3" cy="2" r="1.15"/><circle cx="7" cy="2" r="1.15"/>' +
-  '<circle cx="3" cy="7" r="1.15"/><circle cx="7" cy="7" r="1.15"/>' +
-  '<circle cx="3" cy="12" r="1.15"/><circle cx="7" cy="12" r="1.15"/>' +
-  '</svg>';
 
-/* 变量值那一列的眼睛（睁眼 = 点一下显示，划斜杠 = 点一下藏回去）。
-   用 SVG 不用 emoji：这几个字号的 emoji 在 Windows 上会被渲染成彩色的。 */
-const EYE_SVG =
-  '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" ' +
-  'stroke-width="1.3" stroke-linecap="round" aria-hidden="true">' +
-  '<path d="M1.6 8s2.5-4.3 6.4-4.3S14.4 8 14.4 8s-2.5 4.3-6.4 4.3S1.6 8 1.6 8Z"/>' +
-  '<circle cx="8" cy="8" r="1.8"/></svg>';
 /**
  * 预览的缩放比与假想视口高度。
  *
@@ -386,11 +365,7 @@ const clampSlots = (v) => Math.min(SLOT_MAX, Math.max(SLOT_MIN, Math.round(Numbe
 /** 改这些设置会直接影响面板外观 → 触发预览重画 */
 const PREVIEW_KEYS = new Set(['fontSize', 'panelWidth', 'panelHeight', 'panelMaxHeight', 'panelCss']);
 
-const EYE_OFF_SVG =
-  '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" ' +
-  'stroke-width="1.3" stroke-linecap="round" aria-hidden="true">' +
-  '<path d="M1.6 8s2.5-4.3 6.4-4.3S14.4 8 14.4 8s-2.5 4.3-6.4 4.3S1.6 8 1.6 8Z"/>' +
-  '<circle cx="8" cy="8" r="1.8"/><path d="M3.2 12.8 12.8 3.2"/></svg>';
+
 
 /**
  * 「配置变了」之后的统一收尾：重画左栏 + 重画编辑器 + 落盘。
@@ -403,11 +378,12 @@ const EYE_OFF_SVG =
 function refreshConfigViews(save = true) {
   renderConfigList();
   renderEditor();
-  if (save) persist(false);
+  if (save) persist();
 }
 
 function renderConfigList() {
   const total = state.configs.length;
+  $('#cfg-count').textContent = total;
   els.cfgList.innerHTML = '';
 
   state.configs.forEach((cfg, idx) => {
@@ -530,14 +506,30 @@ function syncSlotsHint() {
  */
 function sortableRow({ id, name, sub, active, inCompare, index, total, listEl, onSelect, onMove, onAddToCompare, onRemoveFromCompare }) {
   const row = document.createElement('div');
-  row.className = 'cfg-row';
+  row.className = active ? 'cfg-row current' : 'cfg-row';
   row.dataset.id = id;
 
-  const grip = document.createElement('span');
-  grip.className = 'cfg-grip';
-  grip.innerHTML = GRIP_SVG;
-  grip.title = T('opt_drag_hint', '按住拖动，调整顺序');
-  grip.setAttribute('aria-hidden', 'true'); // 键盘走右边的 ↑ ↓
+  const grip = document.createElement('button');
+  grip.type = 'button';
+  grip.className = 'cfg-grip ghost';
+  grip.innerHTML = uiIcon('grip');
+  grip.title = T('opt_ui_order', '拖动或点按排序');
+  grip.setAttribute('aria-label', grip.title + ' · ' + name);
+  grip.setAttribute('aria-expanded', 'false');
+  grip.disabled = total < 2;
+  grip.addEventListener('click', event => {
+    if (event.detail && grip.dataset.dragged) return;
+    const open = !row.classList.contains('order-open');
+    listEl.querySelector('.order-open')?.classList.remove('order-open');
+    listEl.querySelector('[aria-expanded="true"]')?.setAttribute('aria-expanded', 'false');
+    row.classList.toggle('order-open', open);
+    grip.setAttribute('aria-expanded', String(open));
+    if (open && event.detail === 0) row.querySelector('.cfg-mv-btn:not(:disabled)')?.focus();
+  });
+
+  const order = document.createElement('span');
+  order.className = 'order';
+  order.textContent = String(index + 1).padStart(2, '0');
 
   const btn = document.createElement('button');
   btn.type = 'button';
@@ -552,6 +544,8 @@ function sortableRow({ id, name, sub, active, inCompare, index, total, listEl, o
   subEl.className = 'sub';
   subEl.textContent = sub;
 
+  btn.title = nameEl.textContent;
+  btn.setAttribute('aria-pressed', String(active));
   btn.append(nameEl, subEl);
   /* 左键 = 选中来编辑；**已点亮的不再取消**（kniph 2026-10-17 报的：
      「左键可能只是想查看一下、改请求」，不该顺手把对比关掉）。
@@ -582,7 +576,7 @@ function sortableRow({ id, name, sub, active, inCompare, index, total, listEl, o
     moveButton({ listEl, id, name, index, delta: 1, total, onMove })
   );
 
-  row.append(grip, btn, mv);
+  row.append(grip, order, btn, mv);
   return row;
 }
 
@@ -590,21 +584,20 @@ function sortableRow({ id, name, sub, active, inCompare, index, total, listEl, o
 function moveButton({ listEl, id, name, index, delta, total, onMove }) {
   const b = document.createElement('button');
   b.type = 'button';
-  b.className = 'cfg-mv-btn';
+  b.className = 'cfg-mv-btn ghost';
   b.dataset.mv = String(delta);
-  b.textContent = delta < 0 ? '↑' : '↓';
+  b.innerHTML = uiIcon(delta < 0 ? 'up' : 'down');
   b.disabled = delta < 0 ? index === 0 : index === total - 1;
   const label = delta < 0 ? T('opt_move_up_word', '上移') : T('opt_move_down_word', '下移');
   b.title = label;
-  b.setAttribute('aria-label', `${label}${T('opt_unnamed_quoted', '「未命名」')}`);
+  b.setAttribute('aria-label', `${label} ${name || T('opt_unnamed', '(未命名)')}`);
 
   b.addEventListener('click', () => {
     onMove(id, index + delta);
-    // 重渲染之后把焦点还给同一个按钮 —— 连着按 ↑ 才不要每按一次就去找鼠标
-    const again = listEl.querySelector(
-      `.cfg-row[data-id="${id}"] .cfg-mv-btn[data-mv="${delta}"]`
-    );
-    if (again && !again.disabled) again.focus();
+    const moved = listEl.children[index + delta];
+    const same = moved?.querySelector(`[data-mv="${delta}"]:not(:disabled)`);
+    const alternate = moved?.querySelector('.cfg-mv-btn:not(:disabled)');
+    (narrowOptions.matches ? moved?.querySelector('.cfg-grip') : same || alternate)?.focus({preventScroll: true});
   });
   return b;
 }
@@ -770,9 +763,11 @@ function bindSortDrag(listEl, applyMove, opts = {}) {
 
   listEl.addEventListener('pointerdown', (e) => {
     const grip = e.target instanceof Element ? e.target.closest(GRIP) : null;
-    if (!grip || e.button !== 0) return;
+    if (!grip || grip.disabled || e.button !== 0 || !narrowOptions.matches) return;
+    delete grip.dataset.dragged;
     e.preventDefault(); // 别顺手选中文字，也别触发浏览器自己的选择 / 拖拽
     drag = {
+      grip,
       id: grip.closest(ITEM).dataset.id,
       pointerId: e.pointerId,
       y0: e.clientY,
@@ -800,6 +795,7 @@ function bindSortDrag(listEl, applyMove, opts = {}) {
         : Math.abs(e.clientY - drag.y0);
       if (d < 4) return;
       drag.moved = true;
+      drag.grip.dataset.dragged = 'true';
       listEl.classList.add('is-dragging');
     }
 
@@ -819,6 +815,8 @@ function bindSortDrag(listEl, applyMove, opts = {}) {
     clearMarks();
     if (!d.moved) return; // 只是点了一下手柄，什么都没发生
 
+    const listBounds = listEl.getBoundingClientRect();
+    if (d.x < listBounds.left || d.x > listBounds.right || d.y < listBounds.top || d.y > listBounds.bottom) return;
     const spot = spotAt(d.x, d.y);
     if (!spot) return;
     const ids = [...listEl.querySelectorAll(ITEM)].map((r) => r.dataset.id);
@@ -846,7 +844,8 @@ function bindSortDrag(listEl, applyMove, opts = {}) {
 function summarizeUrl(text, empty) {
   const m = String(text || '').match(/https?:\/\/[^\s'"\\]+/);
   if (!m) return empty;
-  const url = m[0].replace(/^https?:\/\//, '');
+  let url;
+  try { url = new URL(m[0]).host; } catch { return empty; }
   return url.length > 40 ? url.slice(0, 40) + '…' : url;
 }
 
@@ -854,7 +853,9 @@ function selectConfig(id) {
   flushEditor();
   editingId = id;
   state.activeConfigId = id;
+  activeConfigChanged = true;
   refreshConfigViews();
+  openOptionsDetail(els.editor.closest('.tabpanel'));
 }
 
 /* ---- 编辑器 ---- */
@@ -920,7 +921,7 @@ const OCR_CHIPS = [
 function chipsHtml(list) {
   return `<div class="chips">` + list.map((c) =>
     `<button type="button" class="chip" data-ins="${c.ins}" title="${escapeHtml(c.k ? T(c.k, c.t) : c.t)}">` +
-    `${escapeHtml(c.ins.slice(2, -2))}</button>`
+    `${escapeHtml(c.ins)}</button>`
   ).join('') + '</div>';
 }
 
@@ -941,41 +942,20 @@ function adapterHint(id) {
 
 /** 块头右边那句「这条打到哪儿」—— 折叠起来之后全靠它认人 */
 function blockSummary(item, kind) {
-  if (kind === 'adapter') return T('opt_adapter_prefix', '内置适配器：') + adapterLabel(item.adapter);
+  if (kind === 'adapter') return T('opt_label_adapter', '内置适配器');
   return summarizeUrl(item.request, T('opt_no_request', '（还没写请求模板）'));
 }
 
-/**
- * 一段请求模板：标题栏（点它折叠）+ 标签排 + 文本框 + 说明。
- *
- * 「文字那条」和「图片那条」**同一副骨架**，所以只有这一处实现 —— 各写一份的下场是
- * 标题元素（`label` / `summary`）、外层容器、hint 间距、文本框最小高度全各长各的
- * （kniph 2026-10-14 报的「完全是两套布局结构，明明可以复用一套代码」）。
- * 差别只剩几个参数：类名、标题文案、默认摊不摊开、给适配器条目 `hidden`。
- *
- /* 折叠手势也统一成「点这一条的标题栏」（`<details>` 的原生行为），和页面上的预览块一样；
- * 请求块的块头也是同一套（见 `els.blocks` 的 click 委托）。**这里只管块内那段 `<details>`**
- * —— 块自己默认收不收起归 `foldOpen` 管（默认全收起），两处别混。
- *
- * `wrapAttrs` / `boxAttrs` 传的是**整段属性串**（`'class="preview tpl-fold …"'`）而不是类名，
- * 因为 `check-dom` 是从 `class="…"` **字面量**里收类名的，插值进去的那一段它认不出
- * （`#req-blocks` 那块早就踩过，见 `renderBlocks` 的注释）。
- *
- * `opts.chips` = 这段前面那排占位符标签（配置栏 8 个 / OCR 栏 4 个）。
- * `opts.dismiss` = 这段说明的「不再显示」id（`data-hint`）—— 每个块各渲染一份说明，
- * 所以渲染完要再跑一次 `applyHintHides()` 把按钮补上（它幂等）。
- */
-function templateFieldHtml({ wrapAttrs, boxAttrs, title, value, placeholder, hint, open, hidden, chips, dismiss }) {
-  return `
-        <details ${wrapAttrs}${hidden ? ' hidden' : ''}${open ? ' open' : ''}>
-          <summary>${escapeHtml(title)}</summary>
-          <div class="fold-body">
-            ${chips ? chipsHtml(chips) : ''}
-            <textarea ${boxAttrs} spellcheck="false" wrap="off"
-              placeholder="${escapeHtml(placeholder)}">${escapeHtml(value)}</textarea>
-            <p class="hint"${dismiss ? ` data-hint="${dismiss}"` : ''}>${inline(hint)}</p>
-          </div>
-        </details>`;
+function templateFieldHtml({boxAttrs, title, value, placeholder, image, open, hidden, chips}) {
+  if (hidden) {
+    return `<textarea ${boxAttrs} hidden>${escapeHtml(value)}</textarea>`;
+  }
+  const box = `<div class="code-box"><div class="code-head"><span>${escapeHtml(title)}</span><span>HTTP / cURL</span></div>
+    <textarea ${boxAttrs} aria-label="${escapeHtml(title)}" spellcheck="false" wrap="off" placeholder="${escapeHtml(placeholder)}">${escapeHtml(value)}</textarea></div>
+    ${chips ? chipsHtml(chips) : ''}`;
+  if (!image) return box;
+  return `<details class="simple img-tpl tpl-fold rb-only-request"${open ? ' open' : ''}>
+    <summary>${uiIcon('chevron')}${escapeHtml(title)}</summary><div class="fold-body">${box}</div></details>`;
 }
 
 /* `idx` 是从 0 数起的位置（0 = 主请求），`lastIdx` 是最后一块的下标 —— 上下移按钮靠它禁用。
@@ -1001,17 +981,17 @@ function blockHtml(item, idx, lastIdx, opts = {}) {
     <div class="req-block" data-id="${escapeHtml(item.id)}" data-adapter="${escapeHtml(item.adapter || '')}">
       <div class="rb-head">
         <label class="rb-on" title="${escapeHtml(T('opt_no_rotate', '不勾就不参与轮换（测试也不跑它）'))}">
-          <input type="checkbox" class="rb-enable"${item.enabled ? ' checked' : ''}>
+          <input type="checkbox" class="rb-enable" aria-label="${escapeHtml(T('opt_ui_enable_request', '启用请求'))}"${item.enabled ? ' checked' : ''}>
         </label>
-        <span class="rb-tag">${escapeHtml(isMain ? T('opt_main_req', '主请求') : item.name)}</span>
+        <span class="rb-tag">${escapeHtml(isMain ? T('opt_main_req', '主请求') : T('opt_ui_fallback_index', '后备 $1$', [String(idx)]))}</span>
         <span class="rb-sub">${escapeHtml(blockSummary(item, kind))}</span>
         ${item.imageRequest && item.imageRequest.trim() ? `<span class="rb-badge" title="${escapeHtml(T('opt_img_badge', '这条填了「图片请求模板」，截图翻译时会走它（图片直传模式）'))}">图</span>` : ''}
         <span class="spacer"></span>
         ${isMain ? '' : `
-          <button type="button" class="rb-mini rb-up" title="${escapeHtml(T('opt_up', '上移（越靠前越先试）'))}"${idx <= 1 ? ' disabled' : ''}>↑</button>
-          <button type="button" class="rb-mini rb-down" title="${escapeHtml(T('opt_down', '下移'))}"${idx >= lastIdx ? ' disabled' : ''}>↓</button>
-          <button type="button" class="rb-mini rb-del" title="${escapeHtml(T('opt_del_fallback', '删掉这条后备请求'))}">×</button>`}
-        <button type="button" class="rb-fold" title="${escapeHtml(T('opt_fold', '折叠 / 展开（点这一行也行）'))}">▾</button>
+          <button type="button" class="rb-mini rb-up" title="${escapeHtml(T('opt_up', '上移（越靠前越先试）'))}"${idx <= 1 ? ' disabled' : ''}>${uiIcon("up")}</button>
+          <button type="button" class="rb-mini rb-down" title="${escapeHtml(T('opt_down', '下移'))}"${idx >= lastIdx ? ' disabled' : ''}>${uiIcon("down")}</button>
+          <button type="button" class="rb-mini rb-del" title="${escapeHtml(T('opt_del_fallback', '删掉这条后备请求'))}">${uiIcon("trash")}</button>`}
+        <button type="button" class="rb-fold" title="${escapeHtml(T('opt_fold', '折叠 / 展开（点这一行也行）'))}">${uiIcon("chevron")}</button>
       </div>
       <div class="rb-body">
         ${isAdapter ? `
@@ -1021,54 +1001,32 @@ function blockHtml(item, idx, lastIdx, opts = {}) {
           <p class="hint">${escapeHtml(adapterHint(item.adapter))}</p>
         </div>` : ''}
         ${templateFieldHtml({
-          wrapAttrs: 'class="preview tpl-fold rb-only-request"',
           boxAttrs: 'class="rb-request"',
           title: T('opt_tpl_title', '请求模板'),
           value: item.request,
           placeholder: T('opt_tpl_ph', '在这里粘贴 curl，或者写原始 HTTP 报文'),
-          open: true,
           hidden: isAdapter,
-          chips: opts.chips,
-          dismiss: ocr ? 'ocr-tpl' : 'cfg-tpl',
-          hint: ocr
-            ? T('opt_tpl_hint_ocr',
-                '除占位符外一字不改地发出去；<b>提示词直接写在请求文本里</b>，不是占位符。' +
-                '三个图片占位符的区别见上面那排标签的悬停提示 —— 百度那类表单接口要 ' +
-                '<code>{{imageUrlEncoded}}</code>（base64 里的 <code>+</code> 不转成 <code>%2B</code> 会被当空格）。' +
-                'Key 走 <code>{{apiKey}}</code>，别写死在模板里。')
-            : T('opt_tpl_hint_text',
-                'curl 和原始 HTTP 报文都行，除占位符外一字不改地发出去。' +
-                'JSON 里不能有裸换行（写 <code>\\n</code>），双引号写 <code>\\"</code>；行首 <code>#</code> 是注释。')
+          chips: opts.chips
         })}
         ${ocr ? '' : templateFieldHtml({
-          wrapAttrs: 'class="preview tpl-fold img-tpl rb-only-request"',
           boxAttrs: 'class="rb-image-request"',
-          title: T('opt_imgtpl_title', '图片请求模板（可选 · 点开填）'),
+          title: T('opt_ui_image_template', '图片请求模板'),
           value: item.imageRequest,
           placeholder: T('opt_imgtpl_ph', '留空 = 图片那次也用上面那段模板'),
-          // 空的时候收起（多数人用不到），填过就摊开
+          image: true,
           open: !!item.imageRequest.trim(),
           hidden: isAdapter,
-          chips: opts.chips,
-          dismiss: 'img-tpl',
-          hint: T('opt_imgtpl_hint',
-            '<b>填了这段（主请求或哪条后备都行），这条配置才会出现在 OCR 栏的「图片配置」列表里。</b>' +
-            '它管翻图，上面那段继续管划词翻译；留空就回退到上面那段。<br>' +
-            '写成多模态的样子，比如：' +
-            '<code>{"role":"user","content":[{"type":"image_url","image_url":{"url":"{{image}}"}},{"type":"text","text":"把图里的文字翻成{{target}}，只输出译文"}]}</code><br>' +
-            '这段里 <code>{{text}}</code> 是空串 —— 直传时图片本身就是原文。'),
+          chips: opts.chips
         })}
-        ${/* 两个「响应」字段收尾，见 blockHtml 上面那段字段顺序的注释 */ ''}
-        ${ocr ? '' : `<div class="field mode-field rb-only-request"${hideReq}>
-          <label>${escapeHtml(T('opt_label_mode', '响应格式'))}</label>
-          <select class="rb-mode">${optionsHtml(MODE_OPTIONS, item.responseMode)}</select>
-        </div>`}
-        <div class="field rb-only-request"${hideReq}>
-          <label>${escapeHtml(T('opt_label_path', '响应提取路径（留空自动识别）'))}</label>
-          <input class="rb-path" type="text" spellcheck="false" placeholder="choices[0].message.content" value="${escapeHtml(item.path)}">
-          <p class="hint" data-hint="${ocr ? 'ocr-path' : 'cfg-path'}">${ocr
-            ? T('opt_path_hint_ocr', '点号 + 下标，例如百度的 <code>words_result</code>（一行一个对象，会按行拼成一段）。留空时依次尝试各家常见的返回结构。')
-            : T('opt_path_hint_text', '点号 + 下标，例如 <code>data.translations[0].translatedText</code>。留空时会依次尝试各家常见的返回结构。')}</p>
+        <div class="field-pair${ocr ? ' ocr-fields' : ''}"${hideReq}>
+          ${ocr ? '' : `<label class="field rb-only-request">
+            <span>${escapeHtml(T('opt_label_mode', '响应格式'))}</span>
+            <select class="rb-mode">${optionsHtml(MODE_OPTIONS, item.responseMode)}</select>
+          </label>`}
+          <label class="field rb-only-request">
+            <span>${escapeHtml(T('opt_ui_response_path', '响应提取路径'))}</span>
+            <input class="rb-path" type="text" spellcheck="false" placeholder="${escapeHtml(T('opt_ui_auto_path', '留空自动识别'))}" value="${escapeHtml(item.path)}">
+          </label>
         </div>
       </div>
     </div>`;
@@ -1076,8 +1034,8 @@ function blockHtml(item, idx, lastIdx, opts = {}) {
 
 /** 这块现在该展开还是收起。**默认全收起**（主请求也一样，kniph 2026-10-13 定的）——
     一进来就是一列整齐的标题，页面短得多；点过 ▾ 的才记进 `blockFold`（只在内存，不进存档）。 */
-function foldOpen(id) {
-  return blockFold.get(id) === true;
+function foldOpen(id, main = false) {
+  return blockFold.get(id) ?? main;
 }
 
 /** 把一条配置（或一个 OCR 供应商）的请求块整批画出来（主请求在最上面，然后是各条后备）。
@@ -1090,7 +1048,7 @@ function renderBlocksInto(host, owner, opts) {
   /* 折叠 / 勾选这两个状态是**这里贴上去的**，不写进模板 —— 模板里 `class="req-block${…}"`
      一旦插值，`check-dom` 那套「从 class="…" 字面量里收类名」就认不出 `req-block` 了。 */
   host.querySelectorAll('.req-block').forEach((node) => {
-    node.classList.toggle('open', foldOpen(node.dataset.id));
+    node.classList.toggle('open', foldOpen(node.dataset.id, node === host.firstElementChild));
     node.classList.toggle('rb-off', !node.querySelector('.rb-enable').checked);
   });
   // 动态建出来的模板框也要有「Tab 缩进 + 记住焦点」
@@ -1169,12 +1127,12 @@ function renderEditor() {
   els.emptyHint.hidden = true;
 
   els.name.value = cfg.name || '';
+  $('#cfg-editor-title').textContent = cfg.name || T('opt_unnamed', '(未命名)');
   els.testResult.hidden = true;
   els.testResult.innerHTML = '';
   renderBlocks(cfg);
 
   updatePreview();
-  setSaveStatus('');
 }
 
 /** 界面 → 数据。按 DOM 顺序走一遍，**主请求那块写回配置顶层，后备写回它自己那条**。 */
@@ -1240,7 +1198,9 @@ function bindConfigList() {
     state.configs.push(cfg);
     editingId = cfg.id;
     state.activeConfigId = cfg.id;
+    activeConfigChanged = true;
     refreshConfigViews();
+    openOptionsDetail(els.editor.closest('.tabpanel'));
     els.name.focus();
     els.name.select();
   });
@@ -1248,6 +1208,7 @@ function bindConfigList() {
 
 function bindEditor() {
   els.name.addEventListener('input', () => {
+    $('#cfg-editor-title').textContent = els.name.value || T('opt_unnamed', '(未命名)');
     collectEditor();
     updatePreview();
     scheduleSave();
@@ -1324,6 +1285,7 @@ $('#btn-duplicate').addEventListener('click', () => {
     state.configs.splice(idx + 1, 0, copy);
     editingId = copy.id;
     state.activeConfigId = copy.id;
+  activeConfigChanged = true;
     refreshConfigViews();
   });
 
@@ -1340,6 +1302,7 @@ $('#btn-duplicate').addEventListener('click', () => {
     state.configs.splice(idx, 1);
     editingId = state.configs[Math.max(0, idx - 1)].id;
     state.activeConfigId = editingId;
+    activeConfigChanged = true;
     /* 删掉的这条如果还在对比名单里，**两份都要摘** ——
        不然面板会拿到一个不存在的 id（图片那一屏尤其：槽还在、配置没了）。 */
     state.settings.slotConfigs = sortByConfigOrder(slotConfigIds().filter((x) => x !== cfg.id));
@@ -1573,7 +1536,7 @@ async function runTest() {
   /* 这枚徽章只交代「这条链上一共有几条」—— 不是「要试几条」。
      写成「按顺序试 2 条」会被读成「两条都会发」，可实际拿到译文就停（kniph 报过这个歧义）。 */
   head.innerHTML =
-    `<span class="badge">${T('opt_chain', '链上共 $1$ 条请求', [String(chain.length)])}</span>` +
+    `<i class="spin" aria-hidden="true"></i><span class="badge">${T('opt_chain', '链上共 $1$ 条请求', [String(chain.length)])}</span>` +
     (rotating ? `<span class="badge">${T('opt_tryall', 'model 逐个试，最多发 $1$ 次', [String(total)])}</span>` : '');
   els.testResult.appendChild(head);
 
@@ -1616,6 +1579,7 @@ async function runTest() {
       }
     }
   }
+  head.querySelector('.spin')?.remove();
   if (!got) {
     head.insertAdjacentHTML(
       'beforeend',
@@ -1742,259 +1706,174 @@ function testItemHtml(item, r, opts = {}) {
  * 0px，切到「变量」标签后扁成一条缝（kniph 报过）。所以不可见时直接跳过 ——
  * 等真正显示了再量（切标签时 `growVarValues` 会补一次）。
  */
-function growTextarea(el) {
-  if (!el.offsetParent) return;
-  el.style.height = 'auto';
-  el.style.height = el.scrollHeight + 'px';
+let editingVarIdx = -1;
+let revealVariable = false;
+let selectedVariable;
+
+function varValueSummary(variable) {
+  if (isSecretVar(variable.name)) return '••••••';
+  const lines = String(variable.value || '').split('\n').filter(line => line.trim());
+  if (!lines.length) return '';
+  return lines.length > 1 ? lines[0] + ' · ' + T('opt_ui_value_lines', '共 $1$ 行', [String(lines.length)]) : lines[0];
 }
 
-/** 把变量栏里所有值输入框重撑一遍（切到「变量」标签时调 —— 存档里的多行值要撑开） */
-function growVarValues() {
-  els.varsBody.querySelectorAll('textarea[data-kind="value"]').forEach((el) => {
-    // 只有展开着的那几块要撑 —— 收着的摘要行里没有 textarea
-    if (el.closest('.var-row.editing')) growTextarea(el);
-  });
+function moveVariable(id, to) {
+  const from = Number(id);
+  const next = moveItem(state.vars, from, to);
+  if (next === state.vars) return false;
+  const selected = state.vars[editingVarIdx];
+  state.vars = next;
+  editingVarIdx = state.vars.indexOf(selected);
+  renderVariableList();
+  persist();
+  updatePreview();
+  return true;
 }
 
 function bindVars() {
+  const editor = $('#vars-editor');
   $('#btn-add-var').addEventListener('click', () => {
-    // 新建的那条**直接进编辑态**（名字还空着，摘要行没东西可显示）
-    state.vars.push({ name: '', value: '' });
+    state.vars.push({name: '', value: ''});
     editingVarIdx = state.vars.length - 1;
     renderVars();
+    openOptionsDetail(editor.closest('.tabpanel'));
+    $('#var-name').focus();
     persist();
-    const input = els.varsBody.querySelector('.var-row.editing input[data-kind="name"]');
-    if (input) input.focus();
+  });
+  bindSortDrag(els.varsBody, moveVariable);
+
+  $('#var-name').addEventListener('input', event => {
+    const row = state.vars[editingVarIdx];
+    if (!row) return;
+    const raw = event.target.value;
+    const name = raw.replace(/[^\w.-]/g, '');
+    if (row.name !== name) revealVariable = false;
+    row.name = name;
+    if (raw !== name) event.target.value = name;
+    $('#var-validation').textContent = raw === name ? '' : T('opt_ui_invalid_var', '变量名仅支持字母、数字、下划线、点与连字符。');
+    updateVarHeading(row);
+    renderVarValue(row);
+    renderVariableList();
+    scheduleSave();
+    updatePreview();
+  });
+  $('#var-value').addEventListener('input', event => {
+    const row = state.vars[editingVarIdx];
+    if (!row || event.target.readOnly) return;
+    row.value = event.target.value;
+    renderVariableList();
+    scheduleSave();
+    updatePreview();
+  });
+  $('#var-eye').addEventListener('click', () => {
+    const row = state.vars[editingVarIdx];
+    if (!row) return;
+    revealVariable = !revealVariable;
+    renderVarValue(row);
+  });
+  $('#var-delete').addEventListener('click', () => {
+    const row = state.vars[editingVarIdx];
+    if (!row || !confirm(T('opt_ui_delete_var', '确定删除「$1$」？', [row.name || T('opt_unnamed', '(未命名)')]))) return;
+    state.vars.splice(editingVarIdx, 1);
+    editingVarIdx = Math.min(editingVarIdx, state.vars.length - 1);
+    if (editingVarIdx < 0) editor.closest('.tabpanel').classList.remove('show-detail');
+    renderVars();
+    persist();
+    updatePreview();
   });
 
-  /* 拖动排序：和三处左栏**同一个 `bindSortDrag`**（`grid: true` ——
-     卡片是一行好几张，按 Y 算落点会分不清落在哪一列，见那个函数的注释）。
-     变量在存档里只有 name/value、没有 id，所以 `data-id` 用下标；
-     挪完立刻重画，下标也跟着变（每次都是对着当时的列表算的）。 */
-  bindSortDrag(
-    els.varsBody,
-    (id, to) => {
-      const from = Number(id);
-      const next = moveItem(state.vars, from, to);
-      if (next === state.vars) return; // 原地没动（插回自己原来的位置）
-      state.vars = next;
-      // 正在编辑的那条得跟着挪 —— 下标变了，不修就会跳到别的变量上。
-      // `to` 是 moveItem「移除之后」的坐标：往下拖时 (from, to] 区间 -1，
-      // 往上拖时 [to, from) 区间 +1（第三分支原来写反了，是个对 from>to 恒空的死条件，
-      // 往上拖会把编辑态留在原地跳到别的变量上 —— 通读时子代理抓出来的）。
-      if (editingVarIdx === from) editingVarIdx = to;
-      else if (editingVarIdx > from && editingVarIdx <= to) editingVarIdx -= 1;
-      else if (editingVarIdx >= to && editingVarIdx < from) editingVarIdx += 1;
-      renderVars();
-      persist();
-      updatePreview();
-    },
-    { itemSel: '.var-row', gripSel: '.var-grip', grid: true }
-  );
-}
-
-/* 变量编辑态下标（-1 = 没在编辑）。收起 / 展开是**行为**，不进存档 */
-let editingVarIdx = -1;
-
-/* 值的摘要：一眼认出这条是干嘛的，但**不摊全文**。
-   · 含 key 的 → 圆点打码（不数长度，量长度也算泄露）
-   · 多行（model 列表）→ 首行 + 「 +N」
-   · 空 → 灰色的「空」 */
-function varValueSummary(v) {
-  if (isSecretVar(v.name)) return '••••••';
-  const lines = String(v.value || '').split('\n').filter((l) => l.trim());
-  if (lines.length === 0) return '';
-  const first = lines[0].length > 42 ? lines[0].slice(0, 42) + '…' : lines[0];
-  return lines.length > 1 ? `${first} +${lines.length - 1}` : first;
-}
-
-/* 一条变量 = **一行**：名字 + 值的摘要 + 眼睛 + ✕（华词翻译那种紧凑行）。
-   点那一行才摊开编辑（名字框 + 值 textarea + 眼睛挪进去）。
-   上一版「名字一行、值一行」把 13 条摊成 26 行 —— 翻着找一条要滚很久
-   （kniph：「各个方面上的局促…查找修改的时候需要花费很多时间」）。 */
-function renderVars() {
-  els.varsBody.innerHTML = '';
-
-  state.vars.forEach((v, idx) => {
-    const row = document.createElement('div');
-    row.className = 'var-row' + (idx === editingVarIdx ? ' editing' : '');
-    /* 拖动排序认这个 id。变量在存档里只有 name/value、没有稳定 id，
-       这里用下标 —— 每次挪完 / 落盘后整块重画，下标也跟着变，不会指错。 */
-    row.dataset.id = String(idx);
-
-    if (idx !== editingVarIdx) {
-      /* ---- 卡片（收起态）：名字一行、值两行，操作按钮贴右上角 ---- */
-  row.title = T('opt_click_to_edit', '点开编辑');
-
-      /* 拖动手柄。和三处左栏同一个 `bindSortDrag`（拖它才动，点卡片是编辑）——
-         变量一多就只能按创建顺序排，视觉上乱得没法归类（kniph 2026-10-14）。 */
-      const grip = document.createElement('span');
-      grip.className = 'var-grip';
-      grip.innerHTML = GRIP_SVG;
-      grip.title = T('opt_drag_hint', '按住拖动，调整顺序');
-      grip.setAttribute('aria-hidden', 'true'); // 键盘暂时没有排序路径，别假装支持
-      row.appendChild(grip);
-
-      const nameEl = document.createElement('span');
-      nameEl.className = 'var-name';
-      nameEl.textContent = v.name || T('opt_unnamed', '(未命名)');
-      if (isSecretVar(v.name)) nameEl.classList.add('is-key');
-
-      const subEl = document.createElement('span');
-      subEl.className = 'var-sub';
-  subEl.textContent = varValueSummary(v) || T('opt_empty', '空');
-      // 值可能很长（多行 model 列表、长 key）—— 完整内容挂 title，鼠标停上去看全文
-      row.title = (v.name || T('opt_unnamed', '(未命名)')) + '\n' + (varValueSummary(v) || T('opt_var_empty', '空')) + '\n\n' + T('opt_var_click_edit', '点开编辑');
-
-      /* 名字和值竖排在左边一块，操作按钮在右边 —— 卡片宽度只有 230px 起，
-         三个子项横排的话值只剩几十像素，一行都显示不全 */
-      const main = document.createElement('div');
-      main.className = 'var-main';
-      main.append(nameEl, subEl);
-
-      const eye = document.createElement('button');
-      eye.type = 'button';
-      eye.className = 'row-eye' + (isSecretVar(v.name) ? '' : ' off');
-      eye.innerHTML = EYE_OFF_SVG;
-  eye.title = T('opt_click_to_edit', '点开编辑');
-      eye.addEventListener('click', () => {
-        editingVarIdx = idx;
-        renderVars();
-      });
-
-      const del = document.createElement('button');
-      del.className = 'row-del';
-      del.textContent = '✕';
-  del.title = T('opt_delete', '删除');
-      del.addEventListener('click', () => {
-        if (editingVarIdx === idx) editingVarIdx = -1;
-        else if (editingVarIdx > idx) editingVarIdx -= 1;
-        state.vars.splice(idx, 1);
-        renderVars();
-        persist();
-        updatePreview();
-      });
-
-      row.append(main);
-      const acts = document.createElement('div');
-      acts.className = 'var-acts';
-      acts.append(eye, del);
-      row.appendChild(acts);
-      row.addEventListener('click', (e) => {
-        // 眼睛 / ✕ / 拖动手柄自己都有活儿，点卡片本身才进编辑
-        if (e.target.closest('button, .var-grip')) return;
-        editingVarIdx = idx;
-        renderVars();
-      });
-      els.varsBody.appendChild(row);
+  els.builtinBody.addEventListener('click', async event => {
+    const button = event.target.closest('[data-copy-variable]');
+    if (!button) return;
+    const label = button.getAttribute('aria-label');
+    try {
+      await navigator.clipboard.writeText(button.dataset.copyVariable);
+      button.innerHTML = uiIcon('check');
+    } catch {
+      button.title = T('popup_copy_failed', '无法访问剪贴板');
       return;
     }
-
-    /* ---- 编辑态：名字框 + 值 textarea + 眼睛 + ✕ ---- */
-    const nameInput = document.createElement('input');
-    nameInput.type = 'text';
-    nameInput.value = v.name;
-    nameInput.placeholder = 'apiKey';
-    nameInput.dataset.kind = 'name';
-    nameInput.spellcheck = false;
-    nameInput.addEventListener('input', () => {
-      state.vars[idx].name = nameInput.value.replace(/[^\w.-]/g, '');
-      if (nameInput.value !== state.vars[idx].name) nameInput.value = state.vars[idx].name;
-      /* 名字改了，打码状态跟着重算：这叫 apiKey 就该藏起来，改成 model 就该露出来。
-         手动点过眼睛的那种临时状态会被覆盖 —— 名字变了就是另一回事了。 */
-      applyMask(isSecretVar(state.vars[idx].name));
-      syncEye();
-      scheduleSave();
-      updatePreview();
-    });
-
-    /* 值用 textarea：一**行写一个**时（「换 model 重试」就是这么用的）能一行一个地排开，
-       不用挤在一个输入框里。单行的时候靠 growTextarea 压成一行高。 */
-    const valueInput = document.createElement('textarea');
-    valueInput.rows = 1;
-    valueInput.value = v.value;
-  valueInput.placeholder = T('opt_value_one_per_line', '值（一行一个）');
-    valueInput.spellcheck = false;
-    valueInput.autocomplete = 'off';
-    valueInput.dataset.kind = 'value';
-    valueInput.autofocus = v.name && true; // 名字已有 → 焦点给值；名字空 → 给名字框
-    const autoGrow = () => growTextarea(valueInput);
-    /* 值要不要默认藏起来：**名字里含 key 才算密钥**（不区分大小写）。
-       这是**防肩窥**（截图、录屏、旁边有人），不是加密：值仍是明文存的、
-       导出的配置文件里也照样有，只是没道理在界面上明晃晃摆着。 */
-    const applyMask = (on) => valueInput.classList.toggle('masked', on);
-    applyMask(isSecretVar(v.name));
-    valueInput.addEventListener('input', () => {
-      state.vars[idx].value = valueInput.value;
-      autoGrow();
-      scheduleSave();
-      updatePreview();
-    });
-
-    const eye = document.createElement('button');
-    eye.type = 'button';
-    eye.className = 'row-eye';
-    /* 眼睛的图标 / 提示跟着**当前**状态走：睁眼 = 点一下显示，划斜杠 = 点一下藏回去 */
-    const syncEye = () => {
-      const masked = valueInput.classList.contains('masked');
-      eye.innerHTML = masked ? EYE_SVG : EYE_OFF_SVG;
-      eye.classList.toggle('on', !masked);
-  eye.title = masked ? T('opt_show', '显示') : T('opt_hide', '隐藏');
-      eye.setAttribute('aria-label', eye.title);
-    };
-    eye.addEventListener('click', () => {
-      valueInput.classList.toggle('masked');
-      syncEye();
-    });
-    syncEye();
-
-    // 编辑态撑高（多行值）。标签可能还藏着（offsetParent 为空），growVarValues 会补
-    requestAnimationFrame(autoGrow);
-
-    const del = document.createElement('button');
-    del.className = 'row-del';
-    del.textContent = '✕';
-  del.title = T('opt_delete', '删除');
-    del.addEventListener('click', () => {
-      editingVarIdx = -1;
-      state.vars.splice(idx, 1);
-      renderVars();
-      persist();
-      updatePreview();
-    });
-
-    /* 收起那条：失焦且值没在拖选 → 摘要行（点它重新摊开）。挂在 row 上的 blur
-       事件要 focusin/focusout 才冒泡；这里直接查 activeElement 更稳 */
-    const foldBtn = document.createElement('button');
-    foldBtn.type = 'button';
-    foldBtn.className = 'row-fold';
-  foldBtn.textContent = T('opt_collapse', '收起');
-  foldBtn.title = T('opt_collapse_hint', '收起这一条（点名字再摊开）');
-    foldBtn.addEventListener('click', () => {
-      editingVarIdx = -1;
-      renderVars();
-    });
-
-    const nameRow = document.createElement('div');
-    nameRow.className = 'var-edit-name';
-    nameRow.append(nameInput);
-    const valRow = document.createElement('div');
-    valRow.className = 'var-edit-val';
-    valRow.append(valueInput, eye);
-    const bar = document.createElement('div');
-    bar.className = 'var-edit-bar';
-    bar.append(foldBtn, del);
-    row.append(nameRow, valRow, bar);
-    els.varsBody.appendChild(row);
-
-    // 名字已有 → 焦点直接给值；否则给名字（新建那条）
-    if (v.name) valueInput.focus();
-    else nameInput.focus();
+    button.title = T('popup_copied', '已复制');
+    setTimeout(() => {
+      button.innerHTML = uiIcon('copy');
+      button.title = label;
+    }, 1500);
   });
+}
 
-  els.builtinBody.innerHTML = Object.entries(BUILTIN_VAR_HINTS)
-    .map(([k, hint]) => `<tr><td>{{${escapeHtml(k)}}}</td><td>${escapeHtml(VAR_HINT_KEYS[k] ? T(VAR_HINT_KEYS[k], hint) : hint)}</td></tr>`)
-    .join('');
+function updateVarHeading(variable) {
+  const name = variable.name || T('opt_unnamed', '(未命名)');
+  $('#var-title').textContent = name;
+  $('#var-title').title = name;
+}
+
+function renderVarValue(variable) {
+  const secret = isSecretVar(variable.name);
+  const masked = secret && !revealVariable;
+  const field = $('#var-value');
+  field.readOnly = masked;
+  field.value = masked ? '••••••' : variable.value;
+  const eye = $('#var-eye');
+  eye.hidden = !secret;
+  eye.setAttribute('aria-pressed', String(secret && revealVariable));
+  eye.setAttribute('aria-label', masked ? T('opt_show', '显示') : T('opt_hide', '隐藏'));
+  eye.title = eye.getAttribute('aria-label');
+}
+
+function renderVariableList() {
+  $('#vars-count').textContent = state.vars.length;
+  els.varsBody.replaceChildren(...state.vars.map((variable, index) => sortableRow({
+    id: String(index),
+    name: variable.name,
+    sub: varValueSummary(variable),
+    active: editingVarIdx === index,
+    index,
+    total: state.vars.length,
+    listEl: els.varsBody,
+    onSelect: () => {
+      editingVarIdx = index;
+      renderVars();
+      openOptionsDetail($('#vars-editor').closest('.tabpanel'));
+    },
+    onMove: moveVariable
+  })));
+}
+
+function renderVars() {
+  if (editingVarIdx < 0 || editingVarIdx >= state.vars.length) editingVarIdx = state.vars.length ? 0 : -1;
+  const variable = state.vars[editingVarIdx];
+  if (selectedVariable !== variable) {
+    revealVariable = false;
+    selectedVariable = variable;
+  }
+  renderVariableList();
+  $('#vars-editor').hidden = !variable;
+  $('#vars-empty').hidden = Boolean(variable);
+  if (!variable) return;
+  $('#var-name').value = variable.name;
+  $('#var-validation').textContent = '';
+  updateVarHeading(variable);
+  renderVarValue(variable);
+}
+
+function renderBuiltinVariables() {
+  const entries = Object.entries(BUILTIN_VAR_HINTS);
+  $('#builtin-count').textContent = entries.length;
+  els.builtinBody.innerHTML = entries.map(([key, hint]) => {
+    const token = '{{' + key + '}}';
+    const description = escapeHtml(VAR_HINT_KEYS[key] ? T(VAR_HINT_KEYS[key], hint) : hint);
+    const label = escapeHtml(T('opt_ui_copy_variable', '复制 $1$', [token]));
+    return `<div class="builtin-row"><details><summary><code>${token}</code>${uiIcon('right')}</summary><p>${description}</p></details>
+      <button type="button" class="ghost icon-btn" data-copy-variable="${token}" aria-label="${label}" title="${label}">${uiIcon('copy')}</button></div>`;
+  }).join('');
+  const syncBuiltins = () => {
+    for (const detail of els.builtinBody.querySelectorAll('details')) detail.open = narrowOptions.matches;
+  };
+  syncBuiltins();
+  narrowOptions.addEventListener('change', syncBuiltins);
+  els.builtinBody.addEventListener('click', event => {
+    if (narrowOptions.matches && event.target.closest('summary')) event.preventDefault();
+  });
 }
 
 /* ---- OCR 供应商 ---- */
@@ -2014,6 +1893,7 @@ function summarizeOcr(p) {
    挪动落点是 `state.ocr.providers` 的先后；选中项按 id 走，不会指错。 */
 function renderOcrList() {
   els.ocrList.innerHTML = '';
+  $('#ocr-count').textContent = state.ocr.providers.length;
 
   state.ocr.providers.forEach((p, idx) => {
     els.ocrList.appendChild(sortableRow({
@@ -2080,6 +1960,10 @@ function imageTestConfig() {
 function renderImageConfigList() {
   const list = imageConfigs();
   els.imgcfgList.innerHTML = '';
+  const select = $('#image-config-select');
+  $('#ocr-count').textContent = list.length;
+  select.replaceChildren(...list.map(config => newOption(config.id, config.name)));
+  select.disabled = !list.length;
 
   // 一条都没有：把引导摊在列表里，别只留个空框
   if (!list.length) {
@@ -2104,6 +1988,7 @@ function renderImageConfigList() {
     scheduleSave();
   }
 
+  select.value = state.ocr.imageConfigId;
   for (let i = 0; i < list.length; i++) {
     const c = list[i];
     // 副标题摊的是「真会去发图的那一条」的模板地址 —— 图片模板挂在后备上时，
@@ -2118,15 +2003,7 @@ function renderImageConfigList() {
       index: i,
       total: list.length,
       listEl: els.imgcfgList,
-      onSelect: () => {
-        state.ocr.imageConfigId = c.id;
-        panelTouched.add('imageConfigId'); // 面板图片模式下也写它
-        renderImageConfigList();
-        // 换了对象：预览跟着换，上次的测试结果也不再是这条的了 —— 收起来免得看岔
-        renderOcrPreview();
-        els.ocrTestResult.hidden = true;
-        persist(false);
-      },
+      onSelect: () => selectImageConfig(c.id),
       onMove: moveImageConfig,
       /* 点行 = 加入对比。原来这里没传这两个回调 —— 图片配置永远只能选一条来编辑，
          表现就是「勾了禁用外置 OCR 之后不能多选」（kniph 2026-10-18 报的）。 */
@@ -2134,6 +2011,16 @@ function renderImageConfigList() {
       onRemoveFromCompare: (cid) => toggleImgSlotConfig(cid, { force: false })
     }));
   }
+}
+
+function selectImageConfig(id) {
+  state.ocr.imageConfigId = id;
+  panelTouched.add('imageConfigId');
+  renderImageConfigList();
+  renderOcrPreview();
+  els.ocrTestResult.hidden = true;
+  persist(false);
+  openOptionsDetail(els.ocrEditor.closest('.tabpanel'));
 }
 
 /**
@@ -2175,11 +2062,14 @@ function renderOcrDisabled() {
      而那两块在直传模式下还在用，看着像被禁用。 */
   els.ocrList.hidden = off;
   els.imgcfgList.hidden = !off;
-  els.ocrListTitle.textContent = off ? T('opt_img_configs', '图片配置') : T('opt_ocr_configs', 'OCR 配置');
+  els.ocrListTitle.textContent = off ? T('opt_img_configs', '图片配置') : T('opt_ui_ocr_list', 'OCR 列表');
+  $('#image-config-picker').hidden = !off;
+  const title = off ? T('opt_ui_ocr_direct', '禁用外置 OCR') : currentOcrProvider()?.name || '';
+  $('#ocr-editor-title').textContent = title;
+  $('#ocr-editor-title').title = title;
   // 图片配置不能在 OCR 栏新建 —— 数据只有一份，维护入口也只留一个
   els.btnOcrNew.hidden = off;
   els.imgcfgFoot.hidden = !off;
-  els.imgcfgHint.hidden = !off;
   els.ocrEditor.classList.toggle('is-imgcfg', off);
   // 先画列表（里面会把失效的选中项落回第一条），再决定测试按钮的状态
   if (off) renderImageConfigList();
@@ -2194,9 +2084,10 @@ function renderOcrDisabled() {
         ? T('ocr_test_title_img', '用的是左边选中那条「图片配置」的图片请求模板')
         : T('ocr_test_title_none', '还没有配置填过「图片请求模板」，去「配置」栏给能看图的那条填上'))
     : '';
-  els.oTestLabel.textContent = off ? T('ocr_test_label_img', '测试图片配置') : T('opt_set_012', '测试');
+  els.oTestLabel.textContent = off ? T('opt_ui_image_test', '图片翻译测试') : T('opt_ui_ocr_test', 'OCR 测试');
   els.ocrTestHint.hidden = off;
   els.imgcfgTestHint.hidden = !off;
+  if (!off) $('#ocr-count').textContent = state.ocr.providers.length;
   /* 图是从哪一条发出去的 —— 图片模板挂在后备上时摊的是后备那一段，
      不说一句会让人以为预览摊错了（「我主请求里没写这个啊」）。 */
   const imgOn = imgForTest ? imageItem(imgForTest) : null;
@@ -2328,6 +2219,7 @@ function selectOcr(id) {
   renderOcrList();
   renderOcrEditor();
   persist(false);
+  openOptionsDetail(els.ocrEditor.closest('.tabpanel'));
 }
 
 function bindOcr() {
@@ -2335,7 +2227,13 @@ function bindOcr() {
      它就是「先试哪条」之外的又一种表达；kniph 2026-10-14：三个部分复用同一套逻辑）。 */
   bindSortDrag(els.ocrList, moveOcrProvider);
 
+  $('#image-config-select').addEventListener('change', event => {
+    toggleImgSlotConfig(event.target.value, {force: true, redraw: false});
+    selectImageConfig(event.target.value);
+  });
+
   els.oName.addEventListener('input', () => {
+    $('#ocr-editor-title').textContent = els.oName.value || T('opt_unnamed', '(未命名)');
     const p = currentOcrProvider();
     if (!p) return;
     p.name = els.oName.value;
@@ -2399,6 +2297,7 @@ function bindOcr() {
     renderOcrList();
     renderOcrEditor();
     // 落到名称框上（请求模板默认收起，聚焦它还得先摊块）
+    openOptionsDetail(els.ocrEditor.closest('.tabpanel'));
     els.oName.focus();
     els.oName.select();
     scheduleSave();
@@ -2446,9 +2345,6 @@ function bindOcr() {
     ocrTestFile = f || null;
     els.ocrTestResult.hidden = true; // 换图了就把上次的结果收起来
 
-    /* 文件名自己写：原生的「未选择任何文件」跟着浏览器语言走，data-i18n 管不到 */
-    const nameEl = $('#ocr-test-img-name');
-    if (nameEl) nameEl.textContent = f ? f.name : T('opt_no_file', '未选择文件');
   });
 }
 
@@ -2559,7 +2455,7 @@ async function runOcrTest() {
   const srcLabel = shot.source + ' · ' + formatBytes(shot.bytes);
     btn.textContent = off ? T('opt_translating', '翻译中…') : T('opt_recognizing', '识别中…');
   box.innerHTML =
-    '<div class="result-head"><span class="badge">' + T('panel_requesting', '请求中…') + '</span>' +
+    '<div class="result-head"><i class="spin" aria-hidden="true"></i><span class="badge">' + T('panel_requesting', '请求中…') + '</span>' +
     `<span class="badge">${escapeHtml(label)}</span>` +
     `<span class="badge">${escapeHtml(srcLabel)}</span></div>`;
 
@@ -2771,12 +2667,6 @@ const SETTING_MAP = [
  * 不然一屏全是收起的标题，看不出哪个分组是空的、哪个有内容。
  * 渲染完调一次即可（设置行是静态的，不会动态增删）。
  */
-function syncGroupCounts() {
-  for (const group of document.querySelectorAll('.set-group')) {
-    const n = group.querySelectorAll('.set-group-body .setting').length;
-  group.querySelector('summary').dataset.count = n ? T('opt_n_items', '$1$ 项', [String(n)]) : '';
-  }
-}
 
 /**
  * 面板效果预览：把「字号 / 宽度 / 结果区上限 / 主题」这几个量画成示意图。
@@ -3068,7 +2958,9 @@ function syncSlotInsertRow() {
   const row = $('#row-slotinsert');
   if (!row) return;
   const n = clampSlots(state.settings.panelSlots);
-  row.hidden = n <= 1;
+  row.hidden = n <= 1 && !row.hasAttribute('data-search-revealed');
+  row.querySelector('select').disabled = n <= 1;
+  row.querySelector('[data-slot-help]').hidden = n > 1;
 }
 
 function renderSettings() {
@@ -3226,20 +3118,8 @@ function renderTriggerStyles() {
   // 用 getTriggerStyle 归一过一次：存档里留着已经删掉的预设（比如原来的「笔尖」）时，
   // 直接比 id 会一张卡都点不亮
   const cur = getTriggerStyle(state.settings.triggerStyle).id;
-  // 「自定义」那张卡上画的是**你实际会用到的图标** —— 填了就是你的，没填就空着。
-  // 别拿示例图标冒充：那样看着像「这个预设就长三条线加箭头」。
-  const customSvg = parseTriggerSvg(state.settings.triggerSvg).svg;
-  els.trigStyles.innerHTML = TRIGGER_STYLES.map((s) => {
-    const icon = s.id === 'custom' ? customSvg : (s.svg || escapeHtml(s.text || ''));
-    return (
-      '<button type="button" class="trig-card' + (s.id === cur ? ' on' : '') +
-      '" data-style="' + s.id + '" title="' + escapeHtml(s.hintKey ? T(s.hintKey, s.hint) : s.hint) + '">' +
-      '<span class="trig-prev' + (s.round ? ' round' : '') + (s.bare ? ' bare' : '') + '">' +
-      icon + '</span>' +
-      '<span>' + escapeHtml(s.key ? T(s.key, s.name) : s.name) + '</span>' +
-      '</button>'
-    );
-  }).join('');
+  els.trigStyles.replaceChildren(...TRIGGER_STYLES.map(style => newOption(style.id, style.key ? T(style.key, style.name) : style.name)));
+  els.trigStyles.value = cur;
 }
 
 /** 自定义 SVG 的检查结果 + 「选了自定义却没填图标」的提醒，都写在这一行里 */
@@ -3317,6 +3197,7 @@ function applyTheme() {
     dark = q ? !q.matches : true;
   }
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  $('#theme-toggle').setAttribute('aria-pressed', String(dark));
 
   renderPreview(); // 预览里的按钮底色也跟着主题变
 }
@@ -3345,7 +3226,7 @@ function bindSettings() {
           const cur = (list.find((c) => c.name === name) || {}).shortcut;
           return label + ' ' + (cur || T('opt_hotkey_unset', '未设置'));
         });
-        $('#hotkey-list').textContent = rows.join('　｜　');
+        $('#hotkey-list').textContent = rows.join('\n');
       });
     };
     render();
@@ -3424,11 +3305,8 @@ function bindSettings() {
   });
   els.btnPanelCssClear.addEventListener('click', () => setPanelCss(''));
 
-  els.trigStyles.addEventListener('click', (e) => {
-    const card = e.target.closest('.trig-card');
-    if (!card) return;
-    state.settings.triggerStyle = card.dataset.style;
-    renderTriggerStyles();
+  els.trigStyles.addEventListener('change', () => {
+    state.settings.triggerStyle = els.trigStyles.value;
     // 切到「自定义」而图标栏是空的 → 那一行要跳出来提醒（切回去就得消失）
     updateTriggerSvgMsg();
     renderPreview();
@@ -3822,12 +3700,20 @@ function bindImportExport() {
     );
   });
 
-  $('#btn-import').addEventListener('click', () => els.fileImport.click());
-
-  els.fileImport.addEventListener('change', async () => {
+  const fileDialog = $('#import-file-dialog');
+  const confirmFile = $('#import-file-confirm');
+  $('#btn-import').addEventListener('click', () => {
+    fileDialog.returnValue = '';
+    fileDialog.showModal();
+  });
+  els.fileImport.addEventListener('change', () => {
+    confirmFile.disabled = !els.fileImport.files.length;
+  });
+  fileDialog.addEventListener('close', async () => {
     const file = els.fileImport.files && els.fileImport.files[0];
     els.fileImport.value = '';
-    if (!file) return;
+    els.fileImport.dispatchEvent(new Event('change', {bubbles: true}));
+    if (!file || fileDialog.returnValue !== 'ok') return;
 
     try {
       const text = await file.text();
@@ -3893,6 +3779,7 @@ function bindImportExport() {
         normalizeSlots(state.settings, state.configs);
       }
       editingId = state.activeConfigId = state.configs[0].id;
+      activeConfigChanged = true;
       editingOcrId = state.ocr.activeId;
       // 先按新 state 重画，再落盘 —— persist() 会把编辑器里的值收回去，
       // 顺序反了就是把「上一条」的内容写进「新导入的那条」里
@@ -3950,6 +3837,9 @@ async function persist(showStatus = true) {
        过期说明已有更新的保存发起 —— 直接放弃，别拿旧 state 覆盖新写入。 */
     if (mySave !== saveSeq) return;
     adoptPanelOwned(state, saved, panelTouched);
+    if (!activeConfigChanged && saved?.activeConfigId && state.configs.some(config => config.id === saved.activeConfigId)) {
+      state.activeConfigId = saved.activeConfigId;
+    }
   } catch {
     /* 读不到就按本地的写，和以前一样 */
   }
@@ -3963,6 +3853,7 @@ async function persist(showStatus = true) {
     return;
   }
   if (mySave !== saveSeq) return;   // 落盘后才变旧：不闪「已保存」，免得误导
+  activeConfigChanged = false;
   if (showStatus) flashSaved();
 }
 /** 「把说明都放回来」那个按钮的显隐 —— 跟着 `hiddenHints` 走。
@@ -4015,17 +3906,13 @@ function applyHintHides() {
 function setSaveStatus(text, saved = false) {
   for (const el of document.querySelectorAll('.save-status')) {
     el.textContent = text;
+    if (saved && text) el.insertAdjacentHTML('afterbegin', uiIcon('check'));
     el.classList.toggle('saved', saved);
   }
 }
 
-let savedTimer = null;
 function flashSaved() {
-  const t = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
-  setSaveStatus(T('opt_saved_at', '已保存 $1$', [pad(t.getHours()) + ':' + pad(t.getMinutes()) + ':' + pad(t.getSeconds())]), true);
-  clearTimeout(savedTimer);
-  savedTimer = setTimeout(() => setSaveStatus(''), 2500);
+  setSaveStatus(T('opt_ui_saved', '已保存'), true);
 }
 
 /* 目标语言：下拉挑预设，「其他」自己填                                   */

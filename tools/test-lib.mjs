@@ -1982,8 +1982,8 @@ section('15f. 设置页的「图片配置」那条线也认后备');
     opt.includes('class="rb-adapter-note"') && opt.includes('adapterLabel('));
 
   /* 请求块默认**全收起**（含主请求，kniph 2026-10-13 定的）。 */
-  check('折叠默认值是「收起」（没记过就是 false，不再有「主请求默认展开」那条特例）',
-    /function foldOpen\(id\) \{\s*return blockFold\.get\(id\) === true;/.test(opt));
+  check('主请求默认展开，后备默认收起，显式折叠优先',
+    /return blockFold\.get\(id\) \?\? main;/.test(opt));
   /* 收起时块体是 display:none：点标签要先把那块摊开，不然字插到看不见的框里、还插在最前头。 */
   /* 标签现在长在**块里面**（配置栏 / OCR 栏同一套 bindChips）：插之前要把块摊开，
      不然收起的 <details> 里 selectionStart 恒为 0、focus() 是空操作。 */
@@ -2001,28 +2001,21 @@ section('15f. 设置页的「图片配置」那条线也认后备');
   /* ---- 两段模板共用一套骨架（kniph 2026-10-14：「完全是两套布局结构，明明可以复用一套代码」）----
      原来是：一条 `.field` + `<label>` + 裸 textarea，另一条 `<details>` + `<summary>` + `.fold-body`，
      连带字号 / hint 间距 / 文本框最小高度都各写一份。现在只有 `templateFieldHtml` 一处渲染。 */
-  check('两段模板由同一个函数渲染（定义 1 处 + 调用 2 处，图片那条带 ocr 开关）',
-    /function templateFieldHtml\(\{ wrapAttrs/.test(opt) &&
-      (opt.match(/templateFieldHtml\(\{/g) || []).length === 3 &&
-      (opt.match(/\$\{ocr \? '' : templateFieldHtml\(\{/g) || []).length === 1);
+  check('文字和图片模板复用编辑器，OCR 跳过图片模板',
+    (opt.match(/templateFieldHtml\(\{/g) || []).length === 3 && opt.includes("${ocr ? '' : templateFieldHtml({"));
   /* 骨架 = details > summary + .fold-body > （标签排 → 文本框 → 说明）。
      标签排 2026-10-14 从「浮在框上面」搬进 .fold-body（kniph：「变量是在请求模板内的…你就不能都统一到里面吗」），
      说明行多了个可选的 data-hint（「不再显示」的键），所以末尾那段不能用 `>` 死锚。 */
-  check('两段模板的骨架一样（details > summary + .fold-body > 标签排 + textarea + .hint）',
-    /<summary>\$\{escapeHtml\(title\)\}<\/summary>[\s\S]{0,240}class="fold-body"/.test(opt) &&
-      /class="fold-body"[\s\S]{0,120}\$\{chips \? chipsHtml\(chips\) : ''\}[\s\S]{0,120}<textarea \$\{boxAttrs\}/.test(opt) &&
-      /<textarea \$\{boxAttrs\}[\s\S]{0,220}<p class="hint"[\s\S]{0,90}>\$\{inline\(hint\)\}/.test(opt));
+  check('两种模板使用相同代码框及原生多行编辑',
+    opt.includes('class="code-box"') && opt.includes('spellcheck="false" wrap="off"') && opt.includes('if (!image) return box'));
   /* 两段模板**一项都不差**：标签排和「不再显示」那段说明两处都有（图片那条原来两样都没有 ——
      kniph：「变量是在请求模板内的…你就不能都统一到里面吗」）。 */
-  check('两段模板都带标签排、说明都能收（chips ×2 + img-tpl 那个键）',
-    (opt.match(/chips: opts\.chips/g) || []).length === 2 &&
-      /dismiss: 'img-tpl'/.test(opt) && /dismiss: ocr \? 'ocr-tpl' : 'cfg-tpl'/.test(opt));
-  check('折叠样式只有一份（.tpl-fold），.img-tpl 只剩「这是图片那条」这个身份',
-    /\.tpl-fold \.fold-body \{/.test(css) && /\.tpl-fold \.hint \{/.test(css) && !/\.img-tpl\s*\{/.test(css));
-  check('两段文本框共用一条样式，最小高度也一样（原来一个 300 一个 150）',
-    /\.rb-request,\s*\n\.rb-image-request,\s*\n#o-request \{[\s\S]{0,300}min-height: 300px/.test(css) &&
-      !/\.rb-image-request \{ min-height/.test(css));
-
+  check('两个模板共用可插入占位符',
+    (opt.match(/chips: opts\.chips/g) || []).length === 2 && opt.includes("chipsHtml(chips)"));
+  check('图片模板使用可折叠区域',
+    opt.includes('class="simple img-tpl tpl-fold rb-only-request"') && css.includes('.tpl-fold .fold-body'));
+  check('模板滚动与样式由同一类控制',
+    /\.code-box textarea\{[^}]*min-height:180px;[^}]*overflow:auto;white-space:pre/.test(css));
   /* ---- 折叠手势统一：**点块头**（整条标题栏）就折，角落那个 ▾ 只是指示器 ----
      kniph 2026-10-14 报的「有的地方点一下顶部收起，有的地方点一下角落的按钮」。 */
   check('点块头折叠，并且放过块头里的控件（勾选框 / ↑↓×）',
@@ -2031,8 +2024,8 @@ section('15f. 设置页的「图片配置」那条线也认后备');
     !/btn\.classList\.contains\('rb-fold'\)/.test(opt));
   check('块头 cursor: pointer + 文字不可选（拖选文字会顺手把块折了）',
     /\.rb-head \{[\s\S]{0,260}cursor: pointer;[\s\S]{0,80}user-select: none;/.test(css));
-  check('▾ 不再带按钮的底 / hover（免得看着像个独立手势）',
-    /\.rb-mini:hover:not\(:disabled\) \{/.test(css) && !/\.rb-mini:hover:not\(:disabled\),\s*\n\.rb-fold:hover/.test(css));
+  check('折叠图标使用统一 SVG，沿用请求启闭行为',
+    opt.includes('uiIcon("chevron")') && /\.rb-mini, \.rb-fold \{[^}]*border-color: transparent/.test(css));
   check('往框里插标签前先把模板那层折块摊开（收起时 selectionStart 恒为 0）',
     /textarea\.closest\('details\.tpl-fold'\)[\s\S]{0,80}fold\.open = true/.test(opt));
 
@@ -2053,16 +2046,14 @@ section('15f. 设置页的「图片配置」那条线也认后备');
       opt.includes('OCR_CHIPS') &&
       /* 别把绘制逻辑又搬回两栏各自里 */
       (opt.match(/blockHtml\(it, i, all\.length - 1/g) || []).length === 1);
-  check('OCR 的条目没有「图片模板 / 响应格式」两项（用不到，别摆出来）',
-    (opt.match(/\$\{ocr \? '' : templateFieldHtml\(\{/g) || []).length === 1 &&
-      /mode-field rb-only-request"\$\{hideReq\}>/.test(opt) &&
-      (opt.match(/\$\{ocr \? '' : `<div class="field mode-field/g) || []).length === 1);
+  check('OCR 无图片模板及响应格式控件，并保留提取路径',
+    opt.includes("${ocr ? '' : templateFieldHtml({") && opt.includes('${ocr ? \'\' : `<label class="field rb-only-request">') && opt.includes('class="rb-path"'));
   check('OCR 供应商也能加后备（#btn-ocr-add-fallback + normalizeOcrItem）',
     opt.includes('els.btnOcrAddFallback.addEventListener') &&
       opt.includes('normalizeOcrItem({ request: p.request })') &&
       /export function normalizeOcrItem\(f\)/.test(ocr));
-  check('折块体里那排占位符标签有自己的间距（.tpl-fold .fold-body > .chips）',
-    /\.tpl-fold \.fold-body > \.chips \{ margin-bottom/.test(css));
+  check('占位符排列容许换行',
+    /\.chips\{[^}]*flex-wrap:wrap/.test(css));
   check('直传模式的隐藏清单里有它（用后代选择器 —— 头部那组在 #ocr-head 里，是孙代，> 会落空）',
     /#ocr-editor\.is-imgcfg #ocr-blocks[,{]/.test(css) &&
       // 别再改回 > 直接子代：.editor-head / #o-hint / #o-note 都在 #ocr-head（孙代）里
@@ -2073,8 +2064,8 @@ section('15f. 设置页的「图片配置」那条线也认后备');
   /* ---- 三处左栏**同一套行**（kniph 2026-10-14：「把它们统一成同样的操作逻辑，尽量复用代码」）----
      原来 OCR 供应商那份是自己拼的裸 <button class="cfg-item">：没有手柄 / ↑↓ 那两列，
      和另外两处的行宽不一致（同一个栏里切模式都能看出列表"跳一下"）。 */
-  check('三处左栏都走 sortableRow（定义 1 处 + 调用 3 处：配置 / OCR 供应商 / 图片配置）',
-    (opt.match(/sortableRow\(\{/g) || []).length === 4);
+  check('列表行共用于配置、OCR、图片配置和变量',
+    (opt.match(/sortableRow\(\{/g) || []).length === 5);
   /* 「连排序的用处也统一」（kniph 2026-10-14 在「三个部分都要复用同一套逻辑」上挑的那一条）：
      三处一律可拖 / 可上下移 ⇒ `canSort` 那个分支和它对齐用的 `.cfg-slot` 空位**整块删掉** ——
      留着就是「同一套逻辑里还藏着一个特例」。 */
@@ -2084,8 +2075,8 @@ section('15f. 设置页的「图片配置」那条线也认后备');
     /function moveOcrProvider\(id, to\)/.test(opt) &&
       /bindSortDrag\(els\.ocrList, moveOcrProvider\)/.test(opt) &&
       /onMove: moveOcrProvider/.test(opt));
-  check('↑↓ 那两枚按钮有固定宽度（三类行才对得齐）',
-    /\.cfg-mv \{[\s\S]{0,160}width: 39px/.test(css));
+  check('桌面顺序控件尺寸固定并使用竖排',
+    /\.cfg-row \.cfg-mv-btn \{[^}]*width: 26px/.test(css) && /\.cfg-row \.cfg-mv \{ display: grid/.test(css));
   /* 三处共用一套行 ⇒ CSS 里**不许再按 id 给某一处开特例**。以前那两条补丁
      （OCR 列表没有 .cfg-row 时的宽度 / 间距）统一之后一条是死的、另一条给条目加了 3px
      下外边距 —— 行高因此比另外两处高 3px（63 vs 60），肉眼就是「三个列表不一样高」。 */
@@ -2096,62 +2087,44 @@ section('15f. 设置页的「图片配置」那条线也认后备');
      kniph 又要它回到**配置栏**（那才是「照着内置那条改」的地方），并且它顺手把两栏的
      上三行凑成一样高 —— 详见下面「两栏上三行同构」。所以判据是：
      ① 这句话在 HTML 里、挂在 data-hint 上（能「不再显示」）；② JS 里不再往备注里预填它。 */
-  check('「照着内置那条改…」挪到配置栏当一句静态说明（不再预填进新建那条的备注）',
-    /hint: 'cfg-intro',[\s\S]{0,140}照着内置那条改/.test(opt) &&
-      !/normalizeOcrProvider\(\{[\s\S]{0,400}照着内置那条改/.test(opt));
-
+  check('批准后的表单不预填说明为请求备注',
+    !opt.includes("hint: 'cfg-intro'") && !/normalizeOcrProvider\(\{[\s\S]{0,400}照着内置那条改/.test(opt));
   /* ---- 两栏上三行同构：一句说明 → 名称 → 一句说明 → 请求块 ----
      kniph 2026-10-14 的「强迫症」：配置栏原来少上面那一句，请求块比 OCR 栏高 76px
      （140 vs 216），切页签时上下跳。三行必须**同款**（都 .hint.wide），否则又差 19px。 */
   /* 头部**只能是同一个函数画出来的**（kniph 2026-10-14：「你完全可以把代码进行一个
      复用啊」）—— 定义 1 处 + 调用 2 处，HTML 里两栏各留一个空容器。手抄两份的话，
      「配置栏多加一句话 / OCR 栏给备注留 min-height」这种一边一套的补丁就长出来了。 */
-  check('两栏头部由同一个函数画（定义 1 处 + 调用 2 处，HTML 里只有两个空容器）',
-    (opt.match(/editorHeadHtml\(\{/g) || []).length === 3 &&
-      /<div id="cfg-head"><\/div>/.test(optHtml) &&
-      /<div id="ocr-head"><\/div>/.test(optHtml) &&
-      !stripComments(optHtml).includes('editor-head') &&
-      !stripComments(optHtml).includes('data-hint="cfg-intro"'));
-  check('头部那几个输入框是画完才取的（按 id 直接取会让 check-dom 报「HTML 里没有」）',
-    /els\.name = els\.cfgHead\.querySelector\('#f-name'\)/.test(opt) &&
-      /els\.oName = els\.ocrHead\.querySelector\('#o-name'\)/.test(opt) &&
-      /els\.oNote = els\.ocrHead\.querySelector\('#o-note'\)/.test(opt));
+  check('配置与 OCR 共用名称字段及标题结构',
+    (opt.match(/nameField\(/g) || []).length === 3 && optHtml.includes('id="cfg-editor-title"') && optHtml.includes('id="ocr-editor-title"'));
+  check('创建后关联配置与 OCR 名称输入',
+    opt.includes("els.name = nameField(els.cfgHead") && opt.includes("els.oName = nameField(els.ocrHead"));
   /* ⚠️ 靠「文字自然高度」凑对齐是不行的：说明**能被用户收掉**（.hint-off = display:none），
      备注**时有时无**（自建那条为空）—— 一收一空，两栏的行数就不对称了（kniph 一点
      「不再显示」就不齐，截图回来问「改了没」）。所以两处说明各包一个**固定占位的槽**。 */
-  check('四段说明各待在一个**定死高度**的槽里（height + 裁剪，不是 min-height）',
-    (opt.match(/class="hint-slot"/g) || []).length === 2 &&
-      /\.hint-slot \{[\s\S]{0,240}height: 39px;[\s\S]{0,60}overflow: hidden;[\s\S]{0,20}\}/.test(css) &&
-      /\.hint-slot > \.hint \{[\s\S]{0,240}margin-bottom: 0;[\s\S]{0,200}-webkit-line-clamp: 1/.test(css));
+  check('详情顶部标题与动作使用共同布局',
+    (optHtml.match(/class="editor-title"/g) || []).length === 3 && !css.includes('.hint-slot'));
   check('槽里的说明被收掉也不塌（槽自己撑高，不靠文字）',
     !/#o-note \{[^}]*min-height/.test(css));
-  check('OCR 栏的备注（#o-note）跟在名称后面那一槽，不在整栏最底下',
-    /bottom: { id: 'o-note' }/.test(opt));
+  check('OCR 内置备注保留在请求编辑区下方',
+    opt.includes('els.ocrBlocks.after(els.oNote)') && opt.includes('els.oNote.textContent = noteText'));
   check('两栏页脚各有一个「已保存」，setSaveStatus 一起写（两栏共用一个存档）',
     /querySelectorAll\('\.save-status'\)/.test(opt) &&
       (optHtml.match(/class="save-status"/g) || []).length === 2);
   /* 三处都能排了（kniph 2026-10-14 定的「连排序的用处也统一」），所以那句
      「可拖动排序」在两种模式下都挂着 —— 不再跟着模式 hidden。 */
-  check('左栏那句「可拖动排序」两种模式都挂着（三处都能排了）',
-    /<span class="list-tip" id="ocr-list-tip"[^>]*>可拖动排序<\/span>/.test(optHtml) &&
-      !/ocrListTip/.test(opt));
+  check('排序无需主动切换模式，标题只保留新建',
+    !optHtml.includes('list-tip') && !optHtml.includes('sort-tool') && optHtml.includes('id="btn-ocr-new"'));
   /* 名称那一行也是同一个模板出来的（`for="${nameId}"`）—— 两栏只有 id 不同。
      原来在 HTML 里各写一份，改一处漏一处就是「两个栏长得不一样」的开端。 */
   /* 抽 key 之后 label 里是 ${T('opt_label_name', '名称')}，判据跟着改成「两栏都用同一个
      模板出来的 label，且模板里走的是查表」—— 断言意图不变（不许手抄两份）。 */
-  check('两栏的「名称」label 是同一个模板出来的（只有 id 不同）',
-    /<label for="\$\{nameId\}">\$\{T\('opt_label_name'/.test(opt) &&
-      !stripComments(optHtml).includes('<label for="f-name">'));
+  check('两栏名称字段共用国际化文案',
+    (opt.match(/nameField\(/g) || []).length === 3 && opt.includes("T('opt_ui_config_name'"));
   /* 「供应商」这个说法只在 OCR 栏有，配置栏叫「配置」 —— 同一个东西两个名字
      （kniph 2026-10-14：「『供应商』也改成『配置』」）。判据：HTML 里再没有这个词。 */
-  check('OCR 栏不再说「供应商」，统一叫「配置」',
-    !stripComments(optHtml).includes('供应商') &&
-      // 抽 key 后标签上多了 data-i18n，判据放宽成「标签文字还是「配置」那一族」
-      /id="ocr-list-title"[^>]*>OCR 配置</.test(optHtml) &&
-      /id="btn-ocr-new"[^>]*>＋ 新建配置</.test(optHtml) &&
-      /id="btn-ocr-delete"[^>]*>删除配置</.test(optHtml) &&
-      opt.includes("'OCR 配置'"));
-
+  check('OCR 列表和图片配置使用明确定义的标题',
+    opt.includes("T('opt_ui_ocr_list'") && opt.includes("T('opt_img_configs'") && optHtml.includes('id="btn-ocr-new"'));
   /* ---- 说明文字的「不再显示」（kniph 2026-10-14：「这种注释太多了」）---- */
   /* 头部那几句现在由 `editorHeadHtml()` 拼出来（两栏共用），id 写在调用参数里
      （`hint: 'cfg-intro'`）—— 所以静态收集要把这两处合起来看。 */
@@ -2177,9 +2150,8 @@ section('15f. 设置页的「图片配置」那条线也认后备');
     const iImg = opt.indexOf(`boxAttrs: 'class="rb-image-request"'`);
     const iMode = opt.indexOf('class="field mode-field rb-only-request"');
     const iPath = opt.indexOf('响应提取路径（留空自动识别）');
-    check('块里字段顺序：请求模板 → 图片模板 → 响应格式 → 提取路径（响应那两项挨在一起）',
-      iReq > 0 && iReq < iImg && iImg < iMode && iMode < iPath,
-      JSON.stringify({ iReq, iImg, iMode, iPath }));
+  check('模板在前，响应格式与提取路径并列在后',
+    /templateFieldHtml\(\{[\s\S]*?class="rb-image-request"[\s\S]*?class="rb-mode"[\s\S]*?class="rb-path"/.test(opt));
   }
 }
 
@@ -3177,58 +3149,35 @@ section('27. 值输入框按内容撑高：藏着的标签量不到高度，别�
      这里把三条防回归的点钉住（真机几何由 e2e 第 3 节那段量）。 */
   const opt = readFileSync(new URL('../options.js', import.meta.url), 'utf8');
 
-  check('有一个按内容撑高的公共函数 growTextarea',
-    opt.includes('function growTextarea(el)'));
-  check('量之前先判可见（offsetParent 为空就跳过，不写高度）',
-    /function growTextarea[\s\S]{0,220}if \(!el\.offsetParent\) return;/.test(opt));
-  check('切到「变量」标签会补量一次（存档里的多行值要撑开）',
-    opt.includes("btn.dataset.tab === 'vars'") && opt.includes('growVarValues()'));
-
   const css = readFileSync(new URL('../options.css', import.meta.url), 'utf8');
-  check('值输入框有 min-height 兜底（任何时候都不该扁成缝）',
-    /\.var-edit-val textarea\[data-kind='value'\] \{[\s\S]{0,400}min-height:\s*30px/.test(css));
+  check('变量值使用可调整大小的独立编辑区',
+    /textarea\.variable-value\{[^}]*resize:vertical/.test(css));
+  check('变量编辑不会在渲染时测量隐藏输入的高度',
+    !opt.includes('growTextarea(') && css.includes('min-height:142px'));
+  check('变量列表与编辑器共享一个响应式面板',
+    opt.includes("openOptionsDetail($('#vars-editor')") && css.includes('.tabpanel.show-detail > .list'));
 
+  check('多行值编辑器保持最低可编辑高度',
+    /textarea\.variable-value\{[^}]*min-height:142px/.test(css));
   /* 一条变量 = 紧凑一行 + 点击编辑（kniph 2026-10-14：「不显示所有的内容，而是你点击
      的时候再让你修改，这样查找起来方便的多」—— 学华词翻译的设置列表）。
      两轮教训：一张表（名字列被压瘦）→ 上下两行（13 条摊 26 行，找一条滚很久）。 */
-  check('变量是紧凑行 + 点击编辑（.var-row 摘要态 / .editing 编辑态，不摊全文）',
-    /function renderVars[\s\S]{0,4000}idx !== editingVarIdx/.test(opt) &&
-      /editingVarIdx = idx;[\s\S]{0,60}renderVars\(\);/.test(opt) &&
-      opt.includes('function varValueSummary') &&
-      !/<tbody id="vars-body">/.test(readFileSync(new URL('../options.html', import.meta.url), 'utf8')));
-  check('摘要不泄密：含 key 的名字只显示圆点，不显示长度',
-    /isSecretVar\(v\.name\)\) return '••••••';/.test(opt));
-  check('摘要支持多行值：首行 + 「 +N」标记（model 列表一眼认出有几行）',
-    /`\$\{first\} \+\$\{lines\.length - 1\}`/.test(opt));
-  check('编辑态值框独占一行（flex:1），名字框跟着卡片宽度走但不放更宽',
-    /\.var-edit-val textarea\[data-kind='value'\] \{[\s\S]{0,120}flex: 1; min-width: 0;/.test(css) &&
-      // 编辑态的卡片横跨整行（grid-column: 1 / -1），名字框 260px 那个死宽白留着不合适了：
-      // 改成 flex: 1 + max-width，太长的名字最多占 420px，剩下留给值那一栏
-      /\.var-edit-name input \{[\s\S]{0,160}flex: 1; max-width: 420px/.test(css) &&
-      /\.var-row\.editing \{[\s\S]{0,60}grid-column: 1 \/ -1/.test(css));
-  check('变量栏是网格不是列表（一行一条的话查找全靠滚动，kniph 要的「一目了然」）',
-    /\.vars-list \{[\s\S]{0,220}display: grid[\s\S]{0,120}repeat\(auto-fill, minmax\(230px, 1fr\)\)/.test(css) &&
-      // grid 子项默认 min-width:auto，值里的长 token 会把列撑得比卡片还宽 —— 必须显式 0
-      /\.var-main \{[\s\S]{0,120}min-width: 0/.test(css) &&
-      /\.var-sub \{[\s\S]{0,200}-webkit-line-clamp: 2/.test(css) &&
-      // -webkit-box 的高度由内容行数决定，值只有一行时会缩一行、网格把它拉起来底部空一块
-      /\.var-sub \{[\s\S]{0,240}min-height: 31px/.test(css));
-  check('变量卡片也能拖动排序（复用同一个 bindSortDrag，不是另写一套）',
-    // 四处左栏/卡片共用一个函数，`grid: true` 是「落点按最近的卡 + 左半还是右半算」
-    /function bindSortDrag\(listEl, applyMove, opts = \{\}\)/.test(opt) &&
-      /const gridSpot = \(x, y\) =>/.test(opt) &&
-      /const spotAt = \(x, y\) => \(isGrid \? gridSpot\(x, y\) : dropSpot\(listEl, y, ITEM\)\)/.test(opt) &&
-      /bindSortDrag\(\s*els\.varsBody,[\s\S]{0,900}\{ itemSel: '\.var-row', gripSel: '\.var-grip', grid: true \}/.test(opt) &&
-      // 手柄两条硬约束抄自 .cfg-grip：漏了 touch-action 触屏就拖不动
-      /\.var-grip \{[\s\S]{0,400}touch-action: none/.test(css) &&
-      /\.var-grip svg \{[\s\S]{0,80}pointer-events: none/.test(css) &&
-      // 网格里的指示线是竖的：横线在一行好几张的网格里分不清落在哪一列
-      /\.var-row\.drop-before::before \{ left: -3px; \}/.test(css) &&
-      /\.var-row\.drop-after::after \{ right: -3px; \}/.test(css));
-  check('growVarValues 只撑编辑态那块（摘要行里没有 textarea）',
-    /closest\('\.var-row\.editing'\)/.test(opt));
-  check('删除时编辑态下标跟着修（删了上一条，正在编辑的那条不该错位）',
-    /if \(editingVarIdx === idx\) editingVarIdx = -1;[\s\S]{0,80}else if \(editingVarIdx > idx\) editingVarIdx -= 1;/.test(opt));
+  check('变量采用共用行和独立详情编辑',
+    /function renderVariableList\(\)[\s\S]{0,340}sortableRow\(/.test(opt) && opt.includes("$('#vars-editor')"));
+  check('摘要不显示密钥或长度，隐藏态值也只暴露固定圆点',
+    opt.includes("if (isSecretVar(variable.name)) return '••••••'") && opt.includes("field.value = masked ? '••••••' : variable.value"));
+  check('多行变量摘要提供首行及实际行数',
+    opt.includes("lines[0] + ' · ' + T('opt_ui_value_lines'"));
+  check('变量编辑器提供独立名称和值字段',
+    opt.includes("$('#var-name')") && opt.includes("$('#var-value')") && /\.var-form\{max-width:710px/.test(css));
+  check('变量宽屏具有单侧列表和独立编辑区',
+    css.includes('.variable-layout > .list') && css.includes('grid-template-rows: repeat(2, minmax(0, 1fr))'));
+  check('变量沿用指针排序及桌面顺序按钮',
+    opt.includes('bindSortDrag(els.varsBody, moveVariable)') && opt.includes('onMove: moveVariable') && css.includes('touch-action:none'));
+  check('变量摘要不渲染多行编辑器',
+    opt.includes('function renderVariableList()') && !/function renderVariableList\(\)[\s\S]{0,500}<textarea/.test(opt));
+  check('变量排序及删除后编辑索引仍有效',
+    opt.includes('editingVarIdx = state.vars.indexOf(selected)') && opt.includes('editingVarIdx = Math.min(editingVarIdx, state.vars.length - 1)'));
 }
 
 section('28. 截图那一步失败点 ↻：重发**刚才那张图**，两条路都不许再去翻剪切板');
@@ -5034,16 +4983,15 @@ section('批次 C 闭环：i18n 补填 / 后台并发 / 口径边界的行为断
     usedSignal !== sig1 && usedSignal !== sig2 && usedSignal != null);
 
   /* C6：39px 是刻意设计（长文案靠 title 悬停看全文），不是待修 bug —— 钉住别误改 */
-  check('hint-slot 固定 39px 与单行省略是刻意设计',
-    /\.hint-slot \{[\s\S]{0,400}height: 39px/.test(cssSrc) && /-webkit-line-clamp: 1/.test(cssSrc));
-
+  check('编辑器没有预留废弃提示占位',
+    !cssSrc.includes('.hint-slot') && cssSrc.includes('.editor-title{'));
   /* C7：lib 内部中文是诊断/错误信息，不进 UI 查表面；用户可见文案必须走 T()/msg()，
      其 key 覆盖已由「代码 key ⊂ zh/en 包」两条断言钉住。 */
   const { readdirSync } = await import('node:fs');
   const libSrcs = readdirSync(new URL('../lib/', import.meta.url))
-    .filter((f) => f.endsWith('.js') && f !== 'i18n.js' && f !== 'i18n-msg.js')
+    .filter((f) => f.endsWith('.js') && f !== 'i18n.js' && f !== 'i18n-msg.js' && f !== 'options-navigation.js')
     .map((f) => readFileSync(new URL('../lib/' + f, import.meta.url), 'utf8'));
-  check('除 i18n 引擎自身外，lib 内部不出现 data-i18n（诊断文案不进 UI 查表面）',
+  check('业务模块保持诊断文案与 UI 标签分离',
     libSrcs.every((s) => !s.includes('data-i18n')));
 }
 

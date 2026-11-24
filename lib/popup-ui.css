@@ -1,0 +1,36 @@
+body { width: min(400px, 100vw); }
+.popup-frame{background:var(--bg);min-height:100vh;padding:8px}
+.popup{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;display:grid;gap:10px}
+.popup .selects{display:grid;grid-template-columns:minmax(0,1fr) minmax(92px,.5fr);gap:8px}
+.popup .foot{display:flex;justify-content:space-between;align-items:center;gap:7px}
+.popup .foot button{font-size:12px}
+.popup .foot span{color:var(--muted);font-size:11px}
+.rt.popup-shell,.popup-frame{min-height:0}
+.popup-frame{padding:8px}
+.popup{padding:11px 12px;gap:7px}
+.popup .selects{gap:7px}
+.popup .primary{min-height:33px}
+.popup-source-head{display:flex;justify-content:space-between;align-items:center;color:var(--text);font-size:12px;font-weight:620}
+.popup-source-head .icon-btn{height:28px;width:28px;min-height:28px}
+.popup-source textarea{min-height:91px;height:91px;max-height:170px}
+.popup-action button{width:100%}
+.popup [data-popup-out]:empty{display:none}
+.popup-result{padding:8px 0 2px;border-top:1px solid var(--line)}
+.popup-result p{margin-top:4px}
+.popup-result .row-flex{min-height:27px;display:flex;align-items:center;gap:8px;justify-content:space-between}
+.popup-result-body{white-space:pre-wrap;overflow-wrap:anywhere;max-height:150px;overflow-y:auto;overscroll-behavior:contain;line-height:1.6}
+.popup-result.error{color:var(--bad)}
+.popup-result .copy-result{height:28px;min-height:28px;font-size:12px;padding:3px 6px}
+.popup-result .status{display:flex;align-items:center;gap:6px;font-size:12px}
+.popup-result .inline-retry{margin-top:4px;font-weight:650}
+.popup .foot{min-height:26px}
+.popup .foot button{min-height:25px;font-size:11px}
+.popup-error-heading{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:14px;font-weight:650;min-height:28px}
+.popup-error-heading .inline-retry{min-height:28px;padding:0 2px;margin:0;font:inherit}
+.popup-action .icon path{fill:currentColor;paint-order:stroke;stroke-width:1.5}
+
+.popup .foot .link { margin-inline-start: auto; }
+.popup .foot .link span { color: inherit; }
+.popup .foot .error-text { color: var(--bad); }
+.popup details.simple summary { color: var(--text); cursor: pointer; min-height: 32px; font-size: 12px; }
+.popup pre.preview { white-space: pre; overflow: auto; color: var(--text); background: var(--code); padding: 8px; font-size: 11px; border-radius: 6px; }

@@ -1201,7 +1201,7 @@
     "description": "设置页：set 区域"
   },
   "opt_set_041": {
-    "message": "在选区旁边显示一个小圆点，点它才翻译",
+    "message": "显示翻译按钮",
     "description": "设置页：set 区域"
   },
   "opt_set_042": {
@@ -1209,15 +1209,15 @@
     "description": "设置页：set 区域"
   },
   "opt_set_043": {
-    "message": "什么都不做（只用右键菜单）",
+    "message": "只用右键菜单",
     "description": "设置页：set 区域"
   },
   "opt_set_044": {
-    "message": "翻译选中内容的快捷键",
+    "message": "快捷键",
     "description": "设置页：set 区域"
   },
   "opt_set_045": {
-    "message": "打开浏览器的快捷键设置页",
+    "message": "打开浏览器快捷键设置",
     "description": "设置页：set 区域"
   },
   "opt_set_046": {
@@ -1237,15 +1237,15 @@
     "description": "设置页：set 区域"
   },
   "opt_set_050": {
-    "message": "加一项「用 RequestTranslate 翻译选中内容」（只在选中了文字时出现）",
+    "message": "翻译选中内容",
     "description": "设置页：set 区域"
   },
   "opt_set_051": {
-    "message": "加一项「翻译剪切板中的截图」（要先用系统截图把图截进剪切板，见「OCR」那一栏）",
+    "message": "翻译剪切板中的截图",
     "description": "设置页：set 区域"
   },
   "opt_set_052": {
-    "message": "加一项「框选截图翻译」（当场拖框截一块屏幕区域去翻译，不用先按系统截图）",
+    "message": "框选截图翻译",
     "description": "设置页：set 区域"
   },
   "opt_set_053": {
@@ -1395,7 +1395,7 @@
     "description": "设置页：set 区域"
   },
   "opt_set_094": {
-    "message": "在面板里显示原文",
+    "message": "显示原文",
     "description": "设置页：set 区域"
   },
   "opt_set_095": {
@@ -2142,7 +2142,7 @@
     "description": "popup"
   },
   "popup_failed": {
-    "message": "失败",
+    "message": "翻译失败",
     "description": "popup"
   },
   "popup_init_failed": {
@@ -2150,7 +2150,7 @@
     "description": "popup"
   },
   "popup_input_ph": {
-    "message": "输入或粘贴要翻译的内容（会自动带上当前页面选中的文字）",
+    "message": "输入或粘贴要翻译的内容",
     "description": "popup"
   },
   "popup_lang_title": {
@@ -2158,7 +2158,7 @@
     "description": "popup"
   },
   "popup_need_text": {
-    "message": "先输入点内容",
+    "message": "请先输入要翻译的内容。",
     "description": "popup"
   },
   "popup_no_config": {
@@ -2412,5 +2412,196 @@
   },
   "panel_tts_no_voice": {
     "message": "听不到声音：系统里没装这个语言的语音包（Windows 设置 → 时间和语言 → 语音 → 添加语音）"
+  },
+  "popup_config": {
+    "message": "翻译配置"
+  },
+  "popup_source": {
+    "message": "原文"
+  },
+  "popup_result": {
+    "message": "译文"
+  },
+  "popup_retry": {
+    "message": "重试"
+  },
+  "popup_diagnostic": {
+    "message": "查看诊断"
+  },
+  "popup_clear_source": {
+    "message": "清空原文"
+  },
+  "popup_copy_failed": {
+    "message": "无法访问剪贴板"
+  },
+  "popup_check_config": {
+    "message": "请检查所选配置或密钥。"
+  },
+  "opt_ui_modules": {
+    "message": "模块"
+  },
+  "opt_ui_github": {
+    "message": "在 GitHub 打开项目（新标签页）"
+  },
+  "opt_ui_theme": {
+    "message": "切换深浅主题"
+  },
+  "opt_ui_new_config": {
+    "message": "新建配置"
+  },
+  "opt_ui_back_list": {
+    "message": "返回列表"
+  },
+  "opt_ui_test_text": {
+    "message": "测试原文"
+  },
+  "opt_ui_add_fallback": {
+    "message": "添加后备请求"
+  },
+  "opt_ui_config_name": {
+    "message": "配置名称"
+  },
+  "opt_ui_invalid_var": {
+    "message": "变量名仅支持字母、数字、下划线、点与连字符。"
+  },
+  "opt_ui_var_name": {
+    "message": "变量名"
+  },
+  "opt_ui_var_value": {
+    "message": "变量值"
+  },
+  "opt_ui_value_lines": {
+    "message": "共 $1$ 行",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_ui_empty_vars": {
+    "message": "还没有自定义变量"
+  },
+  "opt_ui_delete_var": {
+    "message": "确定删除「$1$」？",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_ui_copy_variable": {
+    "message": "复制 $1$",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_ui_saved": {
+    "message": "已保存"
+  },
+  "opt_ui_order": {
+    "message": "拖动或点按排序"
+  },
+  "opt_ui_ocr_list": {
+    "message": "OCR 列表"
+  },
+  "opt_ui_ocr_direct": {
+    "message": "禁用外置 OCR"
+  },
+  "opt_ui_ocr_test": {
+    "message": "OCR 测试"
+  },
+  "opt_ui_image_test": {
+    "message": "图片翻译测试"
+  },
+  "opt_ui_pick_image": {
+    "message": "选择图片"
+  },
+  "opt_ui_clear_file": {
+    "message": "清除文件"
+  },
+  "opt_ui_search": {
+    "message": "搜索设置"
+  },
+  "opt_ui_search_clear": {
+    "message": "清空设置搜索"
+  },
+  "opt_ui_search_empty": {
+    "message": "未找到匹配的设置。"
+  },
+  "opt_ui_summary_selection": {
+    "message": "触发方式、快捷键"
+  },
+  "opt_ui_summary_translation": {
+    "message": "目标语言、字数限制"
+  },
+  "opt_ui_summary_trigger": {
+    "message": "按钮样式、消失时间"
+  },
+  "opt_ui_summary_panel": {
+    "message": "面板尺寸、主题、原文"
+  },
+  "opt_ui_summary_backup": {
+    "message": "备份配置、分享与导入"
+  },
+  "opt_ui_summary_history": {
+    "message": "检索与清空历史"
+  },
+  "opt_ui_summary_language": {
+    "message": "界面语言"
+  },
+  "opt_ui_alias_selection": {
+    "message": "触发方式 自动翻译 划词"
+  },
+  "opt_ui_alias_shortcuts": {
+    "message": "热键 键盘 快捷键"
+  },
+  "opt_ui_alias_theme": {
+    "message": "深色 暗色 浅色 亮色 外观"
+  },
+  "opt_ui_alias_language": {
+    "message": "译文语言 翻译语言"
+  },
+  "opt_ui_alias_css": {
+    "message": "外观 样式表"
+  },
+  "opt_ui_alias_import": {
+    "message": "恢复 配置备份 JSON"
+  },
+  "opt_ui_alias_history": {
+    "message": "删除 历史 清理"
+  },
+  "opt_ui_response_path": {
+    "message": "响应提取路径"
+  },
+  "opt_ui_auto_path": {
+    "message": "留空自动识别"
+  },
+  "opt_ui_enable_request": {
+    "message": "启用请求"
+  },
+  "opt_ui_fallback_index": {
+    "message": "后备 $1$",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_ui_image_template": {
+    "message": "图片请求模板"
+  },
+  "opt_ui_slot_help": {
+    "message": "将面板显示条数设为两条或更多后可用。"
+  },
+  "opt_ui_import_file": {
+    "message": "选择要导入的备份"
+  },
+  "opt_ui_pick_json": {
+    "message": "选择 JSON 文件"
+  },
+  "opt_ui_continue": {
+    "message": "继续"
   }
 }

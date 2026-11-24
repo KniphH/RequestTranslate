@@ -3,9 +3,12 @@
  */
 
 import { loadState, saveState, buildVars, getConfig } from './lib/store.js';
-import { TARGET_PRESETS, orderedLangCodes, langDisplayName } from './lib/template.js';
-import { runRequest } from './lib/engine.js';
+import { orderedLangCodes, langDisplayName } from './lib/template.js';
+import { maskRequest, runRequest } from './lib/engine.js';
 
+import { fillUiIcons } from './lib/ui-icons.js';
+
+fillUiIcons();
 const $ = (s) => document.querySelector(s);
 
 const sel = $('#sel');
@@ -60,6 +63,7 @@ function applyPopupI18n(root) {
   }
   for (const el of scope.querySelectorAll('[data-i18n-title]')) {
     el.title = uiText(el.dataset.i18nTitle);
+    if (el.hasAttribute('aria-label')) el.setAttribute('aria-label', el.title);
   }
   for (const el of scope.querySelectorAll('[data-i18n-ph]')) {
     el.placeholder = uiText(el.dataset.i18nPh);
@@ -74,6 +78,29 @@ const txt = $('#txt');
 const out = $('#out');
 const statusEl = $('#status');
 const goBtn = $('#btn-go');
+const goLabel = $('#go-label');
+const clearBtn = $('#btn-clear');
+const copyBtn = $('#btn-copy');
+const resultPanels = ['loading', 'translation', 'failure', 'empty-input'];
+
+function showResult(panel) {
+  for (const key of resultPanels) $(`#${key}`).hidden = key !== panel;
+}
+
+function showFailure(message, details = '') {
+  $('#error-message').textContent = message;
+  const diagnostic = $('#diagnostic');
+  diagnostic.hidden = !details || details === message;
+  diagnostic.open = false;
+  $('#diagnostic-text').textContent = details;
+  showResult('failure');
+}
+
+function setBusy(busy) {
+  goBtn.disabled = busy;
+  goLabel.textContent = uiText(busy ? 'popup_translating' : 'popup_translate');
+}
+
 
 let state = null;
 let controller = null;
@@ -82,12 +109,11 @@ let runSeq = 0;
 
 function setStatus(text, isErr = false) {
   statusEl.textContent = text || '';
-  statusEl.className = isErr ? 'err' : '';
+  statusEl.classList.toggle('error-text', isErr);
 }
 
-function setOut(text, empty = false) {
+function setOut(text) {
   out.textContent = text;
-  out.classList.toggle('empty', empty);
 }
 
 /* ---- 流式渲染节流（同 content.js） ---- */
@@ -113,7 +139,10 @@ function applyOut() {
   const text = pendingOut === null ? '' : pendingOut;
   pendingOut = null;
 
-  out.classList.remove('empty');
+  if (text) {
+    showResult('translation');
+    copyBtn.disabled = false;
+  }
   const atBottom = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
   out.textContent = text;
   if (atBottom) out.scrollTop = out.scrollHeight;
@@ -147,7 +176,31 @@ async function init() {
 
   state = await loadState();
   applyTheme();
+  renderSelectors();
 
+  // 带上页面里选中的文字
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab && tab.id != null) {
+      const res = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => String(window.getSelection() || '').trim()
+      });
+      const selected = res && res[0] && res[0].result;
+      if (selected && !txt.value) {
+        const limit = Math.max(1, Number(state.settings.maxChars) || 8000);
+        txt.value = selected.slice(0, limit);
+      }
+    }
+  } catch {
+    /* Certain pages do not allow the selection script. */
+  }
+
+  clearBtn.disabled = !txt.value;
+  if (txt.value.trim()) txt.focus();
+}
+
+function renderSelectors() {
   sel.innerHTML = '';
   for (const c of state.configs) {
     const o = document.createElement('option');
@@ -175,42 +228,34 @@ async function init() {
     }
     langSel.value = curLang || codes[0];
   }
-
-  // 带上页面里选中的文字
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab && tab.id != null) {
-      const res = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: () => String(window.getSelection() || '').trim()
-      });
-      const selected = res && res[0] && res[0].result;
-      if (selected) {
-        // 和 content.js / background.js 同一条守卫：清空设置项后会存成 0，
-        // slice(0, 0) 会把选中的文字整个吞掉、弹窗里一片空白
-        const limit = Math.max(1, Number(state.settings.maxChars) || 8000);
-        txt.value = selected.slice(0, limit);
-      }
-    }
-  } catch {
-    /* 某些页面取不到选区，忽略 */
-  }
-
-  if (txt.value.trim()) txt.focus();
 }
 
-sel.addEventListener('change', async () => {
-  state.activeConfigId = sel.value;
-  await saveState(state);
+let preferenceWrites = Promise.resolve();
+function updatePreference(apply) {
+  preferenceWrites = preferenceWrites.then(async () => {
+    const latest = await loadState();
+    apply(latest);
+    await saveState(latest);
+    state = latest;
+  }).catch(error => showFailure(uiText('popup_check_config'), String(error.message || error)));
+}
+
+sel.addEventListener('change', () => {
+  const value = sel.value;
+  updatePreference(latest => { latest.activeConfigId = value; });
 });
-
-/* 目标语言：写回存档。后台每次发请求都重读设置，所以改完立刻生效。 */
-if (langSel) {
-  langSel.addEventListener('change', async () => {
-    state.settings.targetLang = langSel.value;
-    await saveState(state);
-  });
-}
+langSel.addEventListener('change', () => {
+  const value = langSel.value;
+  updatePreference(latest => { latest.settings.targetLang = value; });
+});
+chrome.storage.onChanged.addListener(async (changes, area) => {
+  if (area !== 'local' || !changes.state || !state) return;
+  await preferenceWrites;
+  state = await loadState();
+  renderSelectors();
+  applyTheme();
+});
+matchMedia('(prefers-color-scheme: light)').addEventListener('change', applyTheme);
 
 goBtn.addEventListener('click', run);
 
@@ -221,95 +266,103 @@ txt.addEventListener('keydown', (e) => {
   }
 });
 
-$('#btn-copy').addEventListener('click', async () => {
-  const text = out.classList.contains('empty') ? '' : out.textContent;
-  if (!text) return;
-  await navigator.clipboard.writeText(text);
-  setStatus(uiText('popup_copied'));
-  setTimeout(() => setStatus(''), 1500);
+copyBtn.addEventListener('click', async () => {
+  if (!out.textContent) return;
+  try {
+    await navigator.clipboard.writeText(out.textContent);
+    setStatus(uiText('popup_copied'));
+  } catch {
+    setStatus(uiText('popup_copy_failed'), true);
+  }
 });
 
-$('#btn-clear').addEventListener('click', () => {
-  if (controller) controller.abort();
+txt.addEventListener('input', () => {
+  clearBtn.disabled = !txt.value;
+  if (!$('#empty-input').hidden) showResult();
+});
+
+clearBtn.addEventListener('click', () => {
+  ++runSeq;
+  controller?.abort();
+  controller = null;
+  cancelStreamRender();
   txt.value = '';
-  setOut(uiText('popup_waiting_input'), true);
+  clearBtn.disabled = true;
+  setBusy(false);
+  setOut('');
   setStatus('');
+  showResult();
   txt.focus();
 });
 
-/* 设置入口只保留底部那一个（顶部齿轮与底部链接重复，kniph 2026-11-15 要求去掉齿轮）。 */
+$('#btn-retry').addEventListener('click', run);
 $('#link-options').addEventListener('click', () => chrome.runtime.openOptionsPage());
 
 async function run() {
   const text = txt.value.trim();
   if (!text) {
-    setStatus(uiText('popup_need_text'), true);
+    showResult('empty-input');
+    txt.focus();
     return;
   }
-
-  const cfg = getConfig(state, sel.value);
+  const cfg = state && getConfig(state, sel.value);
   if (!cfg) {
-    setStatus(uiText('popup_no_config'), true);
+    showFailure(uiText('popup_no_config'));
     return;
   }
 
-  /* 连点两次时，先发起那轮恢复后**不许**再写界面 —— 否则旧结果盖掉新一轮。 */
   const myRun = ++runSeq;
-  if (controller) controller.abort();
+  controller?.abort();
   controller = new AbortController();
   cancelStreamRender();
+  setBusy(true);
+  setStatus('');
+  setOut('');
+  copyBtn.disabled = true;
+  showResult('loading');
+  const vars = buildVars({...state, settings: {...state.settings, targetLang: langSel.value}}, text, { url: 'popup', title: document.title });
 
   try {
-  goBtn.disabled = true;
-  goBtn.textContent = uiText('popup_translating');
-  setStatus('');
-  setOut('', true);
-  out.dataset.placeholder = '';
-
-  const vars = buildVars(state, text, { url: 'popup', title: document.title });
-
-  const result = await runRequest({
-    requestText: cfg.request,
-    adapter: cfg.adapter,
-    vars,
-    path: cfg.path,
-    responseMode: cfg.responseMode,
-    signal: controller.signal,
-    onDelta: (current) => {
-      /* 旧那轮的 delta 不许再写界面（连点时旧请求可能还在推流） */
-      if (myRun === runSeq) queueOut(current);
+    const result = await runRequest({
+      requestText: cfg.request,
+      adapter: cfg.adapter,
+      vars,
+      path: cfg.path,
+      responseMode: cfg.responseMode,
+      signal: controller.signal,
+      onDelta: (translation) => {
+        if (myRun === runSeq) queueOut(translation);
+      }
+    });
+    if (myRun !== runSeq) return;
+    cancelStreamRender();
+    if (!result.text || result.status >= 400) {
+      const diagnostic = result.error || [result.status && 'HTTP ' + result.status, result.statusText, result.raw].filter(Boolean).join(' · ');
+      const details = maskRequest({body: diagnostic.slice(0, 1200)}, vars).body;
+      showFailure(uiText('popup_check_config'), details);
+      return;
     }
-  });
 
-    if (myRun !== runSeq) return;   // 期间又点了一次，这轮作废
-
-  // done 与最后一个 delta 几乎同时到，挂起的那一帧必须先撤掉，
-  // 否则它会用更旧的文本覆盖下面的最终结果
-  cancelStreamRender();
-
-
-  if (result.text) {
     setOut(result.text);
+    copyBtn.disabled = false;
+    showResult('translation');
     const bits = [];
     if (result.status) bits.push('HTTP ' + result.status);
     bits.push((result.ms / 1000).toFixed(1) + 's');
     if (result.usedPath) bits.push(result.usedPath);
     if (result.reasoningChars) bits.push(uiText('popup_reasoning') + ' ' + result.reasoningChars);
-    else if (result.warnings && result.warnings.length) bits.push(result.warnings[0]);
+    else if (result.warnings?.length) bits.push(result.warnings[0]);
     setStatus(bits.join(' · '));
-  } else {
-    setOut(result.error || uiText('popup_no_result'), true);
-    setStatus(uiText('popup_failed'), true);
-  }
+  } catch (error) {
+    if (myRun !== runSeq) return;
+    cancelStreamRender();
+    showFailure(uiText('popup_check_config'), maskRequest({body: String(error.message || error)}, vars).body);
   } finally {
-    /* runRequest 抛异常时按钮会永久禁用 —— 必须兜住 */
     if (myRun === runSeq) {
-      goBtn.disabled = false;
-    goBtn.textContent = uiText('popup_translate');
+      controller = null;
+      setBusy(false);
     }
   }
 }
 
-init().catch((err) => {
-  setStatus(uiText('popup_init_failed') + (err && err.message), true);
-});
+init().catch((error) => showFailure(uiText('popup_init_failed'), String(error.message || error)));
