@@ -3505,13 +3505,8 @@ try {
   check('配置与 OCR 详情标题都带有保存状态区域',
     await opt.evaluate(() => ['save-status', 'o-save-status'].every(id => document.getElementById(id)?.getAttribute('role') === 'status')));
 
-  /* ---- 两栏的「主请求」落在同一相对位置（kniph 2026-10-14 的「强迫症」）----
-     原来配置栏是「名称 → 一句说明 → 请求块」、OCR 栏是「一句说明 → 名称 → 备注 → 请求块」，
-     块差 76px（140 vs 216），切页签时上下跳。现在两栏都是「说明 → 名称 → 说明 → 块」。
-     ⚠️ 只能**量几何**：差 19px 就说明某一行掉了 `.wide`（`.hint` 11.5px vs `.wide` 12.5px+18 边距）。 */
-  /* ⚠️ 必须先切到那一栏再量：没激活的 `.tabpanel` 是 `display: none`，
-     里面所有东西的 `getBoundingClientRect()` 全是 0（量出来「配置 0px」就是这么来的）。 */
-  const paneTop = async (tab, sel, blocksSel) => {
+  // 两栏共用标题和名称行的间距。OCR 的模式开关占名称行上方的一行。
+  const measureEditor = async (tab, sel, blocksSel) => {
     await opt.evaluate((t) => {
       document.querySelector(`.tab[data-tab="${t}"]`)?.click();
     }, tab);
@@ -3519,16 +3514,21 @@ try {
     return opt.evaluate(
       ([s, b]) => {
         const ed = document.querySelector(s);
-        const base = ed.getBoundingClientRect().top;
-        return Math.round(document.querySelector(b).getBoundingClientRect().top - base);
+        const title = ed.querySelector('h1').getBoundingClientRect();
+        const field = ed.querySelector('.name-field').getBoundingClientRect();
+        return {
+          titleTop: Math.round(title.top - ed.getBoundingClientRect().top),
+          fieldGap: Math.round(document.querySelector(b).getBoundingClientRect().top - field.bottom)
+        };
       },
       [sel, blocksSel]
     );
   };
-  const cfgBlocksTop = await paneTop('configs', '#editor', '#req-blocks');
-  const ocrBlocksTop = await paneTop('ocr', '#ocr-editor', '#ocr-blocks');
-  check('两栏的请求块在同一个高度（切页签不再上下跳）',
-    Math.abs(cfgBlocksTop - ocrBlocksTop) <= 2, `配置 ${cfgBlocksTop}px ｜ OCR ${ocrBlocksTop}px`);
+  const cfgLayout = await measureEditor('configs', '#editor', '#req-blocks');
+  const ocrLayout = await measureEditor('ocr', '#ocr-editor', '#ocr-blocks');
+  check('配置与 OCR 的标题基准及名称行以下的请求间距一致',
+    Math.abs(cfgLayout.titleTop - ocrLayout.titleTop) <= 2 && Math.abs(cfgLayout.fieldGap - ocrLayout.fieldGap) <= 2,
+    JSON.stringify({cfgLayout, ocrLayout}));
 
   /* 「两栏同一套」的硬证据：名称那一块（label + input）抹掉 id / 文案之后必须**逐字一样** ——
      它们本来就是同一个 `editorHeadHtml()` 画出来的，手抄第二份的话这里必然分叉。
@@ -3680,7 +3680,7 @@ try {
           (needle) => {
             const root = document.getElementById('request-translate-host')?.shadowRoot;
             const out = root?.querySelector('.rt-out');
-            return !!out && out.textContent.includes(needle);
+            return !!out && out.textContent.includes(needle) && root.querySelector('.rt-dot').classList.contains('ok');
           },
           '本地假译文',
           { timeout: 30000 }

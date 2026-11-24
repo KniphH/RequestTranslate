@@ -1,7 +1,7 @@
 /* Options follows the approved layout. The aliases support result and preview controls. */
 :root {
   --panel: var(--surface); --panel-2: var(--quiet); --line-soft: var(--line);
-  --line-strong: var(--strong); --fg: var(--ink); --fg-strong: var(--text);
+  --fg: var(--ink); --fg-strong: var(--text);
   --fg-mid: var(--text); --fg-dim: var(--muted); --fg-faint: var(--muted);
   --fg-bright: var(--ink); --accent: var(--brand); --accent-soft: var(--lilac);
   --input-bg: var(--surface); --hover: var(--quiet); --hover-2: var(--lilac);
@@ -107,7 +107,6 @@
 .chips button{padding:2px 6px;min-height:23px;background:var(--quiet);font:11px var(--mono);color:var(--brand-ink)}
 .field-pair{display:grid;grid-template-columns:minmax(120px,.42fr) minmax(0,1fr);gap:8px;margin-top:8px}
 .tests{border-top:1px solid var(--line);padding-top:12px}
-.test-header,.row-flex{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:space-between}
 
 #ocr-editor.is-imgcfg .editor-head,
 #ocr-editor.is-imgcfg .field:not(#o-test-field),
@@ -458,8 +457,6 @@ button.link.hint-hide {
 }
 .history-item .h-dst { color: var(--fg); }
 
-#hotkey-now.is-err { color: var(--danger); }
-
 /* ---- 界面语言（即时下载，不打包）---- */
 .ui-lang-row { display: flex; gap: 8px; align-items: center; }
 .ui-lang-row select { flex: 1; min-width: 0; }
@@ -572,7 +569,6 @@ button.link.hint-hide {
 .result:has(.badge.ok) { background: var(--ok-bg); }
 .result:has(.badge.err) { background: var(--bad-bg); }
 .result-head .spin { flex: none; }
-.ocr-mode .switch { color: var(--muted); font-size: 12px; }
 .is-imgcfg #ocr-head, .is-imgcfg .editor-title .actions { display: none; }
 .image-config-picker { display: none !important; }
 
@@ -657,7 +653,7 @@ dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 7px; mar
   .builtin-row summary { cursor: default; }
   .editor { padding: 11px 13px 24px; }
   .editor-title { align-items: center; margin-bottom: 9px; }
-  .editor-title .actions { gap: 2px; }
+  .editor-title .actions .icon-btn { width: 38px; height: 38px; min-height: 38px; }
   .editor-heading-copy { display: flex; align-items: center; gap: 6px; }
   .editor-heading-copy h1, .settings-title h1 { font-size: 22px; line-height: 38px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .editor-heading-copy .save-status { margin-top: 0; flex: none; }

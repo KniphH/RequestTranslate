@@ -98,12 +98,9 @@
             <button type="button" id="btn-ocr-delete" class="icon-btn danger" data-ui-icon="trash" data-ui-label="opt_set_016"></button>
           </div>
         </div>
-        <div class="ocr-mode">
-          <label class="switch">
-            <input type="checkbox" id="o-disabled" role="switch">
-            <span data-i18n="opt_set_028">禁用外置 OCR（仅模型具有多模态时使用）</span>
-          </label>
-        </div>
+        <label class="subtle">
+          <input type="checkbox" id="o-disabled" role="switch"><span data-i18n="opt_set_028">禁用外置 OCR（仅模型具有多模态时使用）</span>
+        </label>
         <div id="ocr-head"></div>
 
         <!-- 和「配置」栏**同一套请求块**（主请求 + 后备，见 options.js 的 blockHtml）：

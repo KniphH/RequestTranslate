@@ -170,6 +170,13 @@ try {
       assert.equal(field[1] + field[3], action[1] + action[3], `${id} input and send button align`);
       assert.equal(await editor.locator('.rb-tag').nth(1).textContent(), '后备 1');
     }
+    if (['D14', 'B02', 'O04', 'O02'].includes(id)) {
+      const refButton = screen.locator('[data-id=duplicate]').first();
+      const realButton = page.locator(module === 'ocr' ? '#btn-ocr-duplicate' : '#btn-duplicate');
+      const [ref, real] = await compare(id, 'duplicate', refButton, realButton, ['padding', 'borderRadius']);
+      assert.deepEqual(real.rect.slice(2), ref.rect.slice(2), `${id} duplicate button dimensions`);
+      await compare(id, 'duplicate-icon', refButton.locator('svg'), realButton.locator('svg'), iconStyles);
+    }
     if (id === 'S01' || id === 'S02') {
       const [reference, production] = await compare(id, 'search', screen.locator('.settings-search'), page.locator('.settings-search'), ['padding', 'borderRadius', 'columnGap'], true);
       assert.equal(production.rect[1], reference.rect[1], `${id} search top`);
