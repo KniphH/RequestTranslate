@@ -547,7 +547,7 @@
     "err_no_extract": "Request succeeded but no translation was extracted. Structure: $1$",
     "err_read_failed": "Failed to read the response: $1$",
     "warn_aborted_partial": "Stopped manually; below is what arrived before that",
-    "panel_tts_no_voice": "No sound: this language has no system voice pack (Windows Settings → Time & Language → Speech → Add voices)"
+    "panel_tts_no_voice": "No voice pack for this language"
   },
   "placeholders": {
     "panel_switched_to": {

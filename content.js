@@ -715,8 +715,14 @@
     if (slots.length <= 1) {
       const only = slots[0];
       if (only) {
+        /* **进忙碌态一律清空旧译文**（kniph 2026-11-25）：
+           「第一次翻译」和「重试」必须显示同一屏 —— 都是配置名 +「翻译中…」+ 空白。
+           以前保留 s.text 等新分片覆盖，重试时那一片旧译文就一直顶着，
+           和第一次翻译的画面完全两样。 */
         only.state = 'busy';
+        only.text = '';
         only.error = '';
+        only.statusText = '';
         outBox.classList.remove('empty');
         renderSlots();
       } else {
@@ -725,7 +731,17 @@
         outBox.classList.add('empty');
       }
     } else {
+      /* 多槽同样清空：对比模式下重试也要回到「配置名 + 翻译中…」的空态，
+         不能让上一轮的译文顶着。 */
+      for (const s2 of slots) {
+        if (!s2) continue;
+        s2.state = 'busy';
+        s2.text = '';
+        s2.error = '';
+        s2.statusText = '';
+      }
       outBox.classList.remove('empty');
+      renderSlots();
     }
     if (opts.clearSrc) {
       srcBox.textContent = '';
@@ -2615,14 +2631,24 @@
     // 这一条自己正在翻 → 忽略（防连点）；别的条在翻不影响
     if (sl && sl.state === 'busy') return;
     if (sl) {
+      /* **重试＝回到「第一次翻译」那一屏**（kniph 2026-11-25）：
+         以前保留旧译文等新首字来覆盖，结果是「重试的画面」和「第一次翻译的画面」
+         完全两样 —— 前者顶着上一轮的译文，后者是空的、只有配置名 +「翻译中…」。
+         现在统一清成空态。
+
+         旧注释担心的「一重试就被弹回顶部」用**保滚动位置**化解：
+         清空前后不读 scrollTop（读到的已经被夹成 0），直接先记下来再还原。 */
+      const keepScroll = outBox.scrollTop;
       sl.state = 'busy';
-      /* **不清 sl.text**（kniph 2026-10-17 报的「一重试就被弹回顶部」）：
-         清空会让结果区瞬间变短，浏览器顺手把滚动位置夹到 0 —— 长长一屏里
-         正读着的位置就没了。保留旧译文、只把状态改成「翻译中…」
-         （slotHtml 的 busy 分支本来就显示 s.text），新译文一到自然替换。 */
+      sl.text = '';        // ← 关键：不保留上一轮译文
       sl.error = '';
       sl.statusText = '';
-      if (slots.length > 1) renderSlots();
+      /* 单条 / 多条都要立刻重绘 —— 不然 DOM 还是上一轮的译文，
+         要等新分片到达才会被覆盖，正是用户看到的那种「先顶着旧结果」。 */
+      if (slots.length) {
+        renderSlots();
+        if (keepScroll) outBox.scrollTop = keepScroll;
+      }
     }
     // 单条模式（没有槽位）时仍要挡住「整批在跑」的连点
     if (!sl && busy) return;
@@ -2677,7 +2703,7 @@
       const err = (e && e.error) || '';
       if (!voices.length || err === 'synthesis-failed' || err === 'voice-unavailable') {
         setStatus(T('panel_tts_no_voice',
-          '听不到声音：系统里没装这个语言的语音包（Windows 设置 → 时间和语言 → 语音 → 添加语音）'), 'warn');
+          '没装这个语言的语音包'), 'warn');
       }
     };
     speakingKey = cid;
@@ -2692,7 +2718,7 @@
         speakingKey = '';
         refreshActs();
         setStatus(T('panel_tts_no_voice',
-          '听不到声音：系统里没装这个语言的语音包（Windows 设置 → 时间和语言 → 语音 → 添加语音）'), 'warn');
+          '没装这个语言的语音包'), 'warn');
       }
     }, 900);
   }

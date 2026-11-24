@@ -5295,7 +5295,22 @@ section('变异测试补盲（2026-11-16，注入 bug 实测的 9 个漏网）')
   check('background 用 blocking webRequest 改写 bilibili 头',
     /onBeforeSendHeaders\.addListener/.test(bgSrc2) && /'blocking', 'requestHeaders'/.test(bgSrc2));
   check('单条等待也走块渲染（配置名旁边显示「翻译中…」）',
-    /if \(only\) \{\s*only\.state = 'busy';[\s\S]{0,200}renderSlots\(\);/.test(contentSrc2));
+    /if \(only\) \{[\s\S]{0,400}only\.state = 'busy';[\s\S]{0,400}renderSlots\(\);/.test(contentSrc2));
+  /* **进忙碌态必须清空旧译文**（kniph 2026-11-25 报的）：
+     以前保留 s.text 等新分片覆盖，导致「重试」时上一轮译文一直顶着，
+     和「第一次翻译」那一屏完全两样。两条路径都钉住。 */
+  {
+    const busySeg = contentSrc2.slice(contentSrc2.indexOf('function enterBusy'));
+    const body = busySeg.slice(0, busySeg.indexOf('\n  }'));
+    check('enterBusy 单条分支清空 text',
+      /if \(only\) \{[\s\S]{0,300}only\.text = ''/.test(body));
+    check('enterBusy 多槽分支清空 text',
+      /for \(const s2 of slots\)[\s\S]{0,200}s2\.text = ''/.test(body));
+    const retrySeg = contentSrc2.slice(contentSrc2.indexOf('function retryOne'));
+    const rbody = retrySeg.slice(0, retrySeg.indexOf('\n  }'));
+    check('retryOne 也清空 text（重试＝回到第一次翻译那一屏）',
+      /sl\.text = ''/.test(rbody));
+  }
   check('panel-core 的 rt-slot-h 至少有 CSS 定义 + HTML 使用两处',
     (pcSrc2.match(/\brt-slot-h\b/g) || []).length >= 2,
     String((pcSrc2.match(/\brt-slot-h\b/g) || []).length));
