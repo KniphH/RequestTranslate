@@ -5116,16 +5116,13 @@ try {
   await opt2.waitForSelector('#cfg-list .cfg-item', { timeout: 8000 });
   await opt2.waitForTimeout(300);
 
-  await opt2.evaluate(() => (document.querySelector('.tab[data-tab="settings"]')?.click(), document.querySelectorAll('.set-group').forEach((d) => { d.open = true; })));
-  await opt2.waitForTimeout(200);
+  await opt2.locator('.tab[data-tab="settings"]').click();
+  await opt2.locator('#settings-categories [data-category="panel"]').click();
 
   // 先改一处一眼能认出来的东西（面板字号），证明导出的确实是**当前**状态
-  await opt2.evaluate(() => {
-    const el = document.getElementById('s-font');
-    el.value = '27';
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-  });
-  await opt2.waitForTimeout(1300);
+  await opt2.locator('#s-font').fill('27');
+  await opt2.locator('#save-status.saved').waitFor({state: 'attached'});
+  await opt2.locator('#settings-categories [data-category="backup"]').click();
 
   const dl = await Promise.all([opt2.waitForEvent('download', { timeout: 15000 }), opt2.click('#btn-export')]).then(
     ([d]) => d
@@ -5186,25 +5183,25 @@ try {
 
   // —— 先点取消：一个字都不该动
   // （F2 之后不再走 confirm，改成页面里的勾选弹层，取消是点 #import-cancel）
+  const openBackups = async () => {
+    await opt2.locator('.tab[data-tab="settings"]').click();
+    await opt2.locator('#settings-categories [data-category="backup"]').click();
+  };
   const chooseBackup = async file => {
-    await opt2.evaluate(() => {
-      document.querySelector('.tab[data-tab="settings"]')?.click();
-      document.querySelector('#settings-categories [data-category="backup"]')?.click();
-    });
+    await openBackups();
     await opt2.locator('#btn-import').click();
     await opt2.setInputFiles('#file-import', file);
     await opt2.locator('#import-file-confirm').click();
   };
   await chooseBackup(incomingFile);
-  await opt2.waitForTimeout(800);
-  await opt2.evaluate(() => document.getElementById('import-cancel')?.click());
-  await opt2.waitForTimeout(300);
+  await opt2.locator('#import-cancel').click();
+  await opt2.locator('#import-dialog').waitFor({state: 'hidden'});
   const afterCancel = await stateNow();
   check(
     '导入框里点了取消 → 什么都没动',
     afterCancel.count === beforeImport.count && afterCancel.firstName === beforeImport.firstName &&
       afterCancel.fontSize === beforeImport.fontSize,
-    JSON.stringify(afterCancel)
+    JSON.stringify({before: beforeImport, after: afterCancel})
   );
 
   // —— 正经导入（「保留现有配置」不勾 = 整体替换，与本用例原语义一致）
@@ -5275,8 +5272,7 @@ try {
 
   /* ---- 加密导出 → 导入：整条链在真浏览器里走一遍（Web Crypto 是真调的） ---- */
   // 前面的「列表重画」检查切到了 configs 页签 —— 导出按钮在 settings 面板里，先切回去
-  await opt2.evaluate(() => (document.querySelector('.tab[data-tab="settings"]')?.click(), document.querySelectorAll('.set-group').forEach((d) => { d.open = true; })));
-  await opt2.waitForTimeout(200);
+  await openBackups();
   // 勾上「加密导出」→ 点导出 → 口令模态（两遍）→ 下载的是加密外壳
   await opt2.evaluate(() => { document.getElementById('chk-encrypt').checked = true; });
   dialogs.length = 0;
@@ -5363,7 +5359,6 @@ try {
   const opened = tabsNow.some((p) => /extensions\/shortcuts$/.test(p.url()));
   check('点按钮跳到了浏览器的快捷键设置页', opened, tabsNow.map((p) => p.url()).slice(-3).join(' | '));
   await opt2.bringToFront();
-  // 收尾：把勾选框放回去（后面的小节跑在同一页上）
   // 收尾：把勾选框放回去（后面的小节跑在同一页上）
   await opt2.evaluate(() => { document.getElementById('chk-encrypt').checked = false; });
 

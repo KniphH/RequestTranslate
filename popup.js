@@ -76,6 +76,7 @@ function langNameOf(code) {
 }
 const txt = $('#txt');
 const out = $('#out');
+const outText = $('#out-text');
 const statusEl = $('#status');
 const goBtn = $('#btn-go');
 const goLabel = $('#go-label');
@@ -104,16 +105,23 @@ function setBusy(busy) {
 
 let state = null;
 let controller = null;
+let statusTimer = 0;
 /** run 序号：连点两次时，旧那轮恢复后不许再写界面 */
 let runSeq = 0;
 
 function setStatus(text, isErr = false) {
+  clearTimeout(statusTimer);
   statusEl.textContent = text || '';
   statusEl.classList.toggle('error-text', isErr);
 }
 
+function updateClearButton() {
+  clearBtn.disabled = !txt.value && !out.textContent && !controller;
+}
+
 function setOut(text) {
-  out.textContent = text;
+  outText.textContent = text;
+  updateClearButton();
 }
 
 /* ---- 流式渲染节流（同 content.js） ---- */
@@ -144,7 +152,7 @@ function applyOut() {
     copyBtn.disabled = false;
   }
   const atBottom = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
-  out.textContent = text;
+  setOut(text);
   if (atBottom) out.scrollTop = out.scrollHeight;
 }
 
@@ -196,7 +204,7 @@ async function init() {
     /* Certain pages do not allow the selection script. */
   }
 
-  clearBtn.disabled = !txt.value;
+  updateClearButton();
   if (txt.value.trim()) txt.focus();
 }
 
@@ -271,13 +279,14 @@ copyBtn.addEventListener('click', async () => {
   try {
     await navigator.clipboard.writeText(out.textContent);
     setStatus(uiText('popup_copied'));
+    statusTimer = setTimeout(() => setStatus(''), 1500);
   } catch {
     setStatus(uiText('popup_copy_failed'), true);
   }
 });
 
 txt.addEventListener('input', () => {
-  clearBtn.disabled = !txt.value;
+  updateClearButton();
   if (!$('#empty-input').hidden) showResult();
 });
 
@@ -287,7 +296,6 @@ clearBtn.addEventListener('click', () => {
   controller = null;
   cancelStreamRender();
   txt.value = '';
-  clearBtn.disabled = true;
   setBusy(false);
   setOut('');
   setStatus('');
@@ -330,8 +338,8 @@ async function run() {
       path: cfg.path,
       responseMode: cfg.responseMode,
       signal: controller.signal,
-      onDelta: (translation) => {
-        if (myRun === runSeq) queueOut(translation);
+      onDelta: (translation, _piece, status) => {
+        if (myRun === runSeq && !(status >= 400)) queueOut(translation);
       }
     });
     if (myRun !== runSeq) return;
@@ -361,6 +369,7 @@ async function run() {
     if (myRun === runSeq) {
       controller = null;
       setBusy(false);
+      updateClearButton();
     }
   }
 }

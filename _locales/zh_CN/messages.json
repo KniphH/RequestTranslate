@@ -608,7 +608,7 @@
     "description": "设置页：各项说明"
   },
   "opt_hint_ocr_direct": {
-    "message": "<b>模型具有多模态时，无需中转 OCR</b>：截图直接交给左边选中的那条图片配置去翻，不走上面那条。左边只列<b>填了「图片请求模板」</b>的配置；一条都没填时退回顶栏当前那条（那条多半不支持看图）。",
+    "message": "图片直传使用选中的<b>图片请求模板</b>。没有图片配置时，使用当前翻译配置。",
     "description": "设置页：整段说明（含内联标签，走 data-i18n-html）",
     "html": true
   },
@@ -1359,7 +1359,7 @@
     "description": "设置页：set 区域"
   },
   "opt_set_085": {
-    "message": "浮出来的就是**网页上那个真面板**：样式、顶栏、拖动、✕ 关闭全都一样，跟着上面的宽度 / 字号 / 高度 / 主题实时变。里面的文字是示例内容。",
+    "message": "预览使用示例译文，并实时反映当前面板设置。",
     "description": "设置页：set 区域"
   },
   "opt_set_086": {
@@ -2428,6 +2428,9 @@
   "popup_diagnostic": {
     "message": "查看诊断"
   },
+  "popup_loading_status": {
+    "message": "正在翻译…"
+  },
   "popup_clear_source": {
     "message": "清空原文"
   },
@@ -2511,6 +2514,9 @@
   },
   "opt_ui_ocr_test": {
     "message": "OCR 测试"
+  },
+  "opt_ui_ocr_template": {
+    "message": "OCR 请求模板"
   },
   "opt_ui_image_test": {
     "message": "图片翻译测试"

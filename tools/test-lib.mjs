@@ -2013,7 +2013,8 @@ section('15f. 设置页的「图片配置」那条线也认后备');
   check('两个模板共用可插入占位符',
     (opt.match(/chips: opts\.chips/g) || []).length === 2 && opt.includes("chipsHtml(chips)"));
   check('图片模板使用可折叠区域',
-    opt.includes('class="simple img-tpl tpl-fold rb-only-request"') && css.includes('.tpl-fold .fold-body'));
+    opt.includes('<details class="simple img-tpl tpl-fold rb-only-request"') &&
+      opt.includes("<summary>${uiIcon('chevron')}<span>${escapeHtml(title)}</span></summary>${box}</details>"));
   check('模板滚动与样式由同一类控制',
     /\.code-box textarea\{[^}]*min-height:180px;[^}]*overflow:auto;white-space:pre/.test(css));
   /* ---- 折叠手势统一：**点块头**（整条标题栏）就折，角落那个 ▾ 只是指示器 ----
@@ -2076,7 +2077,7 @@ section('15f. 设置页的「图片配置」那条线也认后备');
       /bindSortDrag\(els\.ocrList, moveOcrProvider\)/.test(opt) &&
       /onMove: moveOcrProvider/.test(opt));
   check('桌面顺序控件尺寸固定并使用竖排',
-    /\.cfg-row \.cfg-mv-btn \{[^}]*width: 26px/.test(css) && /\.cfg-row \.cfg-mv \{ display: grid/.test(css));
+    /\.cfg-mv \.cfg-mv-btn\{[^}]*width:26px/.test(css) && /\.cfg-mv\{display:grid/.test(css));
   /* 三处共用一套行 ⇒ CSS 里**不许再按 id 给某一处开特例**。以前那两条补丁
      （OCR 列表没有 .cfg-row 时的宽度 / 间距）统一之后一条是死的、另一条给条目加了 3px
      下外边距 —— 行高因此比另外两处高 3px（63 vs 60），肉眼就是「三个列表不一样高」。 */
@@ -3067,9 +3068,9 @@ section('25. 管模型的变量填多行 = 换 model 重试（每个一行）');
       optSrc.includes('String(JSON.parse(') &&
       /fold && why \? `<span class="why">/.test(optSrc));
   const optCss = readFileSync(new URL('../options.css', import.meta.url), 'utf8');
-  check('折块的样式在（▸ 标记 + 打开时转 90°，别拿 CSS 把标记清了）',
-    /\.test-fold > summary::-webkit-details-marker \{ display: none; \}/.test(optCss) &&
-      /\.test-fold\[open\] > summary::before \{ transform: rotate\(90deg\); \}/.test(optCss));
+  check('测试诊断用共享 SVG 指示折叠状态',
+    optSrc.includes("<summary class=\"result-head\">${uiIcon('chevron')}") &&
+      /\.test-fold:not\(\[open\]\) > summary > \.icon \{ transform: rotate\(-90deg\); \}/.test(optCss));
 }
 
 section('26. 打码跟着变量走：名字里含 key 的才是密钥');
@@ -4369,10 +4370,10 @@ await (async () => {
   const esmI18n = readFileSync(new URL('../lib/i18n-msg.js', import.meta.url), 'utf8');
   const tBody = plainI18n.slice(plainI18n.indexOf('function t('), plainI18n.indexOf('function substi'));
   const mBody = esmI18n.slice(esmI18n.indexOf('export async function msg('));
-  check('plain t(): 先查下载包，再问 chrome.i18n，最后回落 key',
+  check('plain t(): 先查下载包，再问 chrome.i18n，最后格式化兜底文案',
     tBody.indexOf('pack.strings[key]') >= 0 &&
       tBody.indexOf('chrome.i18n') > tBody.indexOf('pack.strings[key]') &&
-      tBody.indexOf('return key') > tBody.indexOf('chrome.i18n'));
+      tBody.indexOf('return substitute(fallback, params)') > tBody.indexOf('chrome.i18n'));
   check('ESM msg(): 同一条优先级链（下载包 → chrome.i18n → 兜底）',
     mBody.indexOf('pack[key]') >= 0 &&
       mBody.indexOf('chrome.i18n') > mBody.indexOf('pack[key]') &&

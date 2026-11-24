@@ -30,12 +30,7 @@ const { TRIGGER_CSS, PANEL_CSS } = window.RTPanelCore;
    万一没加载，回落成中文原文 —— 设置页不能因为少一个文件就显示成 key。 */
 function T(key, fallback, params) {
   const api = window.RTI18n;
-  if (api && typeof api.t === "function") {
-    // params 走 i18n 的 $1 $2 替换（同 chrome.i18n 的写法），数字位置由译文决定
-    const got = api.t(key, params);
-    if (got && got !== key) return got;
-  }
-  return fallback;
+  return api?.t(key, params, fallback) ?? fallback;
 }
 
 /**
@@ -254,15 +249,10 @@ async function init() {
     if (key === 'panel' && pvNeedsRender) renderPanelPreview();
   });
   renderPanelPreview();
-  applyHintHides();
-
   /* 收尾再填一次 —— 上面那些 renderXxx 会新建节点（编辑器头部、列表、预览），
      它们里面的 data-i18n 在第一次 applyI18n 时还不存在。
      这里补一次最省事，也比在每个 render 里各调一次好维护。 */
   if (i18nApi && i18nApi.applyI18n) i18nApi.applyI18n(document, { onlyMissing: true });
-  /* ⚠️ 必须再跑一次 applyHintHides：上面的 applyI18n 里，data-i18n-html 那条会
-     用 innerHTML 整段覆盖，把之前 applyHintHides 挂上去的「不再显示」按钮一起抹掉。
-     它是幂等的（已经有 .hint-hide 就跳过），重复调用没有副作用。 */
   applyHintHides();
 }
 
@@ -390,7 +380,7 @@ function renderConfigList() {
     els.cfgList.appendChild(sortableRow({
       id: cfg.id,
       name: cfg.name,
-      sub: summarizeUrl(cfg.request, T('opt_empty', '(空)')),
+      sub: cfg.adapter ? adapterLabel(cfg.adapter) : summarizeUrl(cfg.request, T('opt_empty', '(空)')),
       active: cfg.id === editingId,
       inCompare: slotConfigIds().includes(cfg.id),
       index: idx,
@@ -647,6 +637,7 @@ function bindBlockActions({ collect, render }, container) {
     if (head && !e.target.closest('.rb-on, .rb-mini')) {
       const node = head.closest('.req-block');
       const open = node.classList.toggle('open');
+      node.querySelector('.rb-fold').setAttribute('aria-expanded', String(open));
       blockFold.set(node.dataset.id, open);
       return;
     }
@@ -901,6 +892,7 @@ const CHIPS = [
       t: T('opt_chip_target_code_desc', '映射成接口要的代码，内置是 DeepL 的 language code。换服务就在请求文本里写 #@lang 表，键写语言代码'),
   },
   { ins: '{{image}}', t: '截图翻译直传模式下的图片（data URL）；普通翻译时是空串', k: 'opt_chip_image' },
+  { ins: '{{apiKey}}', t: '「变量」页签里的 apiKey', k: 'opt_chip_apikey' },
   {
     ins: '{{imagePart}}',
     k: 'opt_chip_imagepart',
@@ -917,7 +909,7 @@ const OCR_CHIPS = [
   { ins: '{{apiKey}}', t: '「变量」页签里的 apiKey，和翻译配置共用', k: 'opt_chip_apikey' }
 ];
 
-/** 一排占位符标签（`ins` 是插进去的文本，标签上显示的是去掉花括号的名字） */
+/** 占位符标签使用和插入文本相同的模板语法。 */
 function chipsHtml(list) {
   return `<div class="chips">` + list.map((c) =>
     `<button type="button" class="chip" data-ins="${c.ins}" title="${escapeHtml(c.k ? T(c.k, c.t) : c.t)}">` +
@@ -942,7 +934,7 @@ function adapterHint(id) {
 
 /** 块头右边那句「这条打到哪儿」—— 折叠起来之后全靠它认人 */
 function blockSummary(item, kind) {
-  if (kind === 'adapter') return T('opt_label_adapter', '内置适配器');
+  if (kind === 'adapter') return adapterLabel(item.adapter);
   return summarizeUrl(item.request, T('opt_no_request', '（还没写请求模板）'));
 }
 
@@ -955,7 +947,7 @@ function templateFieldHtml({boxAttrs, title, value, placeholder, image, open, hi
     ${chips ? chipsHtml(chips) : ''}`;
   if (!image) return box;
   return `<details class="simple img-tpl tpl-fold rb-only-request"${open ? ' open' : ''}>
-    <summary>${uiIcon('chevron')}${escapeHtml(title)}</summary><div class="fold-body">${box}</div></details>`;
+    <summary>${uiIcon('chevron')}<span>${escapeHtml(title)}</span></summary>${box}</details>`;
 }
 
 /* `idx` 是从 0 数起的位置（0 = 主请求），`lastIdx` 是最后一块的下标 —— 上下移按钮靠它禁用。
@@ -984,14 +976,15 @@ function blockHtml(item, idx, lastIdx, opts = {}) {
           <input type="checkbox" class="rb-enable" aria-label="${escapeHtml(T('opt_ui_enable_request', '启用请求'))}"${item.enabled ? ' checked' : ''}>
         </label>
         <span class="rb-tag">${escapeHtml(isMain ? T('opt_main_req', '主请求') : T('opt_ui_fallback_index', '后备 $1$', [String(idx)]))}</span>
-        <span class="rb-sub">${escapeHtml(blockSummary(item, kind))}</span>
+        <small class="rb-sub">${escapeHtml(blockSummary(item, kind))}</small>
         ${item.imageRequest && item.imageRequest.trim() ? `<span class="rb-badge" title="${escapeHtml(T('opt_img_badge', '这条填了「图片请求模板」，截图翻译时会走它（图片直传模式）'))}">图</span>` : ''}
-        <span class="spacer"></span>
+        <span class="rb-actions">
         ${isMain ? '' : `
           <button type="button" class="rb-mini rb-up" title="${escapeHtml(T('opt_up', '上移（越靠前越先试）'))}"${idx <= 1 ? ' disabled' : ''}>${uiIcon("up")}</button>
           <button type="button" class="rb-mini rb-down" title="${escapeHtml(T('opt_down', '下移'))}"${idx >= lastIdx ? ' disabled' : ''}>${uiIcon("down")}</button>
           <button type="button" class="rb-mini rb-del" title="${escapeHtml(T('opt_del_fallback', '删掉这条后备请求'))}">${uiIcon("trash")}</button>`}
-        <button type="button" class="rb-fold" title="${escapeHtml(T('opt_fold', '折叠 / 展开（点这一行也行）'))}">${uiIcon("chevron")}</button>
+          <button type="button" class="rb-fold" title="${escapeHtml(T('opt_fold', '折叠 / 展开（点这一行也行）'))}">${uiIcon("chevron")}</button>
+        </span>
       </div>
       <div class="rb-body">
         ${isAdapter ? `
@@ -1002,7 +995,7 @@ function blockHtml(item, idx, lastIdx, opts = {}) {
         </div>` : ''}
         ${templateFieldHtml({
           boxAttrs: 'class="rb-request"',
-          title: T('opt_tpl_title', '请求模板'),
+          title: ocr ? T('opt_ui_ocr_template', 'OCR 请求模板') : T('opt_tpl_title', '请求模板'),
           value: item.request,
           placeholder: T('opt_tpl_ph', '在这里粘贴 curl，或者写原始 HTTP 报文'),
           hidden: isAdapter,
@@ -1018,7 +1011,7 @@ function blockHtml(item, idx, lastIdx, opts = {}) {
           hidden: isAdapter,
           chips: opts.chips
         })}
-        <div class="field-pair${ocr ? ' ocr-fields' : ''}"${hideReq}>
+        <div class="field-pair"${hideReq}>
           ${ocr ? '' : `<label class="field rb-only-request">
             <span>${escapeHtml(T('opt_label_mode', '响应格式'))}</span>
             <select class="rb-mode">${optionsHtml(MODE_OPTIONS, item.responseMode)}</select>
@@ -1048,13 +1041,13 @@ function renderBlocksInto(host, owner, opts) {
   /* 折叠 / 勾选这两个状态是**这里贴上去的**，不写进模板 —— 模板里 `class="req-block${…}"`
      一旦插值，`check-dom` 那套「从 class="…" 字面量里收类名」就认不出 `req-block` 了。 */
   host.querySelectorAll('.req-block').forEach((node) => {
-    node.classList.toggle('open', foldOpen(node.dataset.id, node === host.firstElementChild));
+    const open = foldOpen(node.dataset.id, node === host.firstElementChild);
+    node.classList.toggle('open', open);
+    node.querySelector('.rb-fold').setAttribute('aria-expanded', String(open));
     node.classList.toggle('rb-off', !node.querySelector('.rb-enable').checked);
   });
   // 动态建出来的模板框也要有「Tab 缩进 + 记住焦点」
   host.querySelectorAll(tplSel).forEach(bindTemplateBox);
-  // 块里那几段说明的「不再显示」按钮是动态画的，得补一次（幂等）
-  applyHintHides();
 }
 
 /** 配置栏那套请求块 */
@@ -1646,7 +1639,7 @@ function resultBlockHtml({ head = '', body = '', fold, why = '' }) {
   if (!fold) {
     return `<div class="result-head">${headHtml}</div><div class="result-body">${body}</div>`;
   }
-  return `<details class="test-fold"><summary class="result-head">${headHtml}</summary>` +
+  return `<details class="test-fold"><summary class="result-head">${uiIcon('chevron')}${headHtml}</summary>` +
     `<div class="result-body">${body}</div></details>`;
 }
 
@@ -3224,9 +3217,18 @@ function bindSettings() {
       chrome.commands.getAll((list) => {
         const rows = Object.entries(NAMES).map(([name, label]) => {
           const cur = (list.find((c) => c.name === name) || {}).shortcut;
-          return label + ' ' + (cur || T('opt_hotkey_unset', '未设置'));
+          const row = document.createElement('span');
+          row.append(label, ' ');
+          if (cur) {
+            const key = document.createElement('kbd');
+            key.textContent = cur.split('+').join(' + ');
+            row.append(key);
+          } else {
+            row.append(T('opt_hotkey_unset', '未设置'));
+          }
+          return row;
         });
-        $('#hotkey-list').textContent = rows.join('\n');
+        $('#hotkey-list').replaceChildren(...rows);
       });
     };
     render();
@@ -3856,8 +3858,7 @@ async function persist(showStatus = true) {
   activeConfigChanged = false;
   if (showStatus) flashSaved();
 }
-/** 「把说明都放回来」那个按钮的显隐 —— 跟着 `hiddenHints` 走。
-    `applyHintHides` 每次重画完块都会跑一遍，藏过说明的入口由它统一维护。 */
+/** 有隐藏的说明时才显示恢复入口。 */
 function syncRestoreHints() {
   const b = document.querySelector('#btn-restore-hints');
   if (b) b.hidden = !(state.settings.hiddenHints || []).length;
@@ -3884,7 +3885,7 @@ function applyHintHides() {
     if (!el.querySelector('.hint-hide')) {
       const b = document.createElement('button');
       b.type = 'button';
-      b.className = 'hint-hide';
+      b.className = 'link hint-hide';
       b.textContent = T('opt_hint_dismiss', '不再显示');
       b.addEventListener('click', () => {
         const id = el.dataset.hint;
@@ -3999,14 +4000,16 @@ function renderLangMap() {
     const up = document.createElement('button');
     up.type = 'button';
     up.className = 'lang-map-btn';
-    up.textContent = '↑';
+    up.innerHTML = uiIcon('up');
+    up.setAttribute('aria-label', T('opt_up', '上移'));
     up.disabled = rows.indexOf(row) === 0;
     up.addEventListener('click', () => moveLang(row.code, -1));
 
     const down = document.createElement('button');
     down.type = 'button';
     down.className = 'lang-map-btn';
-    down.textContent = '↓';
+    down.innerHTML = uiIcon('down');
+    down.setAttribute('aria-label', T('opt_down', '下移'));
     down.disabled = rows.indexOf(row) === rows.length - 1;
     down.addEventListener('click', () => moveLang(row.code, 1));
 
@@ -4038,7 +4041,8 @@ function renderLangMap() {
   add.appendChild(codeIn);
   add.appendChild(nameIn);
   add.appendChild(btn);
-  host.appendChild(add);
+  if (host.nextElementSibling?.classList.contains('lang-map-add')) host.nextElementSibling.replaceWith(add);
+  else host.after(add);
 }
 
 /** 改某行的名字（写进 targetNames；清空 / 填成代码本身 = 回落） */

@@ -23,13 +23,13 @@
     <div class="popup-action">
       <button type="button" class="primary" id="btn-go"><span data-ui-icon="brand"></span><span id="go-label" data-i18n="popup_translate">翻译</span></button>
     </div>
-    <div class="popup-result" id="loading" role="status" hidden><div class="status"><i class="spin" aria-hidden="true"></i><span data-i18n="popup_translating">翻译中…</span></div></div>
+    <div class="popup-result" id="loading" role="status" hidden><div class="status"><i class="spin" aria-hidden="true"></i><span data-i18n="popup_loading_status">正在翻译…</span></div></div>
     <section class="popup-result" id="translation" hidden>
       <div class="row-flex">
         <h3 data-i18n="popup_result">译文</h3>
         <button type="button" id="btn-copy" class="copy-result"><span data-ui-icon="copy"></span><span data-i18n="popup_copy">复制</span></button>
       </div>
-      <div id="out" class="popup-result-body" tabindex="0"></div>
+      <div id="out" class="popup-result-body" tabindex="0"><p id="out-text"></p></div>
     </section>
     <section class="popup-result error" id="failure" hidden>
       <div class="popup-error-heading"><strong data-i18n="popup_failed">翻译失败</strong><button type="button" class="link inline-retry" id="btn-retry" data-i18n="popup_retry">重试</button></div>

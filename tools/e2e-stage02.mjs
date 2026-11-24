@@ -27,10 +27,11 @@ const context = await chromium.launchPersistentContext(mkdtempSync(join(tmpdir()
 
 const errors = [];
 const measurement = {};
+const components = {};
 let reply = 'success';
 await context.route('https://api.openai.com/v1/chat/completions', async route => {
-  if (reply === 'error') return route.fulfill({status: 401, body: 'Fixture authorization failed'});
-  if (reply === 'slow') await new Promise(done => setTimeout(done, 450));
+  if (reply === 'error') return route.fulfill({status: 401, body: 'Fixture authorization failed: fixture-secret'});
+  if (reply === 'slow') await new Promise(done => setTimeout(done, 1800));
   await route.fulfill({json: {choices: [{message: {content: '请求模板支持长行横向滚动。'}}]}});
 });
 
@@ -44,10 +45,11 @@ try {
   const fixture = await page.evaluate(async () => {
     const {loadState} = await import(chrome.runtime.getURL('lib/store.js'));
     const state = await loadState();
-    const request = 'POST https://api.openai.com/v1/chat/completions\nContent-Type: application/json\nAuthorization: Bearer {{apiKey}}\n\n' + JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [{role: 'system', content: '仅输出{{target}}译文。'}, {role: 'user', content: '{{text}}'}]
-    }, null, 2);
+    const request = [
+      'POST https://api.openai.com/v1/chat/completions', 'Content-Type: application/json', 'Authorization: Bearer {{apiKey}}', '',
+      '{', '  "model": "gpt-4o-mini",', '  "messages": [', '    {"role": "system", "content": "仅输出{{target}}译文。"},',
+      '    {"role": "user", "content": "{{text}}"}', '  ]', '}'
+    ].join('\n');
     const fallback = {request, path: 'choices[0].message.content', responseMode: 'auto', enabled: true};
     const names = ['Bing (free)', 'bilibili (free)', 'OpenAI-compatible', 'DeepSeek', 'DeepL', 'Ollama (local)'];
     const hosts = ['api.openai.com', 'index-translate.bilibili.com', 'api.openai.com', 'api.deepseek.com', 'api-free.deepl.com', '127.0.0.1:11434'];
@@ -57,6 +59,17 @@ try {
       fallbacks: index === 2 ? [{...fallback, request: request.replace('api.openai.com', 'api.deepseek.com')}] : []
     }));
     state.activeConfigId = 'stage02-2';
+    const ocr = state.ocr.providers.find(provider => provider.id === 'builtin-openai-vl');
+    ocr.request = [
+      ...request.split('\n').slice(0, 6),
+      '  "messages": [{"role": "user", "content": [',
+      '    {"type": "image_url", "image_url": {"url": "{{image}}"}},',
+      '    {"type": "text", "text": "<image>\\nFree OCR."}', '  ]}]', '}'
+    ].join('\n');
+    ocr.path = '';
+    ocr.note = '';
+    ocr.fallbacks = [{...state.ocr.providers[0], id: 'stage02-ocr-fallback', enabled: true}];
+    state.ocr.activeId = ocr.id;
     state.vars = [{name: 'apiKey', value: 'fixture-secret'}, {name: 'model', value: 'gpt-4o-mini\ndeepseek-chat'}, {name: 'baseUrl', value: 'https://api.openai.com'}];
     state.settings.theme = 'light';
     await chrome.storage.local.set({state});
@@ -71,10 +84,45 @@ try {
     ['S01', 1024, 820, 'light', 'settings'], ['S02', 390, 844, 'dark', 'settings']
   ];
   const prototype = await context.newPage();
+  const captureReference = async (id, width, height, theme) => {
+    await prototype.setViewportSize({width, height});
+    await prototype.goto(pathToFileURL(join(design, 'prototype.html')).href + '#' + id);
+    await prototype.reload();
+    const screen = prototype.locator(`[data-screen="${id}"]`);
+    await screen.locator('.rt').evaluate((element, color) => { element.dataset.theme = color; }, theme);
+    if (id.startsWith('P')) await screen.locator('.preview-tools').evaluate(element => { element.hidden = true; });
+    await prototype.screenshot({path: join(evidence, `prototype-${id}-${theme}.png`), animations: 'disabled'});
+  };
   const rect = (page, selector) => page.locator(selector).first().evaluate(element => {
     const box = element.getBoundingClientRect();
     return [box.x, box.y, box.width, box.height].map(value => Math.round(value));
   });
+  const component = locator => locator.evaluate(element => {
+    const {x, y, width, height} = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    const properties = ['display', 'gridTemplateColumns', 'alignItems', 'columnGap', 'padding', 'borderRadius',
+      'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'color', 'backgroundColor', 'borderTopColor',
+      'stroke', 'strokeWidth', 'strokeLinecap', 'strokeLinejoin', 'fill', 'opacity', 'transform'];
+    return {
+      rect: [x, y, width, height].map(number => Math.round(number * 100) / 100),
+      style: Object.fromEntries(properties.map(key => [key, style[key]])),
+      svg: element.tagName === 'svg' ? [element.getAttribute('viewBox'), element.querySelector('path')?.getAttribute('d')] : null
+    };
+  });
+  const compare = async (id, name, reference, production, keys = [], crop = false) => {
+    const pair = await Promise.all([component(reference), component(production)]);
+    (components[id] ||= {})[name] = pair;
+    if (pair[0].svg) {
+      assert.deepEqual(pair[1].svg, pair[0].svg, `${id} ${name} SVG`);
+      assert.deepEqual(pair[1].rect.slice(2), pair[0].rect.slice(2), `${id} ${name} SVG dimensions`);
+    }
+    for (const key of keys) assert.equal(pair[1].style[key], pair[0].style[key], `${id} ${name} ${key}`);
+    if (crop) {
+      await reference.screenshot({path: join(evidence, `component-${id}-${name}-prototype.png`), animations: 'disabled'});
+      await production.screenshot({path: join(evidence, `component-${id}-${name}-production.png`), animations: 'disabled'});
+    }
+    return pair;
+  };
   for (const [id, width, height, theme, module] of specs) {
     await page.setViewportSize({width, height});
     await page.evaluate(async state => chrome.storage.local.set({state}), {...fixture, settings: {...fixture.settings, theme}});
@@ -83,9 +131,7 @@ try {
     await page.locator(`[data-tab="${module}"]`).click();
     if (id === 'B02' || id === 'O02') await page.locator('.tabpanel.is-active .cfg-item.is-active').click();
     await page.screenshot({path: join(evidence, `production-${id}-${theme}.png`)});
-    await prototype.setViewportSize({width, height});
-    await prototype.goto(pathToFileURL(join(design, 'prototype.html')).href + '#' + id);
-    await prototype.reload();
+    await captureReference(id, width, height, theme);
     const art = `[data-screen="${id}"]`;
     const values = {top: [await rect(prototype, art + ' .top'), await rect(page, '.top')]};
     assert.deepEqual(values.top[0], values.top[1], id + ' header');
@@ -96,6 +142,47 @@ try {
     if (id === 'D10' || id === 'D14' || id === 'D07') {
       values.title = [await rect(prototype, art + ' .editor-title h1'), await rect(page, '#cfg-editor-title')];
       assert(Math.abs(values.title[0][0] - values.title[1][0]) <= 2, JSON.stringify(values.title));
+    }
+    const screen = prototype.locator(art);
+    const iconStyles = ['stroke', 'strokeWidth', 'strokeLinecap', 'strokeLinejoin', 'fill'];
+    const nativeFont = ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight'];
+    for (const [index, element] of (await page.locator('.top nav button').all()).entries()) {
+      await compare(id, `nav-${index}`, screen.locator('.top nav button:visible svg').nth(index), element.locator('svg'), iconStyles);
+    }
+    await compare(id, 'brand', screen.locator('.mark svg').first(), page.locator('.mark svg'), iconStyles);
+    await compare(id, 'theme', screen.locator('.top [data-id=theme] svg').first(), page.locator('#theme-toggle svg'), iconStyles);
+    await compare(id, 'github', screen.locator('.top .github-link svg').first(), page.locator('.github-link svg'), iconStyles);
+    if (['D14', 'B01', 'O04', 'V01', 'V02'].includes(id)) {
+      const firstReference = screen.locator('.cfg-row').first();
+      const firstProduction = page.locator('.tabpanel.is-active aside .cfg-row').first();
+      await compare(id, 'list-row', firstReference, firstProduction, ['padding', 'borderRadius'], id === 'D14' || id === 'B01');
+      const mobile = width < 640;
+      await compare(id, 'order-icon', firstReference.locator(mobile ? '[data-grip] svg' : '.moves svg').first(),
+        firstProduction.locator(mobile ? '.cfg-grip svg' : '.cfg-mv svg').first(), iconStyles);
+    }
+    if (id === 'D14' || id === 'D07' || id === 'B02') {
+      const editor = page.locator('#editor');
+      await compare(id, 'path', screen.locator('[data-id=response-path-0]').first(), editor.locator('.rb-path').first(), nativeFont);
+      await compare(id, 'image-fold', screen.locator('[data-id=image-summary-0]').first(), editor.locator('.img-tpl summary').first(), ['columnGap', 'padding', 'fontSize', 'fontWeight'], id === 'D14');
+      await compare(id, 'chips', screen.locator('.chips button').first(), editor.locator('.chips button').first(), ['fontFamily', 'fontSize', 'padding', 'borderRadius']);
+      await compare(id, 'template', screen.locator('.code-box textarea').first(), editor.locator('.code-box textarea').first(), nativeFont, id === 'D14');
+      const [field, action] = await Promise.all([rect(page, '#test-text'), rect(page, '#btn-test')]);
+      assert.equal(field[1] + field[3], action[1] + action[3], `${id} input and send button align`);
+      assert.equal(await editor.locator('.rb-tag').nth(1).textContent(), '后备 1');
+    }
+    if (id === 'S01' || id === 'S02') {
+      const [reference, production] = await compare(id, 'search', screen.locator('.settings-search'), page.locator('.settings-search'), ['padding', 'borderRadius', 'columnGap'], true);
+      assert.equal(production.rect[1], reference.rect[1], `${id} search top`);
+      await compare(id, 'setting-category', screen.locator('.settings-entry').first(), page.locator('#settings-categories .settings-entry').first(), ['padding', 'fontSize', 'columnGap']);
+      if (id === 'S01') {
+        assert.equal(production.rect[1], (await rect(page, '.set-group:not([hidden]) h1'))[1], 'settings columns share the same top');
+        await compare(id, 'setting-detail', screen.locator('[data-id=selection-trigger]').first(), page.locator('#s-trigger'), nativeFont);
+      }
+    }
+    if (id === 'O04' || id === 'O02') {
+      const [reference, production] = await compare(id, 'file-picker', screen.locator('.file-picker').first(), page.locator('#o-test-field .file-picker'), ['padding', 'borderRadius'], id === 'O04');
+      assert.equal(production.rect[3], reference.rect[3], `${id} file picker height`);
+      await compare(id, 'ocr-switch', screen.locator('[data-direct]').first(), page.locator('#o-disabled'));
     }
     measurement[id] = values;
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
@@ -108,6 +195,7 @@ try {
   assert.equal(await page.locator('#settings-search').inputValue(), '深色');
   await page.locator('#settings-search').fill('zzzz no setting');
   await page.locator('#settings-empty').waitFor();
+  assert.equal((await rect(page, '#settings-search-clear'))[3], 26);
   await page.locator('[data-tab="vars"]').click();
   assert.equal(await page.locator('.builtin-row').count(), 12);
   await page.locator('#vars-body .cfg-item').first().click();
@@ -141,9 +229,31 @@ try {
   assert(await page.locator('#cfg-list').isVisible());
   await touch.detach();
 
+  await page.locator('#cfg-list .cfg-item.is-active').click();
+  const hint = page.locator('[data-hint=cfg-test]');
+  await hint.screenshot({path: join(evidence, 'component-B02-test-hint-shown-production.png')});
+  await hint.getByRole('button').click();
+  assert(await hint.isHidden());
+  await page.waitForFunction(async () => (await chrome.storage.local.get('state')).state.settings.hiddenHints.includes('cfg-test'));
+  await page.reload();
+  await page.locator('#cfg-list .cfg-item.is-active').click();
+  assert(await hint.isHidden());
+  await page.locator('#editor .tests').screenshot({path: join(evidence, 'component-B02-test-hint-hidden-production.png')});
+  await page.evaluate(async strings => chrome.storage.local.set({rt_i18n: {lang: 'en', strings}}),
+    JSON.parse(readFileSync('i18n/en.json', 'utf8')).strings);
+  await page.reload();
+  await page.locator('#cfg-list .cfg-item.is-active').click();
+  assert.equal(await page.locator('#req-blocks .rb-tag').nth(1).textContent(), 'Fallback 1');
+  assert.equal(await page.evaluate(() => window.RTI18n.t('missing_stage02_key', ['2'], 'Fallback $1$')), 'Fallback 2');
+  await page.evaluate(() => chrome.storage.local.remove('rt_i18n'));
+
   const popup = await context.newPage();
   // The context API owns the default viewport. Size this extension page to the toolbar popover.
   await popup.setViewportSize({width: 400, height: 300});
+  const capturePopup = async (id, height, theme) => {
+    await popup.setViewportSize({width: 400, height});
+    await popup.screenshot({path: join(evidence, `production-${id}-${theme}.png`), animations: 'disabled'});
+  };
   popup.on('pageerror', error => errors.push(error.message));
   await popup.goto(origin + '/popup.html');
   await popup.locator('#sel option').first().waitFor({state: 'attached'});
@@ -154,9 +264,15 @@ try {
   });
   await popup.locator('html[data-theme="light"]').waitFor({state: 'attached'});
   assert.equal(await popup.locator('#sel').evaluate(el => getComputedStyle(el).appearance), 'base-select');
-  await popup.screenshot({path: join(evidence, 'production-P01-light.png')});
+  await capturePopup('P01', 300, 'light');
+  await captureReference('P01', 400, 300, 'light');
+  const referencePopup = prototype.locator('[data-screen=P01]');
+  await compare('P01', 'translate', referencePopup.locator('.popup-action button'), popup.locator('#btn-go'), ['fontSize', 'fontWeight', 'padding', 'borderRadius'], true);
+  await compare('P01', 'clear-icon', referencePopup.locator('.popup-source-head .icon'), popup.locator('#btn-clear .icon'), ['strokeWidth', 'opacity']);
+  await compare('P01', 'source', referencePopup.locator('textarea'), popup.locator('#txt'), ['fontSize', 'padding', 'borderRadius']);
   await popup.locator('#btn-go').click();
   await popup.locator('#empty-input').waitFor();
+  await capturePopup('P05', 330, 'light');
   await popup.locator('#txt').fill('Request templates support horizontal scrolling.');
   await popup.evaluate(async () => {
     const {state} = await chrome.storage.local.get('state');
@@ -166,28 +282,38 @@ try {
   await popup.locator('html[data-theme="dark"]').waitFor({state: 'attached'});
   await popup.locator('#btn-go').click();
   await popup.locator('#out').getByText('请求模板支持长行横向滚动。').waitFor();
-  await popup.setViewportSize({width: 400, height: 360});
-  await popup.screenshot({path: join(evidence, 'production-P03-dark.png')});
+  await capturePopup('P03', 360, 'dark');
+  await popup.locator('#btn-copy').click();
+  await popup.locator('#status').filter({hasText: '已复制'}).waitFor();
   reply = 'error';
   await popup.locator('#btn-go').click();
   await popup.locator('#failure').waitFor();
-  await popup.setViewportSize({width: 400, height: 400});
-  await popup.screenshot({path: join(evidence, 'production-P04-dark.png')});
+  await capturePopup('P04', 400, 'dark');
+  await popup.locator('#diagnostic summary').click();
+  assert.match(await popup.locator('#diagnostic-text').textContent(), /401/);
+  assert(!(await popup.locator('#diagnostic-text').textContent()).includes('fixture-secret'));
   reply = 'success';
   await popup.locator('#btn-retry').click();
   await popup.locator('#translation').waitFor();
+  await popup.locator('#txt').fill('');
+  assert(await popup.locator('#btn-clear').isEnabled());
   await popup.locator('#btn-clear').click();
   assert.equal(await popup.locator('#txt').inputValue(), '');
   assert(await popup.locator('#translation').isHidden());
   reply = 'slow';
-  await popup.locator('#txt').fill('Cancel this translation');
+  await popup.locator('#txt').fill('Request templates support horizontal scrolling.');
   await popup.locator('#btn-go').click();
   await popup.locator('#loading').waitFor();
+  await capturePopup('P02', 340, 'dark');
   await popup.locator('#btn-clear').click();
   assert(await popup.locator('#btn-go').isEnabled());
   assert(await popup.locator('#loading').isHidden());
+  for (const [id, height, theme] of [['P01', 300, 'light'], ['P02', 340, 'dark'], ['P03', 360, 'dark'], ['P04', 400, 'dark'], ['P05', 330, 'light']]) {
+    await captureReference(id, 400, height, theme);
+  }
   assert.deepEqual(errors, []);
   writeFileSync(join(evidence, 'layout-measurements.json'), JSON.stringify(measurement, null, 2) + '\n');
+  writeFileSync(join(evidence, 'component-measurements.json'), JSON.stringify(components, null, 2) + '\n');
   console.log('Stage 02: extension views, approved reference metrics, search, secret masking, and mocked Popup requests passed.');
 } finally {
   await context.close();
