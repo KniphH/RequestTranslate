@@ -59,5 +59,17 @@ try {
  await page.waitForFunction(()=>document.querySelector('#request-translate-host').shadowRoot.querySelectorAll('.rt-slot[data-state=done]').length===2);
  assert.equal(await page.locator('.rt-global-actions [data-act=pin]').count(),1); assert.equal(await page.locator('.rt-global-actions [data-act=src]').count(),1);
  assert.equal(await page.locator('.rt-slot [data-act=pin],.rt-slot [data-act=src]').count(),0); await page.locator('.rt-panel').screenshot({path:'test-results/panel/compare.png'});
+ const footerInfo = page.locator('.rt-more');
+ const secondResult = page.locator('.rt-slot[data-cid="long-name"]');
+ assert.equal(await page.locator('.rt-slot [data-act=detail-one]:visible').count(), 2);
+ assert.equal(await footerInfo.isVisible(), false);
+ await secondResult.locator('[data-act=detail-one]').click();
+ assert(await page.locator('.rt-diag').isVisible());
+ assert.equal(await page.locator('.rt-diag').getAttribute('data-config-id'), 'long-name');
+ assert.equal(await footerInfo.isVisible(), false);
+ await secondResult.locator('.rt-slot-x').click();
+ assert.equal(await page.locator('.rt-slot').count(), 1);
+ assert(await footerInfo.isVisible());
+ assert(await footerInfo.isEnabled());
  assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:'280px layout, single result, fallback diagnostics, source toggle, pin, host isolation',data,diag}));
 }finally{await ctx.close();server.close();}
