@@ -78,6 +78,8 @@
         "<all_urls>"
       ],
       "js": [
+        "lib/m3-palettes.js",
+        "lib/m3-theme.js",
         "lib/i18n.js",
         "lib/panel-core.js",
         "content.js"

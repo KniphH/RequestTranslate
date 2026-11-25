@@ -24,7 +24,7 @@ import {
 /* 两个样式表都由 lib/panel-core.js 提供（普通脚本、挂在 window.RTPanelCore 上，
    options.html 里它在 options.js 之前加载）。以前是 import 两个 module，现在一处。
    原因见 lib/panel-core.js 头注：content script 不能 import，样式表必须能两边共用。 */
-const { TRIGGER_CSS, PANEL_CSS } = window.RTPanelCore;
+const { BRAND_MARK_SVG, TRIGGER_CSS, PANEL_CSS } = window.RTPanelCore;
 
 /* 文案查表。lib/i18n.js 是普通脚本、在 options.html 里排在 options.js 之前；
    万一没加载，回落成中文原文 —— 设置页不能因为少一个文件就显示成 key。 */
@@ -52,6 +52,7 @@ function inline(html) {
 import { uid, allRequests, requestChain, requestTemplateFor } from './lib/requests.js';
 import { runRequest, previewRequest } from './lib/engine.js';
 import { fillUiIcons, uiIcon } from './lib/ui-icons.js';
+import { NEW_TRANSLATION_REQUEST, requestFields, updateRequestField, variableReference } from './lib/request-fields.js';
 import { bindOptionsNavigation, bindSettingsDirectory, narrowOptions, openOptionsDetail } from './lib/options-navigation.js';
 import { encryptExport, decryptExport, isEncryptedExport } from './lib/crypto.js';
 import { ADAPTERS } from './lib/adapters.js';
@@ -89,6 +90,7 @@ let focusedTemplate = null;
 /** 每个请求块展开还是收起（块 id → 布尔）。**没记过的一律收起（主请求也一样，
     kniph 2026-10-13 定的；判据见 foldOpen）**。纯界面状态，不进存档。 */
 let blockFold = new Map();
+const requestModes = new Map();
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -96,10 +98,7 @@ const els = {
   cfgList: $('#cfg-list'),
   editor: $('#editor'),
   emptyHint: $('#empty-hint'),
-  /* 右栏头部容器：里面那一套（说明槽 → 名称 → 说明槽）是 `editorHeadHtml()` 画的，
-     两栏共用 —— 所以 `#f-name` / `#o-name` / `#o-note` 也得等画完再取（见 init）。 */
-  cfgHead: $('#cfg-head'),
-  name: null,
+  name: $('#f-name'),
   // 主请求 + 后备请求都渲染在这个容器里（同一套模板，见 renderBlocks）
   blocks: $('#req-blocks'),
   btnAddFallback: $('#btn-add-fallback'),
@@ -108,7 +107,6 @@ const els = {
   trigSvgMsg: $('#s-trigsvg-msg'),
   btnTrigSvgDemo: $('#btn-trigsvg-demo'),
   btnTrigSvgClear: $('#btn-trigsvg-clear'),
-  trigPreview: $('#trig-preview'),
   preview: $('#f-preview'),
   testText: $('#test-text'),
   testResult: $('#test-result'),
@@ -127,8 +125,7 @@ const els = {
   // 勾了「禁用外置 OCR」时，左栏换成这个 —— 列的是「填了图片请求模板」的配置
   imgcfgList: $('#imgcfg-list'),
   imgcfgFoot: $('#imgcfg-foot'),
-  ocrHead: $('#ocr-head'),
-  oName: null,
+  oName: $('#o-name'),
   oNote: null,
   ocrListTitle: $('#ocr-list-title'),
   ocrEditor: $('#ocr-editor'),
@@ -144,10 +141,7 @@ const els = {
   ocrTestImg: $('#ocr-test-img'),
   ocrTestBtn: $('#btn-ocr-test'),
   ocrTestResult: $('#ocr-test-result'),
-  oPreviewSummary: $('#o-preview-summary'),
   oTestLabel: $('#o-test-label'),
-  ocrTestHint: $('#ocr-test-hint'),
-  imgcfgTestHint: $('#imgcfg-test-hint')
 };
 
 /**
@@ -208,10 +202,12 @@ async function init() {
   editingId = state.activeConfigId;
   editingOcrId = state.ocr.activeId;
 
-  /* 头部（说明槽 → 名称 → 说明槽）两栏共用一份，先画出来 —— 里面那几个输入框
-     是后面所有绑定要用的，晚一步取就是 null。 */
-  renderEditorHeads();
+  els.oNote = document.createElement('p');
+  els.oNote.id = 'o-note';
+  els.oNote.className = 'hint';
+  els.ocrBlocks.after(els.oNote);
 
+  document.querySelector('.brand .mark').innerHTML = BRAND_MARK_SVG;
   fillUiIcons();
   for (const element of document.querySelectorAll('[data-ui-label]')) {
     const label = T(element.dataset.uiLabel, element.textContent.trim());
@@ -219,12 +215,14 @@ async function init() {
     element.title = label;
   }
   bindOptionsNavigation();
+  bindPalette();
   bindTabs();
   bindFilePicker(els.ocrTestImg);
   bindFilePicker(els.fileImport);
   $('#theme-toggle').addEventListener('click', () => {
     state.settings.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
     $('#s-theme').value = state.settings.theme;
+    syncSettingsSegments();
     applyTheme();
     persist(false);
   });
@@ -245,7 +243,10 @@ async function init() {
   renderBuiltinVariables();
   renderSettings();
   setSaveStatus(T('opt_ui_saved', '已保存'), true);
-  bindSettingsDirectory(document.querySelector('[data-panel="settings"]'), key => T(key, ''), key => {
+  const settings = document.querySelector('[data-panel="settings"]');
+  settings.lang = i18nApi?.currentPack()?.lang || document.documentElement.lang;
+  bindSettingHelp(settings);
+  bindSettingsDirectory(settings, key => T(key, ''), settingHelp, key => {
     if (key === 'panel' && pvNeedsRender) renderPanelPreview();
   });
   renderPanelPreview();
@@ -253,20 +254,7 @@ async function init() {
      它们里面的 data-i18n 在第一次 applyI18n 时还不存在。
      这里补一次最省事，也比在每个 render 里各调一次好维护。 */
   if (i18nApi && i18nApi.applyI18n) i18nApi.applyI18n(document, { onlyMissing: true });
-  applyHintHides();
-}
-
-function renderEditorHeads() {
-  function nameField(host, id, placeholder) {
-    host.innerHTML = `<label class="field name-field"><span>${escapeHtml(T('opt_ui_config_name', '配置名称'))}</span><input id="${id}" type="text" placeholder="${escapeHtml(placeholder)}" autocomplete="off"></label>`;
-    return host.querySelector('input');
-  }
-  els.name = nameField(els.cfgHead, 'f-name', T('opt_ph_cfgname', '例如：DeepSeek 翻译 / 本地 Ollama'));
-  els.oName = nameField(els.ocrHead, 'o-name', T('opt_ph_ocrname', '例如：硅基流动'));
-  els.oNote = document.createElement('p');
-  els.oNote.id = 'o-note';
-  els.oNote.className = 'subtle';
-  els.ocrBlocks.after(els.oNote);
+  bindImageHint();
 }
 
 /* ---- Tab ---- */
@@ -283,6 +271,7 @@ function bindTabs() {
       document.querySelectorAll('.tabpanel').forEach((p) => {
         p.classList.toggle('is-active', p.dataset.panel === btn.dataset.tab);
       });
+      if (narrowOptions.matches) window.scrollTo(0, 0);
       // 「图片配置」那个列表是配置栏那份数据的**过滤视图**：刚在配置栏填过 / 清空过
       // 图片模板的话，切回来得重算一次，不然这边还停在上一版（预览同理）
       if (btn.dataset.tab === 'ocr' && state.ocr && state.ocr.disabled) {
@@ -613,16 +602,45 @@ function moveButton({ listEl, id, name, index, delta, total, onMove }) {
     两栏是同一个 `blockHtml` 画的，这套委托也共用一份 —— 只差 `after` 里各刷新什么。 */
 function bindBlockInputs(container, after) {
   container.addEventListener('input', (e) => {
+    const field = e.target;
+    if (field.hasAttribute('data-request-view')) return;
+    if (field.hasAttribute('data-request-field')) {
+      const block = field.closest('.req-block');
+      const box = block.querySelector('.rb-request');
+      const next = updateRequestField(box.value, requestFields(box.value, container === els.ocrBlocks), field.dataset.requestField, field.value);
+      const message = next === null ? T('opt_request_field_invalid', '这个值无法写入当前模板。') : '';
+      field.setCustomValidity(message);
+      if (message) field.setAttribute('aria-invalid', 'true');
+      else field.removeAttribute('aria-invalid');
+      block.querySelector('.basic-error').textContent = block.querySelector('[data-request-field][aria-invalid=true]')?.validationMessage || '';
+      if (next === null) return;
+      box.value = next;
+      const ref = field.closest('label').querySelector('.basic-reference');
+      if (ref) ref.textContent = fieldReference(field.value);
+      block.querySelector('.rb-sub').textContent = blockSummary(readBlock(block), 'request');
+    }
     if (e.target.classList.contains('rb-request')) {
       // 块头那句「这条打到哪儿」跟着请求模板走（收起时全靠它认人）
       const node = e.target.closest('.req-block');
       const b = readBlock(node);
       node.querySelector('.rb-sub').textContent = blockSummary(b, b.kind);
+      paintRequestView(node, 'advanced');
     }
     after();
   });
   container.addEventListener('change', (e) => {
     const t = e.target;
+    if (t.hasAttribute('data-request-view')) {
+      const block = t.closest('.req-block');
+      const invalid = block.querySelector('[data-request-field][aria-invalid=true]');
+      if (invalid) {
+        block.querySelector('[value=basic]').checked = true;
+        invalid.reportValidity();
+        return;
+      }
+      paintRequestView(block, t.value);
+      return;
+    }
     if (t.classList.contains('rb-enable')) {
       // 勾掉了整块压暗：一眼看出这条不参与
       t.closest('.req-block').classList.toggle('rb-off', !t.checked);
@@ -632,7 +650,7 @@ function bindBlockInputs(container, after) {
 }
 
 function bindBlockActions({ collect, render }, container) {
-  container.addEventListener('click', (e) => {
+  container.addEventListener('click', async (e) => {
     const head = e.target.closest('.rb-head');
     if (head && !e.target.closest('.rb-on, .rb-mini')) {
       const node = head.closest('.req-block');
@@ -651,7 +669,8 @@ function bindBlockActions({ collect, render }, container) {
 
     if (btn.classList.contains('rb-del') && i >= 0) {
       const item = cfg.fallbacks[i];
-    if (item.request.trim() && !confirm(T('opt_confirm_del_backup', '删掉「后备 $1$」？此操作不可撤销。', [String(i + 1)]))) return;
+      if (item.request.trim() && !await confirmAction(T('opt_delete_request', '删除后备请求'),
+        T('opt_confirm_del_backup', '删掉「后备 $1$」？此操作不可撤销。', [String(i + 1)]), T('opt_delete_action', '删除'))) return;
       cfg.fallbacks.splice(i, 1);
       blockFold.delete(item.id);
     } else if (btn.classList.contains('rb-up') && i > 0) {
@@ -790,6 +809,9 @@ function bindSortDrag(listEl, applyMove, opts = {}) {
       listEl.classList.add('is-dragging');
     }
 
+    const navTop = $('.bottom-nav')?.getBoundingClientRect().top ?? innerHeight;
+    if (e.clientY < 26) window.scrollBy(0, -12);
+    else if (e.clientY > navTop - 26 && e.clientY < navTop) window.scrollBy(0, 12);
     const spot = spotAt(e.clientX, e.clientY);
     clearMarks();
     if (!spot) return;
@@ -919,6 +941,7 @@ function chipsHtml(list) {
 
 /** 内置适配器的显示名（`ADAPTERS` 里查不到就退回它的 id） */
 function adapterLabel(id) {
+  if (id === 'bing') return T('opt_ui_bing_adapter', 'Bing 翻译');
   const a = ADAPTERS[id];
   // 自带 labelKey 的走查表（英文界面显示英文名），没有就退回中文原文
   if (a && a.labelKey) return T(a.labelKey, a.label);
@@ -963,6 +986,64 @@ function templateFieldHtml({boxAttrs, title, value, placeholder, image, open, hi
 
    块不再让用户选「类型」：`data-adapter` 是空的 = 请求模板，带值（目前只有 Bing）= 内置通道。
    `data-adapter` 同时是 `readBlock()` 取 adapter 的**唯一来源**（那个下拉没了）。 */
+const BASIC_FIELDS = {
+  url: ['opt_request_url', 'API 地址'],
+  key: ['opt_request_key', 'API Key'],
+  token: ['opt_request_token', 'Access Token'],
+  model: ['opt_request_model', '模型'],
+  language: ['opt_request_language', '识别语言'],
+  prompt: ['opt_request_prompt', '提示词']
+};
+const OCR_LANGUAGES = [
+  ['auto_detect', 'opt_request_auto', '自动检测'], ['CHN_ENG', 'opt_request_zh_en', '中英混合'],
+  ['ENG', 'lang_en', '英语'], ['JAP', 'lang_ja', '日语'], ['KOR', 'lang_ko', '韩语']
+];
+
+function fieldReference(value) {
+  const ref = variableReference(value);
+  return ref ? T('opt_request_variable', '引用变量 $1$', [ref]) : '';
+}
+
+function basicFieldsHtml(mapping) {
+  if (mapping.publicService) return '<p class="subtle">' + escapeHtml(T('opt_request_public', '免费公共接口，支持文字和图片翻译。')) + '</p>';
+  const fields = mapping.fields.map(({key, secret, value}) => {
+    const attributes = 'data-request-field="' + key + '"';
+    const caption = escapeHtml(T(...BASIC_FIELDS[key]));
+    let control;
+    if (key === 'prompt') {
+      control = '<textarea ' + attributes + ' rows="3" spellcheck="false">' + escapeHtml(value) + '</textarea>';
+    } else if (key === 'language') {
+      const choices = OCR_LANGUAGES.map(([v, k, t]) => ({v, k, t}));
+      if (!choices.some(choice => choice.v === value)) choices.push({v: value, t: value});
+      control = '<select ' + attributes + '>' + optionsHtml(choices, value) + '</select>';
+    } else {
+      control = '<input ' + attributes + ' type="' + (secret ? 'password' : 'text')
+        + '" autocomplete="off" spellcheck="false" value="' + escapeHtml(value) + '">';
+    }
+    const reference = secret ? '<span class="subtle basic-reference">' + escapeHtml(fieldReference(value)) + '</span>' : '';
+    return '<label class="field' + (key === 'url' || key === 'prompt' ? ' full' : '') + '"><span class="field-heading"><span>'
+      + caption + '</span>' + reference + '</span>' + control + '</label>';
+  }).join('');
+  return '<div class="basic-fields">' + fields + '<p class="subtle full basic-error" role="status"></p></div>';
+}
+
+function paintRequestView(node, requested) {
+  if (node.dataset.adapter) return;
+  const mapping = requestFields(node.querySelector('.rb-request').value, node.closest('#ocr-blocks') !== null);
+  const key = node.dataset.viewKey;
+  if (requested) requestModes.set(key, requested);
+  const mode = mapping && requestModes.get(key) !== 'advanced' ? 'basic' : 'advanced';
+  const modes = node.querySelector('.request-modes');
+  if (mapping) node.dataset.supportsBasic = '';
+  modes.hidden = !node.hasAttribute('data-supports-basic');
+  modes.querySelector('[value=basic]').disabled = !mapping;
+  modes.querySelector('[value="' + mode + '"]').checked = true;
+  const basic = node.querySelector('.rb-basic');
+  basic.hidden = mode !== 'basic';
+  node.querySelector('.rb-advanced').hidden = mode !== 'advanced';
+  if (mode === 'basic') basic.innerHTML = basicFieldsHtml(mapping);
+}
+
 function blockHtml(item, idx, lastIdx, opts = {}) {
   const isMain = !!item.main;
   const isAdapter = !!item.adapter;
@@ -991,8 +1072,13 @@ function blockHtml(item, idx, lastIdx, opts = {}) {
         <div class="field rb-adapter-field">
           <label>${escapeHtml(T('opt_label_adapter', '内置适配器'))}</label>
           <p class="rb-adapter-note">${escapeHtml(adapterLabel(item.adapter))}</p>
-          <p class="hint">${escapeHtml(adapterHint(item.adapter))}</p>
         </div>` : ''}
+        <div class="segments request-modes" role="radiogroup" aria-label="${escapeHtml(T('opt_request_mode', '请求编辑方式'))}" hidden>
+          <label><input type="radio" name="${escapeHtml(opts.ownerId)}-${idx}-view" value="basic" data-request-view><span>${escapeHtml(T('opt_request_basic', '基础配置'))}</span></label>
+          <label><input type="radio" name="${escapeHtml(opts.ownerId)}-${idx}-view" value="advanced" data-request-view><span>${escapeHtml(T('opt_request_advanced', '高级配置'))}</span></label>
+        </div>
+        <div class="rb-basic" hidden></div>
+        <div class="rb-advanced">
         ${templateFieldHtml({
           boxAttrs: 'class="rb-request"',
           title: ocr ? T('opt_ui_ocr_template', 'OCR 请求模板') : T('opt_tpl_title', '请求模板'),
@@ -1021,6 +1107,7 @@ function blockHtml(item, idx, lastIdx, opts = {}) {
             <input class="rb-path" type="text" spellcheck="false" placeholder="${escapeHtml(T('opt_ui_auto_path', '留空自动识别'))}" value="${escapeHtml(item.path)}">
           </label>
         </div>
+        </div>
       </div>
     </div>`;
 }
@@ -1037,10 +1124,12 @@ function foldOpen(id, main = false) {
 function renderBlocksInto(host, owner, opts) {
   const all = allRequests(owner);
   const tplSel = opts.ocr ? '.rb-request' : '.rb-request, .rb-image-request';
-  host.innerHTML = all.map((it, i) => blockHtml(it, i, all.length - 1, opts)).join('');
+  host.innerHTML = all.map((it, i) => blockHtml(it, i, all.length - 1, {...opts, ownerId: host.id + '-' + owner.id})).join('');
   /* 折叠 / 勾选这两个状态是**这里贴上去的**，不写进模板 —— 模板里 `class="req-block${…}"`
      一旦插值，`check-dom` 那套「从 class="…" 字面量里收类名」就认不出 `req-block` 了。 */
   host.querySelectorAll('.req-block').forEach((node) => {
+    node.dataset.viewKey = host.id + '/' + owner.id + '/' + node.dataset.id;
+    paintRequestView(node);
     const open = foldOpen(node.dataset.id, node === host.firstElementChild);
     node.classList.toggle('open', open);
     node.querySelector('.rb-fold').setAttribute('aria-expanded', String(open));
@@ -1071,7 +1160,7 @@ function renderOcrBlocks(p) {
  * （收起来的 `<details>` 里 `selectionStart` 恒为 0、`focus()` 是空操作）。
  */
 function bindChips(container) {
-  container.addEventListener('click', (e) => {
+  container.addEventListener('click', async (e) => {
     const chip = e.target.closest('.chip');
     if (!chip) return;
     const block = chip.closest('.req-block');
@@ -1120,7 +1209,8 @@ function renderEditor() {
   els.emptyHint.hidden = true;
 
   els.name.value = cfg.name || '';
-  $('#cfg-editor-title').textContent = cfg.name || T('opt_unnamed', '(未命名)');
+  els.name.title = cfg.name || T('opt_unnamed', '(未命名)');
+  els.name.placeholder = T('opt_unnamed', '(未命名)');
   els.testResult.hidden = true;
   els.testResult.innerHTML = '';
   renderBlocks(cfg);
@@ -1173,15 +1263,7 @@ function bindConfigList() {
       name: T('opt_new_cfg', '新配置'),
       note: '',
       adapter: '',
-      request:
-        'curl https://example.com/v1/chat/completions \\\n' +
-        '  -H "Content-Type: application/json" \\\n' +
-        '  -H "Authorization: Bearer {{apiKey}}" \\\n' +
-        "  -d '{\n" +
-        '  "model": "your-model",\n' +
-        '  "messages": [{"role": "user", "content": "{{text}}"}],\n' +
-        '  "stream": true\n' +
-        "}'",
+      request: NEW_TRANSLATION_REQUEST,
       path: '',
       responseMode: 'auto',
       imageRequest: '',
@@ -1201,7 +1283,7 @@ function bindConfigList() {
 
 function bindEditor() {
   els.name.addEventListener('input', () => {
-    $('#cfg-editor-title').textContent = els.name.value || T('opt_unnamed', '(未命名)');
+    els.name.title = els.name.value || T('opt_unnamed', '(未命名)');
     collectEditor();
     updatePreview();
     scheduleSave();
@@ -1282,14 +1364,15 @@ $('#btn-duplicate').addEventListener('click', () => {
     refreshConfigViews();
   });
 
-  $('#btn-delete').addEventListener('click', () => {
+  $('#btn-delete').addEventListener('click', async () => {
     const cfg = currentConfig();
     if (!cfg) return;
     if (state.configs.length === 1) {
       alert(T('opt_need_one_cfg', '至少要留一条配置。'));
       return;
     }
-    if (!confirm(T('opt_del_confirm_a', '确定删除「') + (cfg.name || T('opt_untitled', '未命名')) + T('opt_del_confirm_b', '」？此操作不可撤销。'))) return;
+    if (!await confirmAction(T('opt_ui_delete_config', '删除配置'), T('opt_del_confirm_a', '确定删除「') +
+      (cfg.name || T('opt_untitled', '未命名')) + T('opt_del_confirm_b', '」？此操作不可撤销。'), T('opt_delete_action', '删除'))) return;
 
     const idx = state.configs.findIndex((c) => c.id === cfg.id);
     state.configs.splice(idx, 1);
@@ -1388,7 +1471,7 @@ function previewBlock(b, vars, ivars) {
   if (b.kind === 'adapter') {
     const a = ADAPTERS[b.adapter];
     return a
-      ? T('opt_adapter_prefix', '内置适配器：') + a.label + '\n\n' + a.hint + '\n\n' + T('opt_adapter_note', '这条请求不走请求模板，翻译流程由扩展内置的代码完成。')
+      ? T('opt_adapter_prefix', '内置适配器：') + adapterLabel(b.adapter) + '\n\n' + adapterHint(b.adapter)
       : T('opt_t_noadapter', '(没有可用的内置适配器)');
   }
   if (!b.request.trim()) return T('opt_t_notpl', '(请求模板为空)');
@@ -1764,9 +1847,10 @@ function bindVars() {
     revealVariable = !revealVariable;
     renderVarValue(row);
   });
-  $('#var-delete').addEventListener('click', () => {
+  $('#var-delete').addEventListener('click', async () => {
     const row = state.vars[editingVarIdx];
-    if (!row || !confirm(T('opt_ui_delete_var', '确定删除「$1$」？', [row.name || T('opt_unnamed', '(未命名)')]))) return;
+    if (!row || !await confirmAction(T('opt_delete_variable', '删除变量'),
+      T('opt_ui_delete_var', '确定删除「$1$」？', [row.name || T('opt_unnamed', '(未命名)')]), T('opt_delete_action', '删除'))) return;
     state.vars.splice(editingVarIdx, 1);
     editingVarIdx = Math.min(editingVarIdx, state.vars.length - 1);
     if (editingVarIdx < 0) editor.closest('.tabpanel').classList.remove('show-detail');
@@ -1957,15 +2041,15 @@ function renderImageConfigList() {
   $('#ocr-count').textContent = list.length;
   select.replaceChildren(...list.map(config => newOption(config.id, config.name)));
   select.disabled = !list.length;
+  syncImageConfigUi(list.length > 0);
 
   // 一条都没有：把引导摊在列表里，别只留个空框
   if (!list.length) {
+    $('#ocr-image-title').textContent = T('opt_img_configs', '图片配置');
+    $('#ocr-image-title').title = '';
     const empty = document.createElement('p');
     empty.className = 'hint';
-    empty.innerHTML =
-      '还没有任何配置填过「图片请求模板」。<br>' +
-      '去<b>「配置」</b>栏挑一条能看图的那个模型，把「图片请求模板」填上，它就会出现在这里。' +
-      '<br>（填在主请求上或任意一条后备上都认。）';
+    empty.textContent = T('opt_image_list_empty', '在“配置”页给主请求或后备请求填写图片模板后，配置会显示在这里。');
     els.imgcfgList.appendChild(empty);
     if (state.ocr.imageConfigId) {
       state.ocr.imageConfigId = '';
@@ -1982,6 +2066,15 @@ function renderImageConfigList() {
   }
 
   select.value = state.ocr.imageConfigId;
+  const config = imageTestConfig();
+  const imageName = config.name;
+  const item = imageItem(config);
+  const index = config.fallbacks.findIndex(fallback => fallback.id === item.id);
+  const source = item.main ? T('opt_main_req', '主请求')
+    : T('opt_ui_fallback_index', '后备 $1$', [String(index + 1)]);
+  $('#image-request-source').textContent = T('opt_source_image_template', '$1$ · 图片模板。', [source]);
+  $('#ocr-image-title').textContent = imageName;
+  $('#ocr-image-title').title = imageName;
   for (let i = 0; i < list.length; i++) {
     const c = list[i];
     // 副标题摊的是「真会去发图的那一条」的模板地址 —— 图片模板挂在后备上时，
@@ -2057,36 +2150,22 @@ function renderOcrDisabled() {
   els.imgcfgList.hidden = !off;
   els.ocrListTitle.textContent = off ? T('opt_img_configs', '图片配置') : T('opt_ui_ocr_list', 'OCR 列表');
   $('#image-config-picker').hidden = !off;
-  const title = off ? T('opt_ui_ocr_direct', '禁用外置 OCR') : currentOcrProvider()?.name || '';
-  $('#ocr-editor-title').textContent = title;
-  $('#ocr-editor-title').title = title;
+  els.oName.hidden = off;
+  $('#ocr-image-title').hidden = !off;
+  $('#o-save-status').hidden = off;
   // 图片配置不能在 OCR 栏新建 —— 数据只有一份，维护入口也只留一个
   els.btnOcrNew.hidden = off;
-  els.imgcfgFoot.hidden = !off;
   els.ocrEditor.classList.toggle('is-imgcfg', off);
   // 先画列表（里面会把失效的选中项落回第一条），再决定测试按钮的状态
   if (off) renderImageConfigList();
-
-  /* 那块「测试」在直传模式下**不关掉，换个对象**：不测这条 OCR 供应商，
-     改测左边选中的那条图片配置的「图片请求模板」—— 不然勾上之后这条路就没法试了
-     （右键截一张图才知道对不对，太贵）。一条图片配置都没填时才禁用。 */
-  const imgForTest = off ? imageTestConfig() : null;
-  els.ocrTestBtn.disabled = off && !imgForTest;
-  els.ocrTestBtn.title = off
-    ? (imgForTest
-        ? T('ocr_test_title_img', '用的是左边选中那条「图片配置」的图片请求模板')
-        : T('ocr_test_title_none', '还没有配置填过「图片请求模板」，去「配置」栏给能看图的那条填上'))
-    : '';
+  else syncImageConfigUi(false);
   els.oTestLabel.textContent = off ? T('opt_ui_image_test', '图片翻译测试') : T('opt_ui_ocr_test', 'OCR 测试');
-  els.ocrTestHint.hidden = off;
-  els.imgcfgTestHint.hidden = !off;
   if (!off) $('#ocr-count').textContent = state.ocr.providers.length;
   /* 图是从哪一条发出去的 —— 图片模板挂在后备上时摊的是后备那一段，
      不说一句会让人以为预览摊错了（「我主请求里没写这个啊」）。 */
-  const imgOn = imgForTest ? imageItem(imgForTest) : null;
-  els.oPreviewSummary.textContent = off
-    ? T('ocr_preview_summary_img', '这次会发出去的请求（示例图 · Key 已打码）')
-    : T('opt_set_011', '这次会发出去的请求（Key 已打码）');
+  $('#ocr-preview-privacy').textContent = off
+    ? T('opt_preview_masked_image', '预览使用示例图，凭据已遮蔽。')
+    : T('opt_preview_masked', '凭据已遮蔽。');
 }
 
 function renderOcrEditor() {
@@ -2109,6 +2188,8 @@ function renderOcrEditor() {
   }
 
   els.oName.value = p.name || '';
+  els.oName.title = els.oName.value;
+  els.oName.placeholder = T('opt_unnamed', '(未命名)');
   /* note 是内置供应商数据，但它是给人看的一句话 —— 界面切成英文时留着中文很扎眼。
      所以每条带一个 noteKey，有就走查表（查不到回退 p.note 原文）。 */
   const noteText = p.noteKey ? T(p.noteKey, p.note || '') : (p.note || '');
@@ -2226,7 +2307,7 @@ function bindOcr() {
   });
 
   els.oName.addEventListener('input', () => {
-    $('#ocr-editor-title').textContent = els.oName.value || T('opt_unnamed', '(未命名)');
+    els.oName.title = els.oName.value || T('opt_unnamed', '(未命名)');
     const p = currentOcrProvider();
     if (!p) return;
     p.name = els.oName.value;
@@ -2312,10 +2393,11 @@ function bindOcr() {
     scheduleSave();
   });
 
-  els.btnOcrDelete.addEventListener('click', () => {
+  els.btnOcrDelete.addEventListener('click', async () => {
     const p = currentOcrProvider();
     if (!p || state.ocr.providers.length <= 1) return;
-  if (!confirm(T('opt_confirm_del_provider', '删除 OCR 供应商「$1$」？', [p.name]))) return;
+    if (!await confirmAction(T('opt_delete_ocr', '删除 OCR 配置'),
+      T('opt_confirm_del_provider', '删除 OCR 供应商「$1$」？', [p.name]), T('opt_delete_action', '删除'))) return;
 
     const idx = state.ocr.providers.findIndex((x) => x.id === p.id);
     state.ocr.providers.splice(idx, 1);
@@ -2717,6 +2799,7 @@ function renderPanelPreview() {
        语法上被上一句吞掉所以一直没报错 —— 纯死代码，已删（第八版 §1 指出）。 */
     panel.innerHTML = RTPanelCore.shellHtml();
     shadow.appendChild(panel);
+    RTPanelCore.mountSelects(shadow);
 
     /* 真面板在网页上是 fixed 弹层；预览也照做 —— 不再塞进框里、不再 transform 缩放。
        位置先给个默认（设置页右侧偏上），之后可以拖。 */
@@ -2797,6 +2880,7 @@ function renderPanelPreview() {
     if (t === "dark") return false;
     return !(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
   })();
+  window.RTM3Theme.apply(host, s.themeColor, pvLight ? "light" : "dark");
   panel.classList.toggle("light", pvLight);
   panel.dataset.rtTheme = pvLight ? "light" : "dark";
 
@@ -2825,9 +2909,9 @@ function renderPanelPreview() {
         { k: "命中路径", v: "choices[0].delta.content" },
         { k: "模型", v: "deepseek-v4-flash-0731" }
       ]);
-      diag.hidden = false;
+      diag.hidden = true;
     }
-    if (more) more.hidden = false;
+    if (more) more.disabled = false;
   }
   {
     const dot = host.shadowRoot.querySelector(".rt-dot");
@@ -2881,10 +2965,18 @@ function renderPanelPreview() {
   outEl.classList.remove("empty");
   /* 结果区：**和网页上同一份 HTML**（lib/panel-core.js）。两个槽位 ——
      一条「完成」一条「失败」，这样 err 态的样子也能看到。 */
+  const previewConfig = (state.configs || []).find(c => c.id === state.activeConfigId);
   outEl.innerHTML = RTPanelCore.slotsHtml([
-    { configId: "pv-1", name: "配置甲", state: "done", text: PV_SAMPLE_OUT, error: "", statusText: "" },
-    { configId: "pv-2", name: "配置乙", state: "fail", text: "", error: "译文：这一条故意标成失败，用来看 err 态的颜色。", statusText: "" }
+    { configId: state.activeConfigId || 'preview', name: previewConfig?.name || '', state: 'done', text: PV_SAMPLE_OUT, error: '', statusText: '' }
   ], {});
+  outEl.firstElementChild.dataset.singleMatch = 'true';
+  host.shadowRoot.querySelector(".rt-single-actions").replaceChildren(outEl.querySelector(".rt-acts"));
+  const previewMore = host.shadowRoot.querySelector(".rt-more");
+  previewMore.onclick = () => {
+    const diag = host.shadowRoot.querySelector(".rt-diag");
+    diag.hidden = !diag.hidden;
+    previewMore.setAttribute('aria-expanded', String(!diag.hidden));
+  };
   srcEl.classList.toggle("hidden", !(s.showOriginal !== false));
 }
 
@@ -2899,7 +2991,7 @@ function pvBindDrag(panel) {
   let py = 0;
 
   head.addEventListener("mousedown", (e) => {
-    if (e.target.closest(".rt-btn") || e.target.closest(".rt-cfg") || e.target.closest(".rt-lang")) return;
+    if (e.target.closest(".rt-btn") || e.target.closest(".rt-select") || e.target.closest(".rt-cfg") || e.target.closest(".rt-lang")) return;
     /* fixed + right 定位时 left 是 auto，先量出真实 left 再改成显式值，否则算不准。 */
     const r = panel.getBoundingClientRect();
     panel.style.left = r.left + "px";
@@ -2953,7 +3045,95 @@ function syncSlotInsertRow() {
   const n = clampSlots(state.settings.panelSlots);
   row.hidden = n <= 1 && !row.hasAttribute('data-search-revealed');
   row.querySelector('select').disabled = n <= 1;
-  row.querySelector('[data-slot-help]').hidden = n > 1;
+}
+
+function syncSettingsSegments() {
+  for (const select of document.querySelectorAll('select[data-segment]')) {
+    const group = select.nextElementSibling?.classList.contains('segments')
+      ? select.nextElementSibling : document.createElement('div');
+    if (!group.isConnected) {
+      group.className = 'segments';
+      group.setAttribute('role', 'radiogroup');
+      group.setAttribute('aria-label', select.labels[0]?.textContent.trim() || select.id);
+      select.after(group);
+      group.addEventListener('change', event => {
+        if (!event.target.checked) return;
+        select.value = event.target.value;
+        select.dispatchEvent(new Event('input', {bubbles: true}));
+        select.dispatchEvent(new Event('change', {bubbles: true}));
+      });
+      select.addEventListener('input', syncSettingsSegments);
+    }
+
+    const options = [...select.options];
+    const existing = [...group.querySelectorAll('input')];
+    if (existing.length !== options.length || options.some((option, i) =>
+      existing[i].value !== option.value || existing[i].nextSibling.textContent !== option.textContent)) {
+      group.replaceChildren(...options.map(option => {
+        const label = document.createElement('label');
+        const radio = document.createElement('input');
+        radio.type = 'radio';
+        radio.name = select.id + '-segment';
+        radio.value = option.value;
+        const text = document.createElement('span');
+        text.textContent = option.textContent;
+        label.append(radio, text);
+        if (select === els.trigStyles) {
+          const preview = document.createElement('div');
+          preview.className = 'trig-preview';
+          preview.dataset.previewStyle = option.value;
+          label.append(preview);
+        }
+        return label;
+      }));
+    }
+    for (const radio of group.querySelectorAll('input')) {
+      radio.checked = radio.value === select.value;
+      radio.disabled = select.disabled || options.find(option => option.value === radio.value).disabled;
+    }
+  }
+}
+
+function settingHelp(keys) {
+  return (keys || '').split(' ').filter(Boolean).map(key => T(key, '').replace(/<\/?code>/gi, '')).join('\n');
+}
+
+function bindSettingHelp(settings) {
+  for (const label of settings.querySelectorAll('.card-label[data-setting-help]')) {
+    const title = label.firstElementChild.textContent.trim();
+    const name = T('opt_setting_info_label', '查看「$1$」的说明', [title]);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'icon-btn ghost setting-info';
+    button.title = name;
+    button.setAttribute('aria-label', name);
+    button.setAttribute('aria-haspopup', 'dialog');
+    button.innerHTML = uiIcon('info');
+    button.addEventListener('click', () => showActionDialog(title, settingHelp(label.dataset.settingHelp)));
+    label.append(button);
+  }
+}
+
+async function showActionDialog(title, description, action = '') {
+  const dialog = $('#confirm-action');
+  if (dialog.open) return false;
+  $('#confirm-title').textContent = title;
+  $('#confirm-description').textContent = description;
+  const confirm = dialog.querySelector('[value=confirm]');
+  confirm.hidden = !action;
+  confirm.textContent = action;
+  dialog.querySelector('[value=cancel]').textContent = action
+    ? T('opt_set_121', '取消')
+    : T('opt_setting_close', '关闭');
+  dialog.returnValue = '';
+  const closed = new Promise(resolve => dialog.addEventListener('close', resolve, {once: true}));
+  dialog.showModal();
+  await closed;
+  return dialog.returnValue === 'confirm';
+}
+
+function confirmAction(title, description, action = title) {
+  return showActionDialog(title, description, action);
 }
 
 function renderSettings() {
@@ -2968,6 +3148,7 @@ function renderSettings() {
   // 这两条不是原生控件驱动的，单独走
   renderTargetLang();
   renderTriggerStyles();
+  syncSettingsSegments();
   updateTriggerSvgMsg();
   renderPreview();
   renderHistory();
@@ -2998,7 +3179,7 @@ function renderHistory() {
     : all;
 
   if (!all.length) {
-    list.innerHTML = '<p class="hint">' + T('opt_hist_empty', '还没有记录（或上面把条数设成了 0）。') + '</p>';
+    list.innerHTML = '<p class="hint">' + T('opt_hist_empty', '暂无翻译记录。') + '</p>';
     return;
   }
   if (!items.length) {
@@ -3126,9 +3307,7 @@ function updateTriggerSvgMsg() {
     if (style.id === 'custom') {
       els.trigSvgMsg.hidden = false;
       els.trigSvgMsg.className = 'trig-svg-msg warn';
-      els.trigSvgMsg.textContent =
-    T('opt_custom_icon_empty', '「自定义」还没填图标 —— 上面的卡片先空着，页面上的按钮用一个示例图标占位；') +
-    T('opt_custom_icon_hint', '粘一段自己的 SVG 进来，两边都会换成它。');
+      els.trigSvgMsg.textContent = T('opt_custom_icon_empty', '填写 SVG 前，网页上的翻译按钮使用示例图标。');
     } else {
       els.trigSvgMsg.hidden = true;
       els.trigSvgMsg.textContent = '';
@@ -3145,39 +3324,80 @@ function updateTriggerSvgMsg() {
 
 /* 预览活在自己的 shadow root 里，注入的是和真实按钮**同一份** TRIGGER_CSS ——
    这里看到什么样，页面上就是什么样。顺便也不会让预览的样式漏进设置页本身。 */
-let previewRoot = null;
-
-function ensurePreviewRoot() {
-  if (previewRoot) return previewRoot;
-  if (!els.trigPreview) return null;
-  previewRoot = els.trigPreview.attachShadow({ mode: 'open' });
-  previewRoot.innerHTML =
+function ensurePreviewRoot(preview) {
+  if (preview.shadowRoot) return preview.shadowRoot;
+  const root = preview.attachShadow({ mode: 'open' });
+  root.innerHTML =
     '<style>' + TRIGGER_CSS + '</style>' +
-    // 真实按钮是 fixed 定位、靠 .show 才显示；预览里让它老实待在框里
-    '<style>.rt-trigger { position: relative; display: flex; }</style>' +
+    '<style>:host { display: flex; align-items: center; justify-content: center; } .rt-trigger { position: relative; display: flex; box-sizing: border-box; flex: none; }</style>' +
     '<div class="rt-trigger"><span class="rt-ico"></span></div>';
-  return previewRoot;
+  return root;
 }
 
 function renderPreview() {
-  const root = ensurePreviewRoot();
-  if (!root || !state) return;
-
-  const s = getTriggerStyle(state.settings.triggerStyle);
-  const el = root.querySelector('.rt-trigger');
+  if (!state) return;
   const light = document.documentElement.dataset.theme === 'light';
-  const size = Math.min(72, clampTriggerSize(state.settings.triggerSize));
-
-  el.className = 'rt-trigger s-' + s.id + (light ? ' light' : '');
-  el.style.setProperty('--rt-tr-size', size + 'px');
-  el.style.setProperty('--rt-tr-radius', s.round ? (size * 0.29).toFixed(2) + 'px' : '50%');
-  el.style.setProperty('--rt-tr-font', (size * 0.47).toFixed(2) + 'px');
-  // 和 content.js 一样：自己填的 SVG 优先，底座仍按选中的预设。
-  // 「自定义」没填图标时页面按钮顶的是示例图标（content.js 那份），预览得跟它一致 ——
-  // 预览的意义就是「页面上按钮长什么样」，它不能空着。
+  const size = clampTriggerSize(state.settings.triggerSize);
   const custom = parseTriggerSvg(state.settings.triggerSvg).svg;
-  const fallback = s.id === 'custom' ? TRIGGER_SVG_SAMPLE : escapeHtml(s.text || '');
-  root.querySelector('.rt-ico').innerHTML = custom || s.svg || fallback;
+  for (const preview of document.querySelectorAll('.trig-preview')) {
+    const s = getTriggerStyle(preview.dataset.previewStyle);
+    const root = ensurePreviewRoot(preview);
+    const el = root.querySelector('.rt-trigger');
+    el.className = 'rt-trigger s-' + s.id + (light ? ' light' : '');
+    el.style.setProperty('--rt-tr-size', size + 'px');
+    el.style.setProperty('--rt-tr-radius', s.round ? (size * 0.29).toFixed(2) + 'px' : '50%');
+    el.style.setProperty('--rt-tr-font', (size * 0.47).toFixed(2) + 'px');
+    const fallback = s.id === 'custom' ? TRIGGER_SVG_SAMPLE : BRAND_MARK_SVG;
+    root.querySelector('.rt-ico').innerHTML = custom || s.svg || fallback;
+  }
+}
+
+
+const colorSeeds = {purple:'#6750A4',blue:'#415F91',green:'#386A5D',warm:'#984715',rose:'#984061',gray:'#676767'};
+const colorNames = {purple:['opt_palette_purple','紫色'],blue:['opt_palette_blue','蓝色'],green:['opt_palette_green','绿色'],warm:['opt_palette_warm','暖色'],rose:['opt_palette_rose','玫红色'],gray:['opt_palette_gray','中性灰']};
+let colorTouched = false;
+function updatePalette() {
+  const current = state?.settings?.themeColor || 'purple';
+  document.querySelectorAll('#palette-menu button').forEach(button => {
+    const selected = button.dataset.color === current;
+    button.setAttribute('aria-pressed', String(selected));
+    button.innerHTML = selected ? uiIcon('check') : '';
+  });
+}
+function bindPalette() {
+  const toggle = $('#palette-toggle'), menu = $('#palette-menu');
+  for (const [name, seed] of Object.entries(colorSeeds)) {
+    const button = document.createElement('button');
+    button.type = 'button'; button.dataset.color = name;
+    button.style.setProperty('--swatch', seed);
+    button.title = T(...colorNames[name]);
+    button.setAttribute('aria-label', button.title);
+    button.addEventListener('click', () => {
+      state.settings.themeColor = name;
+      colorTouched = true;
+      applyTheme(); close(); persist(false);
+    });
+    menu.append(button);
+  }
+  const close = (focus = false) => { menu.hidden = true; toggle.setAttribute('aria-expanded', 'false'); if (focus) toggle.focus(); };
+  toggle.addEventListener('click', () => {
+    menu.hidden = !menu.hidden;
+    toggle.setAttribute('aria-expanded', String(!menu.hidden));
+    if (!menu.hidden) (menu.querySelector('[aria-pressed=true]') || menu.firstElementChild)?.focus();
+  });
+  document.addEventListener('pointerdown', e => { if (!e.target.closest('.palette-picker')) close(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !menu.hidden) { e.preventDefault(); close(true); } });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !changes.state || !state || colorTouched) return;
+    const settings = changes.state.newValue?.settings;
+    if (!settings) return;
+    state.settings.themeColor = settings.themeColor || 'purple';
+    state.settings.theme = settings.theme || 'auto';
+    $('#s-theme').value = state.settings.theme;
+    syncSettingsSegments();
+    applyTheme();
+  });
+  updatePalette();
 }
 
 /** 设置页自己也跟着主题走（划词面板由 content.js 单独处理） */
@@ -3190,6 +3410,9 @@ function applyTheme() {
     dark = q ? !q.matches : true;
   }
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  window.RTM3Theme.apply(document.documentElement, state?.settings?.themeColor, dark ? 'dark' : 'light');
+  updatePalette();
+  if (document.getElementById('panel-preview')?.shadowRoot) renderPanelPreview();
   $('#theme-toggle').setAttribute('aria-pressed', String(dark));
 
   renderPreview(); // 预览里的按钮底色也跟着主题变
@@ -3215,18 +3438,13 @@ function bindSettings() {
     };
     const render = () => {
       chrome.commands.getAll((list) => {
-        const rows = Object.entries(NAMES).map(([name, label]) => {
+        const rows = Object.entries(NAMES).flatMap(([name, label]) => {
           const cur = (list.find((c) => c.name === name) || {}).shortcut;
-          const row = document.createElement('span');
-          row.append(label, ' ');
-          if (cur) {
-            const key = document.createElement('kbd');
-            key.textContent = cur.split('+').join(' + ');
-            row.append(key);
-          } else {
-            row.append(T('opt_hotkey_unset', '未设置'));
-          }
-          return row;
+          const nameNode = document.createElement('span');
+          nameNode.textContent = label;
+          const value = document.createElement(cur ? 'kbd' : 'span');
+          value.textContent = cur ? cur.split('+').join(' + ') : T('opt_hotkey_unset', '未设置');
+          return [nameNode, value];
         });
         $('#hotkey-list').replaceChildren(...rows);
       });
@@ -3323,28 +3541,25 @@ function bindSettings() {
   els.btnTrigSvgDemo.addEventListener('click', () => setTriggerSvg(TRIGGER_SVG_SAMPLE));
   els.btnTrigSvgClear.addEventListener('click', () => setTriggerSvg(''));
 
-  /* 「不再显示」是把**键**存进 `hiddenHints` 的，只清这一项就能全放回来 ——
-     不用连带清别的设置。没有藏过任何一句时这个按钮零存在意义，直接藏掉。 */
-  const restoreHints = $('#btn-restore-hints');
-  restoreHints.addEventListener('click', () => {
-    state.settings.hiddenHints = [];
-    persist();
-    for (const el of document.querySelectorAll('[data-hint]')) el.classList.remove('hint-off');
-    syncRestoreHints();
-  setSaveStatus(T('opt_hints_restored', '已放回全部说明'));
-  });
 
   // 清空翻译记录：只动 history 字段，配置 / 设置 / OCR 一概不碰
   $('#btn-clear-history').addEventListener('click', async () => {
-  if (!confirm(T('opt_confirm_clear_history', '清空全部翻译记录？不可恢复。'))) return;
+    if (!await confirmAction(T('opt_clear_history_action', '清空翻译记录'),
+      T('opt_confirm_clear_history', '清空全部翻译记录？不可恢复。'))) return;
     state.history = [];
     await persist();
     renderHistory();
-  setSaveStatus(T('opt_history_cleared', '已清空翻译记录'));
+    setSaveStatus(T('opt_history_cleared', '已清空翻译记录'));
   });
 
   $('#btn-reset').addEventListener('click', async () => {
-  if (!confirm(T('opt_confirm_restore_defaults', '会删掉你所有自定义配置，恢复成内置的那几条。确定？'))) return;
+    if (!await confirmAction(T('opt_set_117', '恢复全部默认配置'),
+      T('opt_confirm_restore_defaults', '清除自定义配置、变量、OCR、设置和翻译记录。'), T('opt_reset_action', '恢复默认'))) return;
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    ++saveSeq;
+    panelTouched.clear();
+    activeConfigChanged = false;
     await chrome.storage.local.remove('state');
     state = await loadState();
     editingId = state.activeConfigId;
@@ -3359,7 +3574,7 @@ function bindSettings() {
     renderOcrEditor();
     renderVars();
     renderSettings();
-  setSaveStatus(T('opt_restored_defaults', '已恢复默认'));
+    setSaveStatus(T('opt_restored_defaults', '已恢复默认'));
   });
 }
 
@@ -3382,6 +3597,7 @@ function pickImportConfigs(parsed, exportedAt) {
     const mergeBox = $('#import-merge');
     const errEl = $('#import-err');
     const noteEl = $('#import-note');
+    const riskEl = $('#import-risk');
     if (!dlg || !list) { resolve(null); return; }
 
     const mine = new Set(state.configs.map((c) => c.name));
@@ -3390,6 +3606,10 @@ function pickImportConfigs(parsed, exportedAt) {
     errEl.textContent = '';
     errEl.classList.remove('is-err');
     mergeBox.checked = false;
+    const showRisk = () => {
+      riskEl.textContent = settingHelp(mergeBox.checked ? 'opt_import_merge_info' : 'opt_set_112');
+    };
+    showRisk();
 
     /* 默认全勾（原行为是「全都要」，不能因为加了勾选就让老用户多点一次）。
        已存在的同名配置在副标题里标一下，用户能看出「这条会覆盖」 */
@@ -3420,10 +3640,12 @@ function pickImportConfigs(parsed, exportedAt) {
     };
     allBox.addEventListener('change', onAll);
     list.addEventListener('change', onOne);
+    mergeBox.addEventListener('change', showRisk);
 
     const done = (ok) => {
       allBox.removeEventListener('change', onAll);
       list.removeEventListener('change', onOne);
+      mergeBox.removeEventListener('change', showRisk);
       $('#import-ok').removeEventListener('click', okYes);
       $('#import-cancel').removeEventListener('click', okNo);
       dlg.hidden = true;
@@ -3537,14 +3759,28 @@ function downloadJson(text) {
 async function bindUiLang() {
   const sel = $('#s-ui-lang');
   const status = $('#ui-lang-status');
+  const statusText = $('#ui-lang-status-text');
+  const closeStatus = $('#ui-lang-status-close');
   if (!sel) return;
   const api = window.RTI18n;
   if (!api || !api.fetchIndex) return;
 
-  const say = (text, isErr) => {
+  let statusTimer;
+  const dismissStatus = () => {
+    clearTimeout(statusTimer);
+    status.hidden = true;
+    statusText.textContent = '';
+    closeStatus.hidden = true;
+  };
+  closeStatus.addEventListener('click', dismissStatus);
+  const say = (text, isErr, dismissible = false) => {
     if (!status) return;
-    status.textContent = text;
+    clearTimeout(statusTimer);
+    statusText.textContent = text;
+    status.hidden = !text;
+    closeStatus.hidden = !dismissible;
     status.classList.toggle('is-err', !!isErr);
+    if (dismissible) statusTimer = setTimeout(dismissStatus, 6000);
   };
 
   /* 当前装了哪种就停在哪。装的是下载来的包时，那个 <option> 还不存在 ——
@@ -3589,7 +3825,7 @@ async function bindUiLang() {
       for (const item of usable) langFiles[item.code] = item.meta.file || '';
       sel.value = keep || '';
       if (usable.length) {
-        say(T('opt_ui_lang_count_pre', '核实到') + ' ' + usable.length + ' ' + T('opt_ui_lang_count_post', '种可用语言，选一种再点一次。'));
+        say(T('opt_ui_lang_count_pre', '核实到') + ' ' + usable.length + ' ' + T('opt_ui_lang_count_post', '种可用语言，选中即会下载。'), false, true);
       } else {
         say(T('opt_ui_lang_none', '清单里没有可用的语言包（文件都取不到）。'), true);
       }
@@ -3660,14 +3896,17 @@ async function bindUiLang() {
 
 function bindImportExport() {
   $('#btn-export').addEventListener('click', async () => {
+    const encrypt = els.chkEncrypt.checked;
+    if (!encrypt && !await confirmAction(T('opt_set_104', '备份配置'), settingHelp('opt_set_106'),
+      T('opt_export_plain_action', '导出未加密备份'))) return;
     // 正在编辑器里改的那条先收进 state，免得导出的还是上一版
     collectEditor();
     const plain = exportState(state);
 
-    if (els.chkEncrypt.checked) {
+    if (encrypt) {
       const pass = await askPassphrase({
     title: T('opt_export_password_title', '设置导出口令'),
-    note: T('opt_export_password_note', '口令不保存在任何地方 —— 丢了它，这份文件就解不开了。'),
+    note: T('opt_export_password_note', '请保管口令。恢复这份备份时需要它。'),
         twice: true
       });
       if (!pass) return; // 取消就不导出，勾选框保持原样
@@ -3681,10 +3920,9 @@ function bindImportExport() {
   setSaveStatus(T('opt_exported_n', '已导出 $1$ 条配置', [String(state.configs.length)]));
   });
 
-  /* 分享版：把名字里含 key 的变量值清空，发给别人填他自己的。
-     只能处理「变量形式」的 Key —— 请求模板正文里手写死的那份识别不出来，
-     页面 hint 里已经明说，这里不再弹确认框烦人。 */
-  $('#btn-export-share').addEventListener('click', () => {
+  $('#btn-export-share').addEventListener('click', async () => {
+    if (!await confirmAction(T('opt_set_107', '分享配置'), settingHelp('opt_set_109'),
+      T('opt_share_export', '导出分享版'))) return;
     collectEditor();
     const shared = structuredClone(state);
     let cleared = 0;
@@ -3839,6 +4077,7 @@ async function persist(showStatus = true) {
        过期说明已有更新的保存发起 —— 直接放弃，别拿旧 state 覆盖新写入。 */
     if (mySave !== saveSeq) return;
     adoptPanelOwned(state, saved, panelTouched);
+    if (!colorTouched && saved?.settings) state.settings.themeColor = saved.settings.themeColor || 'purple';
     if (!activeConfigChanged && saved?.activeConfigId && state.configs.some(config => config.id === saved.activeConfigId)) {
       state.activeConfigId = saved.activeConfigId;
     }
@@ -3854,51 +4093,37 @@ async function persist(showStatus = true) {
     setSaveStatus(T('opt_save_failed', '保存失败：') + String((err && err.message) || err).slice(0, 60), true);
     return;
   }
+  if (mySave === saveSeq) colorTouched = false;
   if (mySave !== saveSeq) return;   // 落盘后才变旧：不闪「已保存」，免得误导
   activeConfigChanged = false;
   if (showStatus) flashSaved();
 }
-/** 有隐藏的说明时才显示恢复入口。 */
-function syncRestoreHints() {
-  const b = document.querySelector('#btn-restore-hints');
-  if (b) b.hidden = !(state.settings.hiddenHints || []).length;
+function syncImageConfigUi(hasConfigs) {
+  const direct = state.ocr.disabled;
+  const dismissed = state.settings.hiddenHints.includes(els.imgcfgFoot.dataset.hint);
+  $('#image-source-meta').hidden = !direct || !hasConfigs;
+  els.imgcfgFoot.hidden = !direct || !hasConfigs || dismissed;
+  const restoreHint = $('#btn-restore-hints');
+  restoreHint.hidden = !dismissed;
+  restoreHint.closest('[data-restore-hint]').hidden = !dismissed;
+  const unavailable = direct && !hasConfigs;
+  els.ocrTestBtn.disabled = unavailable;
+  $('#image-test-unavailable').hidden = !unavailable;
+  $('#ocr-test-hint').hidden = unavailable;
 }
 
-/**
- * 说明文字的「不再显示」——**全页共用这一处**。
- *
- * HTML 里只写 `data-hint="<id>"`，按钮是这儿统一补上去的（十几处各贴一遍按钮既啰嗦、
- * 又迟早漏一处）。点过就记进 `settings.hiddenHints`，**永久收起**。
- *
- * 收起用的是 `.hint-off` 类（`display: none !important`）而**不是 `hidden` 属性**：
- * 有几条说明（OCR / 图片直传的测试说明）的 `hidden` 是**模式逻辑在管**的，
- * 一个属性两个主人迟早打架（踩过：一个开关两处 toggle）。
- *
- * 恢复入口是「把说明都放回来」那个按钮，显隐归 `syncRestoreHints` 管。
- * （这条注释原来挂在 `syncRestoreHints` 上、还写着「恢复入口没做」—— 按钮是后来加的，
- * 注释没跟着改，2026-10-18 通读挪位并订正。）
- */
-function applyHintHides() {
-  const hidden = new Set(state.settings.hiddenHints || []);
-
-  for (const el of document.querySelectorAll('[data-hint]')) {
-    if (!el.querySelector('.hint-hide')) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'link hint-hide';
-      b.textContent = T('opt_hint_dismiss', '不再显示');
-      b.addEventListener('click', () => {
-        const id = el.dataset.hint;
-        state.settings.hiddenHints = [...new Set([...(state.settings.hiddenHints || []), id])];
-        el.classList.add('hint-off');
-        persist();
-        syncRestoreHints();
-      });
-      el.appendChild(b);
-    }
-    el.classList.toggle('hint-off', hidden.has(el.dataset.hint));
-  }
-  syncRestoreHints();
+function bindImageHint() {
+  const id = els.imgcfgFoot.dataset.hint;
+  $('#btn-dismiss-image-hint').addEventListener('click', () => {
+    state.settings.hiddenHints.push(id);
+    syncImageConfigUi(true);
+    persist();
+  });
+  $('#btn-restore-hints').addEventListener('click', () => {
+    state.settings.hiddenHints = state.settings.hiddenHints.filter(key => key !== id);
+    syncImageConfigUi(imageConfigs().length > 0);
+    persist();
+  });
 }
 
 /** 「已保存」那行字。**两个编辑器的页脚各有一个**（配置栏 / OCR 栏），一起写 ——

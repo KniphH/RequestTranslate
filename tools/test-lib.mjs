@@ -806,18 +806,20 @@ const {
    这不算「在 Node 里跑浏览器代码」：本文件从不调用它的 DOM 函数，只读字符串。 */
 globalThis.window = globalThis.window || {};
 await import('../lib/panel-core.js');
-const { TRIGGER_CSS, PANEL_CSS } = globalThis.window.RTPanelCore;
+const { BRAND_MARK_SVG, TRIGGER_CSS, PANEL_CSS } = globalThis.window.RTPanelCore;
 
 section('11. 翻译按钮：样式预设与尺寸');
 {
   eq('三个预设', TRIGGER_STYLES.length, 3);
-  eq('默认是「译字方块」', DEFAULT_TRIGGER_STYLE, 'badge');
+  eq('默认 Logo 沿用 badge ID', DEFAULT_TRIGGER_STYLE, 'badge');
   eq('id 不重复', new Set(TRIGGER_STYLES.map((s) => s.id)).size, TRIGGER_STYLES.length);
-  eq('预设清单是 方块 / 地球 / 自定义', TRIGGER_STYLES.map((s) => s.id).join(), 'badge,globe,custom');
+  eq('预设清单是 Logo / 地球 / 自定义', TRIGGER_STYLES.map((s) => s.id).join(), 'badge,globe,custom');
   check('每个预设都有名字和说明', TRIGGER_STYLES.every((s) => s.name && s.hint));
 
   const badge = getTriggerStyle('badge');
-  check('译字方块 = 圆角方块 + 文字', badge.round === true && badge.text === '译');
+  check('Logo 使用圆角背景和双箭头 SVG',
+    badge.round && badge.name === 'Logo' && BRAND_MARK_SVG.includes('path') &&
+      /\.s-badge\)[^{]*\{[^}]*background: #6541c6/.test(TRIGGER_CSS));
 
   const globe = getTriggerStyle('globe');
   check('地球 = 正圆 + SVG', globe.round === false && /^<svg /.test(globe.svg || ''));
@@ -904,6 +906,7 @@ section('13. 按钮样式：content.js 里的副本必须和 lib 一致');
   const src = readFileSync(new URL('../content.js', import.meta.url), 'utf8');
   const squash = (s) => s.replace(/\s+/g, '');
 
+  check('网页划词按钮使用共享的品牌 SVG', /badge:\s*\{[^}]*html:\s*window\.RTPanelCore\.BRAND_MARK_SVG/.test(src));
   check('content.js 不再手抄按钮样式表（整份走 RTPanelCore.PANEL_CSS）',
     /window\.RTPanelCore\.PANEL_CSS/.test(src) &&
       !squash(src).includes(squash(TRIGGER_CSS).slice(0, 200)),
@@ -2039,7 +2042,7 @@ section('15f. 设置页的「图片配置」那条线也认后备');
   check('OCR 栏也是同一套请求块（HTML 里 #ocr-blocks 容器，JS 里 renderOcrBlocks 复用 blockHtml）',
     /<div id="ocr-blocks"><\/div>/.test(optHtml) &&
       /* 两栏都调同一个 `renderBlocksInto`，块 HTML 只有它一处在画（抄第二遍必然分叉） */
-      /function renderBlocksInto\(host, owner, opts\) \{[\s\S]{0,200}blockHtml\(it, i, all\.length - 1, opts\)/.test(opt) &&
+      /function renderBlocksInto\(host, owner, opts\) \{[\s\S]{0,600}blockHtml\(it, i, all\.length - 1, \{\.\.\.opts/.test(opt) &&
       /function renderOcrBlocks\(p\) \{\s*renderBlocksInto\(els\.ocrBlocks, p, \{ chips: OCR_CHIPS, ocr: true \}\);/.test(opt) &&
       /<button type="button" id="btn-ocr-add-fallback"/.test(optHtml));
   check('两栏都走同一个 renderBlocksInto（配置栏传 CHIPS，OCR 栏传 OCR_CHIPS + ocr）',
@@ -2097,9 +2100,9 @@ section('15f. 设置页的「图片配置」那条线也认后备');
      复用啊」）—— 定义 1 处 + 调用 2 处，HTML 里两栏各留一个空容器。手抄两份的话，
      「配置栏多加一句话 / OCR 栏给备注留 min-height」这种一边一套的补丁就长出来了。 */
   check('配置与 OCR 共用名称字段及标题结构',
-    (opt.match(/nameField\(/g) || []).length === 3 && optHtml.includes('id="cfg-editor-title"') && optHtml.includes('id="ocr-editor-title"'));
-  check('创建后关联配置与 OCR 名称输入',
-    opt.includes("els.name = nameField(els.cfgHead") && opt.includes("els.oName = nameField(els.ocrHead"));
+    /id="cfg-editor-title"><input id="f-name" class="editor-name"/.test(optHtml) && /id="ocr-editor-title"><input id="o-name" class="editor-name"/.test(optHtml));
+  check('配置与 OCR 名称输入连接现有编辑器',
+    opt.includes("name: $('#f-name')") && opt.includes("oName: $('#o-name')"));
   /* ⚠️ 靠「文字自然高度」凑对齐是不行的：说明**能被用户收掉**（.hint-off = display:none），
      备注**时有时无**（自建那条为空）—— 一收一空，两栏的行数就不对称了（kniph 一点
      「不再显示」就不齐，截图回来问「改了没」）。所以两处说明各包一个**固定占位的槽**。 */
@@ -2121,27 +2124,19 @@ section('15f. 设置页的「图片配置」那条线也认后备');
   /* 抽 key 之后 label 里是 ${T('opt_label_name', '名称')}，判据跟着改成「两栏都用同一个
      模板出来的 label，且模板里走的是查表」—— 断言意图不变（不许手抄两份）。 */
   check('两栏名称字段共用国际化文案',
-    (opt.match(/nameField\(/g) || []).length === 3 && opt.includes("T('opt_ui_config_name'"));
+    (optHtml.match(/data-ui-label="opt_ui_config_name"/g) || []).length === 2);
   /* 「供应商」这个说法只在 OCR 栏有，配置栏叫「配置」 —— 同一个东西两个名字
      （kniph 2026-10-14：「『供应商』也改成『配置』」）。判据：HTML 里再没有这个词。 */
   check('OCR 列表和图片配置使用明确定义的标题',
     opt.includes("T('opt_ui_ocr_list'") && opt.includes("T('opt_img_configs'") && optHtml.includes('id="btn-ocr-new"'));
-  /* ---- 说明文字的「不再显示」（kniph 2026-10-14：「这种注释太多了」）---- */
-  /* 头部那几句现在由 `editorHeadHtml()` 拼出来（两栏共用），id 写在调用参数里
-     （`hint: 'cfg-intro'`）—— 所以静态收集要把这两处合起来看。 */
-  const hintIds = [
-    ...[...optHtml.matchAll(/data-hint="([^"]+)"/g)].map((m) => m[1]),
-    ...[...opt.matchAll(/\bhint:\s*'([a-z-]+)'/g)].map((m) => m[1])
-  ];
-  check('每条静态说明都挂了 data-hint，且 id 不重复（id 要稳定：它进存档）',
-    hintIds.length >= 15 && new Set(hintIds).size === hintIds.length, `${hintIds.length} 条`);
-  check('按钮由 applyHintHides 统一补（HTML 里不再手写「不再显示」按钮）',
-    !optHtml.includes('id="o-hint-hide"') && /function applyHintHides\(\)/.test(opt) &&
-      opt.includes("b.textContent = T('opt_hint_dismiss', '不再显示')"));
-  check('收起用 .hint-off 类，不用 hidden 属性（有几条的 hidden 归模式逻辑管，一个属性不能两个主人）',
-    /\.hint-off \{ display: none !important; \}/.test(css) &&
-      /classList\.toggle\('hint-off'/.test(opt) && /classList\.add\('hint-off'\)/.test(opt));
-  check('点过就落盘（settings.hiddenHints）', /hiddenHints = \[\.\.\.new Set\(\[\.\.\.\(state\.settings\.hiddenHints/.test(opt));
+  const hintIds = [...optHtml.matchAll(/data-hint="([^"]+)"/g)].map(m => m[1]);
+  eq('图片配置提示沿用已保存的提示 ID', hintIds.join(), 'imgcfg-foot');
+  check('图片配置提示提供关闭和恢复入口',
+    optHtml.includes('id="btn-dismiss-image-hint"') && optHtml.includes('id="btn-restore-hints"'));
+  check('SVG、CSS 和图片直传说明默认折叠',
+    (optHtml.match(/<details class="simple help-details">/g) || []).length === 3);
+  check('恢复图片配置提示时保留其他存档项',
+    opt.includes('hiddenHints.filter(key => key !== id)'));
 
   /* 字段顺序：**两段模板挨着、两个「响应」字段挨着收尾**。
      响应格式原来夹在两段模板中间 —— 读起来像「只管上面那一段」，而它管的是整条请求回来的东西
@@ -2609,42 +2604,20 @@ section('20. 「临时直连」已彻底移除：权限 / 模块 / 调用点都�
     check('warm 示例没有改文字色（复用 dark 那套，避免破坏对比度）',
       !warmBlock.includes('--rt-text '));
   }
-  /* 深色主题的**对比度阶梯**（kniph 2026-10-18：「对比度太高累眼」+「首字…太浅看困难」）。
-     以前正文 17.1:1（刺眼）、diag 标签 2.8:1（远低于 WCAG AA 4.5，看不清）——
-     同一个主题里最亮的太亮、最暗的太暗。现在压到 5.1~13.0，每一档都可读又不刺眼。 */
+  /* M3 palette roles must remain readable in every preset and mode. */
   {
-    const css = PANEL_CSS   /* 唯一真相源：lib/panel-core.js（2026-11-09 合并） */;
-    const darkBlock = css.slice(css.indexOf('.rt-panel {'), css.indexOf('.rt-panel.light'));
-    const lightBlock = css.slice(css.indexOf('.rt-panel.light'), css.indexOf('/* ---- 头部'));
-    const grabVars = (b) => {
-      const o = {};
-      for (const m of b.matchAll(/--rt-([a-z-]+):\s*([^;]+);/g)) o[m[1]] = m[2].trim();
-      return o;
+    const palettes = JSON.parse(read('../lib/m3-palettes.json'));
+    const luminance = hex => {
+      const rgb = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+        .map(x => x <= .04045 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4);
+      return .2126 * rgb[0] + .7152 * rgb[1] + .0722 * rgb[2];
     };
-    const rgbOf = (c) => { const t = String(c).replace('#', ''); return [0, 2, 4].map((i) => parseInt(t.substr(i, 2), 16)); };
-    const lumOf = (rgb) => {
-      const a = rgb.map((v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); });
-      return 0.2126 * a[0] + 0.7152 * a[1] + 0.0722 * a[2];
-    };
-    const contrast = (fg, bg) => {
-      const a = lumOf(rgbOf(fg)), b = lumOf(rgbOf(bg));
-      const hi = Math.max(a, b), lo = Math.min(a, b);
-      return (hi + 0.05) / (lo + 0.05);
-    };
-    const D = grabVars(darkBlock), L = grabVars(lightBlock);
-    const dk = (k) => contrast(D[k], D.bg);
-    const lt = (k) => contrast(L[k], L.bg);
-
-    check('深色：每一档文字都不低于 WCAG AA（4.5:1）',
-      ['text', 'text-dim', 'text-out', 'text-foot', 'placeholder'].every((k) => dk(k) >= 4.5),
-      ['text', 'text-dim', 'text-out', 'text-foot', 'placeholder'].map((k) => k + '=' + dk(k).toFixed(1)).join(' '));
-    check('深色：正文不再刺眼（≤14:1）', dk('text-out') <= 14, dk('text-out').toFixed(1));
-    check('深色：diag 标签（首字/总耗时…）看得清（≥4.5:1）', dk('placeholder') >= 4.5, dk('placeholder').toFixed(1));
-    check('亮色：diag 标签同样不低于 4.5:1', lt('placeholder') >= 4.5, lt('placeholder').toFixed(1));
-    check('深色的「亮→暗」阶梯是单调的（正文最亮、占位最暗）',
-      dk('text-out') >= dk('text') && dk('text') >= dk('text-dim') &&
-        dk('text-dim') >= dk('text-foot') && dk('text-foot') >= dk('placeholder'),
-      ['text-out', 'text', 'text-dim', 'text-foot', 'placeholder'].map((k) => dk(k).toFixed(1)).join(' > '));
+    const contrast = (a, b) => { const x = luminance(a), y = luminance(b); return (Math.max(x,y)+.05)/(Math.min(x,y)+.05); };
+    for (const [name, modes] of Object.entries(palettes)) for (const [mode, c] of Object.entries(modes)) {
+      for (const [fg, bg] of [...['surface','surfaceContainerLow','surfaceContainer','surfaceContainerHigh'].flatMap(bg => [['onSurface',bg],['onSurfaceVariant',bg]]),['onPrimary','primary'],['onSecondaryContainer','secondaryContainer'],['onError','error']]) {
+        check(`M3 ${name}/${mode}: ${fg}/${bg} contrast`, contrast(c[fg], c[bg]) >= 4.5, contrast(c[fg], c[bg]).toFixed(2));
+      }
+    }
   }
   /* 面板 CSS 现在是**一份**（2026-11-09 合并）：唯一真相源是 lib/panel-core.js 的
      window.RTPanelCore.PANEL_CSS，content.js 和 options.js 都从全局取。
@@ -2659,9 +2632,7 @@ section('20. 「临时直连」已彻底移除：权限 / 模块 / 调用点都�
     /window\.RTPanelCore\.PANEL_CSS/.test(read('../content.js')) &&
       /* content.js 只取 PANEL_CSS 就够 —— TRIGGER_CSS 已被它内部插值拼好，
          单独再取一份就是死代码（第六版 §2 ⑦ 指出并已删）。 */
-      /* options.js 用的是解构写法 const { TRIGGER_CSS, PANEL_CSS } = window.RTPanelCore;
-         所以这里不能找 `.PANEL_CSS` 字面 —— 找解构里同时出现两个名字。 */
-      /\{\s*TRIGGER_CSS\s*,\s*PANEL_CSS\s*\}\s*=\s*window\.RTPanelCore/.test(read('../options.js')),
+      /\{[^}]*\bTRIGGER_CSS\s*,\s*PANEL_CSS\s*\}\s*=\s*window\.RTPanelCore/.test(read('../options.js')),
     '两边都应走全局对象');
   check('content.js 里不再有内联的面板 CSS 大块（合并后只剩一行引用）',
     !/style\.textContent = `/.test(read('../content.js')),
@@ -4240,7 +4211,7 @@ await (async () => {
   check('manifest 里 i18n.js 排在 panel-core 和 content.js 之前',
     (() => {
       const js = man.content_scripts[0].js;
-      return js.indexOf('lib/i18n.js') === 0 && js.indexOf('lib/panel-core.js') > 0;
+      return js.indexOf('lib/i18n.js') >= 0 && js.indexOf('lib/panel-core.js') > js.indexOf('lib/i18n.js') && js.indexOf('content.js') > js.indexOf('lib/panel-core.js');
     })());
 
   /* 代码里出现的每个 panel_* / trigger_* key，messages.json 里都得有。
@@ -4920,8 +4891,8 @@ section('批次 A 闭环：用户可见修复的行为断言');
   check('panel_retry_one 两包都有、与 panel_retry 语义不同',
     zhPack.panel_retry_one.message === '重试' && enPack.panel_retry_one === 'Retry' &&
     enPack.panel_retry === 'Translate again');
-  check('译文尾用 panel_retry_one，顶栏不再有 panel_retry',
-    pcSrc.includes("T('panel_retry_one', '重试')") && !pcSrc.includes("T('panel_retry',"));
+  check('译文重试图标提供可访问名称，顶栏不再有重试',
+    pcSrc.includes("T('panel_retry_title', '只重试这一条')") && pcSrc.includes("aria-label=") && !pcSrc.includes("T('panel_retry',"));
 
   /* B6：白屏检测的反例进测试仓库 —— 不靠「e2e 真机手跑过一次」当证据。 */
   const { detectBootFailure } = await import('./boot-check.mjs');
@@ -5011,10 +4982,16 @@ section('语言包下发 / 入口去重（2026-11-15 实测反馈）');
     const body = iSrc2.slice(st, iSrc2.indexOf('\n  }', st) + 4);
     return !/fetchAny|downloadPack|fetch\(/.test(body);
   })());
-  check('popup 只保留底部「打开完整设置」（顶部齿轮已删）',
-    !/id="btn-open"/.test(popupHtml2) && /id="link-options"/.test(popupHtml2));
-  check('语言代码表说明可以「不再显示」（data-hint 齐全）',
-    /data-hint="lang-map"[^>]*data-i18n-html="opt_lang_map_hint"/.test(optHtml2));
+  check('Popup 设置入口位于顶部选择器旁',
+    /class="selects"[\s\S]*id="link-options"[^>]*data-ui-icon="settings"/.test(popupHtml2));
+  check('设置说明由 Info 按钮展示',
+    /data-setting-help="opt_lang_map_hint"[^>\n]*>.*opt_lang_map_label/.test(optHtml2) &&
+    !optHtml2.includes('class="setting-note"'));
+  const zhHelp = JSON.parse(readFileSync(new URL('../_locales/zh_CN/messages.json', import.meta.url), 'utf8'));
+  const enHelp = JSON.parse(readFileSync(new URL('../i18n/en.json', import.meta.url), 'utf8')).strings;
+  const helpKeys = [...optHtml2.matchAll(/data-setting-help="([^"]+)"/g)].flatMap(match => match[1].split(' '));
+  check('设置说明在中英文语言包中都有文案',
+    helpKeys.length > 0 && helpKeys.every(key => zhHelp[key]?.message && enHelp[key]));
 
   /* engine 的 warning 改成了 { code, text, shape }；设置页四处渲染必须走 warnText，
      否则模板里直接插对象会显示 [object Object]（2026-11-15 实测）。 */
@@ -5077,6 +5054,35 @@ section('变异测试补盲（2026-11-16，注入 bug 实测的 9 个漏网）')
   check('panel-core 的 rt-slot-h 至少有 CSS 定义 + HTML 使用两处',
     (pcSrc2.match(/\brt-slot-h\b/g) || []).length >= 2,
     String((pcSrc2.match(/\brt-slot-h\b/g) || []).length));
+}
+
+{
+  const {requestFields, updateRequestField, NEW_TRANSLATION_REQUEST} = await import('../lib/request-fields.js');
+  for (const [ocr, templates] of [[false, DEFAULT_CONFIGS.filter(config => !config.adapter)], [true, OCR_PROVIDERS]]) {
+    for (const config of templates) {
+      const mapped = requestFields(config.request, ocr);
+      check(config.id + ' 的模板可识别为基础配置', Boolean(mapped));
+      for (const field of mapped?.fields || []) {
+        eq(config.id + ' 的 ' + field.key + ' 原值往返', updateRequestField(config.request, mapped, field.key, field.value), config.request);
+      }
+    }
+  }
+
+  const source = '# keep this comment\r\n' + NEW_TRANSLATION_REQUEST.replaceAll('\n', '\r\n');
+  const mapping = requestFields(source);
+  const prompt = "Bob's \"quoted\" prompt\n{{text}}";
+  const modified = updateRequestField(source, mapping, 'prompt', prompt);
+  eq('提示词保留单引号、双引号、换行和变量', requestFields(modified)?.fields.find(field => field.key === 'prompt')?.value, prompt);
+  eq('仅替换原始模板中已匹配的字段', updateRequestField(modified, requestFields(modified), 'prompt', '{{text}}'), source);
+  eq('拒绝将换行注入认证头', updateRequestField(source, mapping, 'key', 'fake\r\nX-Other: value'), null);
+  eq('可清空凭据并继续切换配置方式', requestFields(updateRequestField(source, mapping, 'key', ''))?.fields.find(field => field.key === 'key')?.value, '');
+  eq('可将接口地址改为变量引用', requestFields(updateRequestField(source, mapping, 'url', '{{baseUrl}}/translate'))?.fields.find(field => field.key === 'url')?.value, '{{baseUrl}}/translate');
+  eq('无法映射的额外参数保留在高级配置', requestFields(source.replace('"stream": true', '"unknown_parameter": 1, "stream": true')), null);
+  const deepl = DEFAULT_CONFIGS.find(config => config.id === 'builtin-deepl').request;
+  const customMap = deepl + '\n# EXAMPLE = x-example';
+  const deeplFields = requestFields(customMap);
+  const changedKey = updateRequestField(customMap, deeplFields, 'key', '{{deepLKey}}');
+  eq('DeepL 编辑认证时保留语言映射及注释', changedKey, customMap.replace('{{apiKey}}', '{{deepLKey}}'));
 }
 
 console.log('\n' + '='.repeat(46));

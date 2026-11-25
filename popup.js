@@ -5,6 +5,7 @@
 import { loadState, saveState, buildVars, getConfig } from './lib/store.js';
 import { orderedLangCodes, langDisplayName } from './lib/template.js';
 import { maskRequest, runRequest } from './lib/engine.js';
+import { requestFields } from './lib/request-fields.js';
 
 import { fillUiIcons } from './lib/ui-icons.js';
 
@@ -33,7 +34,7 @@ async function loadPopupPack() {
   }
 }
 
-function uiText(key, params) {
+function uiText(key, params, fallback = key) {
   let out = null;
   if (packStrings && typeof packStrings[key] === 'string') out = packStrings[key];
   if (out == null) {
@@ -42,7 +43,7 @@ function uiText(key, params) {
       if (got) out = got;
     } catch { /* 忽略 */ }
   }
-  if (out == null) out = key;
+  if (out == null) out = fallback;
   if (params && params.length) {
     out = String(out).replace(/\$(\d+)\$?/g, (m, n) => {
       const v = params[Number(n) - 1];
@@ -95,6 +96,28 @@ function showFailure(message, details = '') {
   diagnostic.open = false;
   $('#diagnostic-text').textContent = details;
   showResult('failure');
+}
+
+function showRequestDetails(result, vars) {
+  const details = $('#success-diagnostic');
+  const fields = [
+    [uiText('popup_http_status'), result.status],
+    [uiText('popup_request_time'), Number.isFinite(result.ms) ? (result.ms / 1000).toFixed(1) + ' s' : ''],
+    [uiText('popup_response_path'), result.usedPath],
+    [uiText('popup_reasoning'), result.reasoningChars],
+    ...((result.warnings || []).map(warning => [uiText('popup_request_warning'), warning?.code
+      ? uiText(warning.code, warning.params, warning.text || '') + (warning.shape || '') : warning?.text || warning]))
+  ].flatMap(([label, value]) => {
+    if (!value) return [];
+    const term = document.createElement('dt');
+    const data = document.createElement('dd');
+    term.textContent = label;
+    data.textContent = maskRequest({body: String(value)}, vars).body;
+    return [term, data];
+  });
+  $('#request-details').replaceChildren(...fields);
+  details.open = false;
+  details.hidden = !fields.length;
 }
 
 function setBusy(busy) {
@@ -174,6 +197,7 @@ function applyTheme() {
     dark = q ? !q.matches : true;
   }
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  window.RTM3Theme.apply(document.documentElement, state?.settings?.themeColor, dark ? 'dark' : 'light');
 }
 
 async function init() {
@@ -209,7 +233,7 @@ async function init() {
 }
 
 function renderSelectors() {
-  sel.innerHTML = '';
+  sel.replaceChildren(...sel.querySelectorAll(':scope > button'));
   for (const c of state.configs) {
     const o = document.createElement('option');
     o.value = c.id;
@@ -227,7 +251,7 @@ function renderSelectors() {
     const codes = orderedLangCodes(state.settings && state.settings.langOrder);
     const curLang = String(state.settings.targetLang || '');
     if (curLang && !codes.includes(curLang)) codes.unshift(curLang);
-    langSel.innerHTML = '';
+    langSel.replaceChildren(...langSel.querySelectorAll(':scope > button'));
     for (const code of codes) {
       const o = document.createElement('option');
       o.value = code;
@@ -327,8 +351,13 @@ async function run() {
   setStatus('');
   setOut('');
   copyBtn.disabled = true;
+  $('#success-diagnostic').hidden = true;
+  $('#success-diagnostic').open = false;
+  $('#request-details').replaceChildren();
   showResult('loading');
   const vars = buildVars({...state, settings: {...state.settings, targetLang: langSel.value}}, text, { url: 'popup', title: document.title });
+  const key = requestFields(cfg.request)?.fields.find(field => field.secret)?.value;
+  const diagnosticVars = key ? {...vars, requestApiKey: key} : vars;
 
   try {
     const result = await runRequest({
@@ -345,26 +374,25 @@ async function run() {
     if (myRun !== runSeq) return;
     cancelStreamRender();
     if (!result.text || result.status >= 400) {
-      const diagnostic = result.error || [result.status && 'HTTP ' + result.status, result.statusText, result.raw].filter(Boolean).join(' · ');
-      const details = maskRequest({body: diagnostic.slice(0, 1200)}, vars).body;
-      showFailure(uiText('popup_check_config'), details);
+      const diagnostic = result.errorCode ? uiText(result.errorCode, result.errorParams, result.error)
+        : result.error || [result.status && 'HTTP ' + result.status, result.statusText].filter(Boolean).join(' · ');
+      const details = maskRequest({body: diagnostic || ''}, diagnosticVars).body.slice(0, 1200);
+      const reason = result.status === 401 || result.status === 403
+        ? uiText('popup_auth_failed')
+        : result.status >= 400 ? 'HTTP ' + result.status + (result.statusText ? ' · ' + result.statusText : '')
+          : uiText('popup_check_config');
+      showFailure(maskRequest({body: reason}, diagnosticVars).body, details);
       return;
     }
 
     setOut(result.text);
     copyBtn.disabled = false;
+    showRequestDetails(result, diagnosticVars);
     showResult('translation');
-    const bits = [];
-    if (result.status) bits.push('HTTP ' + result.status);
-    bits.push((result.ms / 1000).toFixed(1) + 's');
-    if (result.usedPath) bits.push(result.usedPath);
-    if (result.reasoningChars) bits.push(uiText('popup_reasoning') + ' ' + result.reasoningChars);
-    else if (result.warnings?.length) bits.push(result.warnings[0]);
-    setStatus(bits.join(' · '));
   } catch (error) {
     if (myRun !== runSeq) return;
     cancelStreamRender();
-    showFailure(uiText('popup_check_config'), maskRequest({body: String(error.message || error)}, vars).body);
+    showFailure(uiText('popup_check_config'), maskRequest({body: String(error.message || error)}, diagnosticVars).body);
   } finally {
     if (myRun === runSeq) {
       controller = null;

@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="lib/m3-palettes.js"></script>
+<script src="lib/m3-theme.js"></script>
 <link rel="stylesheet" href="lib/ui.css">
 <link rel="stylesheet" href="lib/popup-ui.css">
 </head>
@@ -10,15 +12,16 @@
 <main class="popup-frame">
   <div class="popup">
     <div class="selects">
-      <label class="field"><span data-i18n="popup_config">翻译配置</span><select id="sel"></select></label>
-      <label class="field"><span data-i18n="popup_lang_title">目标语言</span><select id="lang"></select></label>
+      <label class="field"><span data-i18n="popup_config">翻译配置</span><select id="sel"><button type="button"><selectedcontent></selectedcontent></button></select></label>
+      <label class="field"><span data-i18n="popup_lang_title">目标语言</span><select id="lang"><button type="button"><selectedcontent></selectedcontent></button></select></label>
+      <button type="button" class="icon-btn ghost" id="link-options" data-ui-icon="settings" data-i18n-title="popup_open_full_settings" title="打开完整设置" aria-label="打开完整设置"></button>
     </div>
     <div class="popup-source">
       <div class="popup-source-head">
         <label for="txt" data-i18n="popup_source">原文</label>
-        <button type="button" class="icon-btn ghost" id="btn-clear" title="清空原文" aria-label="清空原文" data-i18n-title="popup_clear_source" data-ui-icon="close" disabled></button>
+        <button type="button" class="icon-btn ghost" id="btn-clear" title="清空原文" aria-label="清空原文" data-i18n-title="popup_clear_source" data-ui-icon="trash" disabled></button>
       </div>
-      <textarea id="txt" placeholder="输入或粘贴要翻译的内容" data-i18n-ph="popup_input_ph"></textarea>
+      <textarea id="txt" placeholder="输入或粘贴原文" data-i18n-ph="popup_input_ph"></textarea>
     </div>
     <div class="popup-action">
       <button type="button" class="primary" id="btn-go"><span data-ui-icon="brand"></span><span id="go-label" data-i18n="popup_translate">翻译</span></button>
@@ -27,20 +30,18 @@
     <section class="popup-result" id="translation" hidden>
       <div class="row-flex">
         <h3 data-i18n="popup_result">译文</h3>
-        <button type="button" id="btn-copy" class="copy-result"><span data-ui-icon="copy"></span><span data-i18n="popup_copy">复制</span></button>
+        <button type="button" id="btn-copy" class="icon-btn ghost copy-result" data-ui-icon="copy" data-i18n-title="popup_copy" title="复制" aria-label="复制"></button>
       </div>
       <div id="out" class="popup-result-body" tabindex="0"><p id="out-text"></p></div>
+      <details id="success-diagnostic" class="simple" hidden><summary><span data-ui-icon="chevron"></span><span data-i18n="popup_request_details">请求详情</span></summary><dl id="request-details" class="popup-diagnostic-fields"></dl></details>
     </section>
     <section class="popup-result error" id="failure" hidden>
       <div class="popup-error-heading"><strong data-i18n="popup_failed">翻译失败</strong><button type="button" class="link inline-retry" id="btn-retry" data-i18n="popup_retry">重试</button></div>
       <p class="subtle" id="error-message" role="alert"></p>
-      <details id="diagnostic" class="simple" hidden><summary data-i18n="popup_diagnostic">查看诊断</summary><pre class="preview" id="diagnostic-text"></pre></details>
+      <details id="diagnostic" class="simple" hidden><summary><span data-ui-icon="chevron"></span><span data-i18n="popup_request_details">请求详情</span></summary><pre class="preview" id="diagnostic-text"></pre></details>
     </section>
     <p class="popup-result error" id="empty-input" role="status" data-i18n="popup_need_text" hidden>请先输入要翻译的内容。</p>
-    <div class="foot">
-      <span id="status" role="status"></span>
-      <button type="button" class="link" id="link-options"><span data-ui-icon="out"></span><span data-i18n="popup_open_full_settings">打开完整设置</span></button>
-    </div>
+    <span id="status" role="status"></span>
   </div>
 </main>
 <script type="module" src="popup.js"></script>

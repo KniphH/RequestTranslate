@@ -552,6 +552,7 @@ try {
         triggerPathD: iconPath ? iconPath.getAttribute('d') : '',
         head: box(q('.rt-head')),
         foot: box(q('.rt-foot')),
+        toolbar: box(q('.rt-toolbar')),
         src: box(q('.rt-src')),
         out: box(q('.rt-out')),
         panel: box(panel),
@@ -871,16 +872,16 @@ try {
 
   if (m2.panelShown) {
     near('面板宽度 = 设置值 280', m2.panel.w, 280, 2, 'px');
-    between('顶栏高度（原 ~65px）', m2.head && m2.head.h, 28, 50, 'px');
-    between('底栏高度（原 ~45px）', m2.foot && m2.foot.h, 20, 38, 'px');
+    between('顶栏控件高度保持紧凑', m2.head && m2.head.h, 28, 56, 'px');
+    between('底部操作栏保持单行', m2.toolbar && m2.toolbar.h, 30, 38, 'px');
     check(
       '顶栏比底栏高（控件在顶上）',
-      m2.head && m2.foot && m2.head.h > m2.foot.h,
-      `顶 ${fmt(m2.head && m2.head.h)} / 底 ${fmt(m2.foot && m2.foot.h)}`
+      m2.head && m2.toolbar && m2.head.h > m2.toolbar.h,
+      `顶 ${fmt(m2.head && m2.head.h)} / 操作栏 ${fmt(m2.toolbar && m2.toolbar.h)}`
     );
 
-    const chromeH = (m2.head ? m2.head.h : 0) + (m2.foot ? m2.foot.h : 0);
-    check('上下两条杠合计不超 80px', chromeH < 80, `合计 ${fmt(chromeH)}px`);
+    const chromeH = (m2.head ? m2.head.h : 0) + (m2.toolbar ? m2.toolbar.h : 0);
+    check('上下操作区合计不超 90px', chromeH < 90, `合计 ${fmt(chromeH)}px`);
 
     console.log(
       `     面板 ${fmt(m2.panel.w)}×${fmt(m2.panel.h)}｜顶栏 ${fmt(m2.head.h)}｜原文区 ${fmt(
@@ -1002,23 +1003,23 @@ try {
   // 判据是「跟不跟字号走」，不是某个绝对值：14/16 ≈ 0.875，32/16 = 2.0
   // （默认字号 2026-11-10 从 20 改成 16，所以基准是 m2b 那一刻的 16）
   check(
-    '字号 11 时顶栏跟着缩（≤ 默认的 80%）',
-    mSmall.head.h < m2b.head.h * 0.8,
+    '字号 11 时顶栏控件高度稳定',
+    Math.abs(mSmall.head.h - m2b.head.h) < 2,
     `11→${fmt(mSmall.head.h)}px，16→${fmt(m2b.head.h)}px`
   );
   check(
-    '字号 11 时底栏跟着缩',
-    mSmall.foot.h < m2b.foot.h * 0.8,
+    '字号 11 时操作栏保持单行',
+    Math.abs(mSmall.toolbar.h - m2b.toolbar.h) < 2,
     `11→${fmt(mSmall.foot.h)}px，16→${fmt(m2b.foot.h)}px`
   );
   check(
-    '字号 32 时顶栏跟着涨（≥ 默认的 145%）',
-    mBig.head.h > m2b.head.h * 1.45,
+    '字号 32 时顶栏控件高度稳定',
+    Math.abs(mBig.head.h - m2b.head.h) < 2,
     `32→${fmt(mBig.head.h)}px（基准 16）`
   );
   check(
-    '字号 32 时底栏跟着涨',
-    mBig.foot.h > m2b.foot.h * 1.45,
+    '字号 32 时操作栏保持单行',
+    Math.abs(mBig.toolbar.h - m2b.toolbar.h) < 2,
     `32→${fmt(mBig.foot.h)}px`
   );
 
@@ -1062,22 +1063,9 @@ try {
 
   check('设置页打得开、没报错', errors.length === 0, errors.join(' | '));
 
-  /* ---- 说明文字的「不再显示」（kniph 2026-10-14：「这种注释太多了」）----
-     每条静态说明都该有个按钮；点过之后**永久收起**（存 settings.hiddenHints，reload 也在）。
-     测完把它清掉，别把这条状态留给后面的小节。 */
-  const hintButtons = await opt.evaluate(() => {
-    const list = [...document.querySelectorAll('[data-hint]')];
-    return {
-      count: list.length,
-      missing: list.filter((el) => !el.querySelector('.hint-hide')).map((el) => el.dataset.hint),
-      ids: list.map((el) => el.dataset.hint)
-    };
-  });
-  check('每条说明都补上了「不再显示」按钮',
-    hintButtons.count >= 15 && hintButtons.missing.length === 0,
-    `${hintButtons.count} 条｜缺按钮：${hintButtons.missing.join(',') || '（无）'}`);
-  check('id 不重复（它进存档，重了会连坐）',
-    new Set(hintButtons.ids).size === hintButtons.ids.length, hintButtons.ids.join(','));
+  check('图片配置列表保留一个可关闭的提示',
+    await opt.locator('[data-hint]').count() === 1 &&
+    await opt.locator('[data-hint=imgcfg-foot] .hint-hide').count() === 1);
 
   /* 「新选配置放哪边」只在显示条数 > 1 时有意义（kniph 2026-10-17）——
      跟着「面板显示条数」联动显隐。 */
@@ -1140,13 +1128,30 @@ try {
   }
   await opt.locator('.tab[data-tab="settings"]').click();
   await opt.locator('#settings-categories [data-category="selection"]').click();
-  check('设置目录有七个分类，并同时显示一个分类详情',
-    await opt.locator('#settings-categories button').count() === 7 &&
+  check('设置目录有六个分类，并同时显示一个分类详情',
+    await opt.locator('#settings-categories button').count() === 6 &&
     await opt.locator('.set-group:visible').count() === 1);
+  await opt.locator('#settings-search').fill('DeepL');
+  await opt.locator('#settings-results button').filter({hasText: '语言代码表'}).click();
+  const languageMap = opt.locator('.setting:has(#lang-map)');
+  const info = languageMap.locator('.setting-info');
+  const beforeHelp = await languageMap.boundingBox();
+  await info.focus();
+  await opt.keyboard.press('Enter');
+  const helpDialog = opt.locator('#confirm-action[open]');
+  check('设置搜索命中说明，键盘打开同名 Info 对话框',
+    await helpDialog.locator('h2').innerText() === '语言代码表' &&
+    (await helpDialog.locator('#confirm-description').innerText()).includes('{{targetCode}}'));
+  check('说明对话框只有关闭操作，卡片尺寸保持不变',
+    await helpDialog.getByRole('button').count() === 1 &&
+    (await languageMap.boundingBox()).height === beforeHelp.height);
+  await opt.keyboard.press('Escape');
+  check('Esc 关闭说明后焦点回到 Info',
+    await info.evaluate(button => button === document.activeElement));
   await opt.locator('#settings-search').fill('深色');
   await opt.locator('#settings-results button').first().click();
   check('设置搜索跳转到面板并定位主题设置',
-    await opt.locator('.set-group[data-category="panel"] .search-hit #s-theme').isVisible());
+    await opt.locator('.set-group[data-category="panel"] .search-hit .segments input[value=dark]').isVisible());
   await opt.locator('#settings-search-clear').click();
 
   /* 面板效果预览 = **真的结果面板**（kniph 2026-10-17：不要模拟，要真的）。
@@ -1263,80 +1268,55 @@ try {
   /* **必须还原成 1 条** —— 后面第 11 节假定面板是单条。
      （重试按钮现在单条/多条都在每块结果自己的尾部，所以这里其实只是保持场景一致。） */
   await slotRowVisibility(1);
+  await opt.locator('#save-status.saved').waitFor({state: 'attached'});
 
-  const HIDE_ID = 'set-maxh';
-  await opt.evaluate(() => (document.querySelector('.tab[data-tab="settings"]')?.click(), document.querySelectorAll('.set-group').forEach((d) => { d.open = true; })));
-  await opt.waitForTimeout(200);
-  const hintBefore = await opt.evaluate((id) => {
-    const el = document.querySelector(`[data-hint="${id}"]`);
-    return { display: getComputedStyle(el).display, hasBtn: !!el.querySelector('.hint-hide') };
-  }, HIDE_ID);
-  check('（脚手架）这条说明本来是露着的、按钮在', hintBefore.display !== 'none' && hintBefore.hasBtn,
-    JSON.stringify(hintBefore));
-
-  await opt.evaluate((id) => document.querySelector(`[data-hint="${id}"] .hint-hide`).click(), HIDE_ID);
-  await opt.waitForTimeout(900);
-  const afterHide = await opt.evaluate(async (id) => {
-    const el = document.querySelector(`[data-hint="${id}"]`);
-    const { state } = await chrome.storage.local.get('state');
-    return {
-      display: getComputedStyle(el).display,
-      saved: state.settings.hiddenHints || [],
-      oldKey: 'ocrHintHidden' in state.settings,
-      othersVisible: [...document.querySelectorAll('[data-hint]')].filter(
-        (x) => x.dataset.hint !== id && getComputedStyle(x).display !== 'none'
-      ).length
-    };
-  }, HIDE_ID);
-  check('点「不再显示」当场收起', afterHide.display === 'none', JSON.stringify(afterHide));
-  check('记进了 settings.hiddenHints 并落盘', afterHide.saved.includes(HIDE_ID), JSON.stringify(afterHide.saved));
-  check('只收起那一条，别的说明不受影响', afterHide.othersVisible > 0, String(afterHide.othersVisible));
-  check('老的那个 boolean 键（ocrHintHidden）不再写进存档', afterHide.oldKey === false);
-
-  await opt.reload();
-  await opt.waitForTimeout(900);
-  await opt.evaluate(() => (document.querySelector('.tab[data-tab="settings"]')?.click(), document.querySelectorAll('.set-group').forEach((d) => { d.open = true; })));
-  await opt.waitForTimeout(200);
-  check('重新打开设置页它仍然是收着的（永久生效，不是本次会话）',
-    await opt.evaluate((id) => getComputedStyle(document.querySelector(`[data-hint="${id}"]`)).display === 'none', HIDE_ID));
-
-  /* 「不再显示」之后没有回头路 —— 那个按钮得在设置页给一个。收着的时候它自己藏掉（没藏过说明
-     时零噪音），藏过才出现；点一下把 `hiddenHints` 整个清空，那条说明当场回来。 */
-  const restoreBtn = await opt.evaluate(() => {
-    const b = document.querySelector('#btn-restore-hints');
-    return { exists: !!b, shown: b ? !b.hidden : false };
+  const hintFixture = await opt.evaluate(async () => {
+    const {state} = await chrome.storage.local.get('state');
+    const original = structuredClone(state);
+    state.ocr.disabled = true;
+    const config = state.configs.find(item => !item.adapter);
+    config.mainEnabled = true;
+    config.imageRequest = 'POST https://example.test/ocr';
+    state.ocr.imageConfigId = config.id;
+    state.settings.hiddenHints = ['set-maxh'];
+    await chrome.storage.local.set({state});
+    return original;
   });
-  check('藏过说明之后「把说明放回来」那个按钮出现着（在设置页页脚）',
-    restoreBtn.exists && restoreBtn.shown, JSON.stringify(restoreBtn));
-
-  await opt.evaluate(() => document.querySelector('#btn-restore-hints').click());
-  await opt.waitForTimeout(400);
-  const afterRestore = await opt.evaluate(async (id) => {
-    const { state } = await chrome.storage.local.get('state');
-    return {
-      display: getComputedStyle(document.querySelector(`[data-hint="${id}"]`)).display,
-      hiddenHints: state.settings.hiddenHints || [],
-      btnHidden: document.querySelector('#btn-restore-hints').hidden
-    };
-  }, HIDE_ID);
-  check('点它那条说明当场回来', afterRestore.display !== 'none', JSON.stringify(afterRestore));
-  check('存档里的 hiddenHints 整个清空了（只影响这一项，不连带别的设置）',
-    afterRestore.hiddenHints.length === 0, JSON.stringify(afterRestore.hiddenHints));
-  check('一条都没藏了 → 那个按钮自己藏回去',
-    afterRestore.btnHidden === true, String(afterRestore.btnHidden));
-
-  // 收拾干净
-  await opt.evaluate(async (id) => {
-    const { state } = await chrome.storage.local.get('state');
-    state.settings.hiddenHints = (state.settings.hiddenHints || []).filter((x) => x !== id);
-    await chrome.storage.local.set({ state });
-  }, HIDE_ID);
   await opt.reload();
-  await opt.waitForTimeout(800);
-  check('清掉存档之后它又回来了（机制可逆）',
-    await opt.evaluate((id) => !document.querySelector(`[data-hint="${id}"]`).classList.contains('hint-off'), HIDE_ID));
-  await opt.evaluate(() => document.querySelector('.tab[data-tab="configs"]')?.click());
-  await opt.waitForTimeout(200);
+  await opt.locator('#cfg-list .cfg-item').first().waitFor();
+  await opt.locator('.tab[data-tab=ocr]').click();
+  const imageHint = opt.locator('#imgcfg-foot');
+  await imageHint.getByRole('button').click();
+  check('关闭后图片配置提示退出布局', await imageHint.isHidden());
+  const savedHints = present => opt.evaluate(async expected => {
+    const deadline = performance.now() + 5000;
+    while (performance.now() < deadline) {
+      const {state} = await chrome.storage.local.get('state');
+      if (state.settings.hiddenHints.includes('imgcfg-foot') === expected) return state.settings.hiddenHints;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    throw new Error('图片配置提示状态未写入存档');
+  }, present);
+  const afterHide = await savedHints(true);
+  check('关闭提示后保留原有记录，追加图片配置提示 ID',
+    afterHide.includes('imgcfg-foot') && afterHide.includes('set-maxh'), JSON.stringify(afterHide));
+  await opt.reload();
+  await opt.locator('#cfg-list .cfg-item').first().waitFor();
+  await opt.locator('.tab[data-tab=ocr]').click();
+  await opt.locator('#imgcfg-list .cfg-item').first().waitFor();
+  check('重新打开后提示仍隐藏', await imageHint.isHidden());
+  await opt.locator('.tab[data-tab=settings]').click();
+  await opt.locator('#settings-categories [data-category=backup]').click();
+  const restoreHint = opt.locator('#btn-restore-hints');
+  await restoreHint.click();
+  check('恢复入口随图片提示的状态消失', await restoreHint.isHidden());
+  await opt.locator('.tab[data-tab=ocr]').click();
+  check('恢复后图片提示可见', await imageHint.isVisible());
+  const afterRestore = await savedHints(false);
+  check('恢复图片提示时保留旧提示的关闭记录', afterRestore.join() === 'set-maxh', JSON.stringify(afterRestore));
+  await opt.evaluate(state => chrome.storage.local.set({state}), hintFixture);
+  await opt.reload();
+  await opt.locator('#cfg-list .cfg-item').first().waitFor();
 
   /* ---- 三处左栏同一套行（kniph 2026-10-14：「统一成同样的操作逻辑，尽量复用代码」）----
      行 = 手柄 + 可点的主体 + ↑↓；不可排序的那栏（OCR 供应商）放**同宽空位**。
@@ -1377,8 +1357,9 @@ try {
   await opt.locator('#var-eye').click();
   await opt.waitForFunction(async () => (await chrome.storage.local.get('state')).state.vars.some(
     variable => variable.name === 'fixtureKey' && variable.value === 'model-A\nmodel-B'));
-  opt.once('dialog', dialog => dialog.accept());
   await opt.locator('#var-delete').click();
+  await opt.locator('#confirm-action [value=confirm]').click();
+  await opt.waitForFunction(count => document.querySelectorAll('#vars-body .cfg-row').length === count, beforeVars);
   check('删除变量更新列表', await rows.count() === beforeVars);
   await opt.evaluate(async vars => {
     const {state} = await chrome.storage.local.get('state');
@@ -1458,12 +1439,24 @@ try {
   await opt.locator('#settings-categories [data-category="trigger"]').click();
   const styles = await opt.locator('#trig-styles option').evaluateAll(options => options.map(option => option.value));
   check('样式选择器提供方块、地球、自定义三个预设', styles.join() === 'badge,globe,custom');
-  check('默认选中方块', await opt.locator('#trig-styles').inputValue() === 'badge');
-  await opt.locator('#trig-styles').selectOption('globe');
+  check('默认选中 Logo', await opt.locator('#trig-styles').inputValue() === 'badge' &&
+    (await opt.locator('#trig-styles option[value=badge]').innerText()) === 'Logo');
+  const previewGeometry = await opt.locator('#trig-styles + .segments label').evaluateAll(labels =>
+    labels.map(label => {
+      const name = label.querySelector('span').getBoundingClientRect();
+      const preview = label.querySelector('.trig-preview').getBoundingClientRect();
+      const icon = label.querySelector('.trig-preview').shadowRoot.querySelector('.rt-trigger').getBoundingClientRect();
+      return {nameX: name.x, nameWidth: name.width, x: preview.x, width: preview.width, iconWidth: icon.width};
+    }));
+  check('三个预览与分段选择项等宽对齐，按钮按实际尺寸显示',
+    previewGeometry.length === 3 && previewGeometry.every(row =>
+      Math.abs(row.x - row.nameX) < 0.1 && Math.abs(row.width - row.nameWidth) < 0.1 &&
+      Math.abs(row.width - previewGeometry[0].width) < 0.1 && row.iconWidth === 28));
+  await opt.locator('[data-preview-style=globe]').click({force: true});
   await opt.waitForTimeout(1300);
 
   const afterGlobe = await opt.evaluate(async () => {
-    const root = document.getElementById('trig-preview').shadowRoot;
+    const root = document.querySelector('[data-preview-style=globe]').shadowRoot;
     const el = root && root.querySelector('.rt-trigger');
     const { state } = await chrome.storage.local.get('state');
     return {
@@ -1506,7 +1499,7 @@ try {
   await setTriggerSvg(CUSTOM_SVG);
 
   const afterSvg = await opt.evaluate(async () => {
-    const root = document.getElementById('trig-preview').shadowRoot;
+    const root = document.querySelector('[data-preview-style=globe]').shadowRoot;
     const p = root.querySelector('.rt-trigger .rt-ico svg path');
     const msg = document.getElementById('s-trigsvg-msg');
     const { state } = await chrome.storage.local.get('state');
@@ -1529,7 +1522,7 @@ try {
   // 换一段会被拦下来的（带 onload）：不能生效，而且要说明为什么
   await setTriggerSvg('<svg onload="alert(1)"></svg>');
   const badSvg = await opt.evaluate(() => {
-    const root = document.getElementById('trig-preview').shadowRoot;
+    const root = document.querySelector('[data-preview-style=globe]').shadowRoot;
     const msg = document.getElementById('s-trigsvg-msg');
     return {
       hidden: msg.hidden,
@@ -1559,11 +1552,11 @@ try {
 
   /* 「自定义」预设：不给底座，整块就是自己那段 SVG。
      两个分支都要走 —— 填了图标 / 没填图标（没填时用示例图标顶着，不能是个空按钮）。 */
-  await opt.locator('#trig-styles').selectOption('custom');
+  await opt.locator('#trig-styles + .segments input[value=custom]').check();
   await opt.waitForTimeout(1300);
 
   const customOn = await opt.evaluate(async () => {
-    const root = document.getElementById('trig-preview').shadowRoot;
+    const root = document.querySelector('[data-preview-style=custom]').shadowRoot;
     const el = root && root.querySelector('.rt-trigger');
     const p = root.querySelector('.rt-trigger .rt-ico svg path');
     const cs = el ? getComputedStyle(el) : null;
@@ -1586,11 +1579,11 @@ try {
     `${customOn.bg}｜${customOn.border}｜${customOn.shadow}`
   );
   check('图标还是自己填的那个', customOn.pathD === 'M4 12h16', customOn.pathD);
-  check('填了图标就没有「还没填」的提醒', !customOn.note.includes('还没填图标'), customOn.note);
+  check('填了图标就没有「还没填」的提醒', !customOn.note.includes('示例图标'), customOn.note);
 
   await setTriggerSvg('');
   const customEmpty = await opt.evaluate(() => {
-    const root = document.getElementById('trig-preview').shadowRoot;
+    const root = document.querySelector('[data-preview-style=custom]').shadowRoot;
     const el = root && root.querySelector('.rt-trigger');
     const p = root.querySelector('.rt-trigger .rt-ico svg path');
     const msg = document.getElementById('s-trigsvg-msg');
@@ -1610,7 +1603,7 @@ try {
   check(
     '而且会直说「还没填图标」（不做静默回退）',
     customEmpty.noteHidden === false && /warn/.test(customEmpty.noteCls) &&
-      customEmpty.note.includes('还没填图标'),
+      customEmpty.note.includes('示例图标'),
     `${customEmpty.noteCls}｜${customEmpty.note}`
   );
   check('样式没变，只是图标换成了占位的', /s-custom/.test(customEmpty.cls), customEmpty.cls);
@@ -1871,10 +1864,9 @@ try {
     const b0 = document.querySelector('#req-blocks .req-block:first-child');
     const defaultOpen = {
       open: b0.classList.contains('open'),
-      bodyVisible: !!b0.querySelector('.rb-request').offsetParent
+      bodyVisible: !!b0.querySelector('.rb-basic').offsetParent
     };
-    // 块默认收起：先摊开，不然「请求模板那一块看得见」这条量的是 display:none
-    document.querySelectorAll('#req-blocks .req-block').forEach((x) => x.classList.add('open'));
+    b0.querySelector('[data-request-view][value=advanced]').click();
     const { state } = await chrome.storage.local.get('state');
     return {
       defaultOpen,
@@ -2088,18 +2080,15 @@ try {
   check('再点 ▾ 能展开', unfoldedNow.open && unfoldedNow.body !== 'none', JSON.stringify(unfoldedNow));
 
   // 真鼠标点 × → 删掉。那句 confirm 里报的名字是**现算的位置名**（不许再是 undefined）
-  const seenDialogs = [];
-  const onDlg = (d) => {
-    seenDialogs.push(d.message());
-    d.accept();
-  };
-  opt.on('dialog', onDlg);
   const del2 = await opt.evaluate(() => {
     const q = [...document.querySelectorAll('#req-blocks .req-block')].pop().querySelector('.rb-del').getBoundingClientRect();
     return { x: q.x, y: q.y, w: q.width, h: q.height };
   });
   await clickBox(del2);
-  opt.off('dialog', onDlg);
+  const seenDialogs = [await opt.locator('#confirm-description').innerText()];
+  await opt.locator('#confirm-action [value=confirm]').click();
+  await opt.waitForFunction(async () => (await chrome.storage.local.get('state')).state.configs
+    .find(config => config.id === 'builtin-ollama').fallbacks.length === 0);
   const fbAfterDel = await opt.evaluate(async () => {
     const { state } = await chrome.storage.local.get('state');
     const cfg = state.configs.find((c) => c.id === 'builtin-ollama');
@@ -2428,6 +2417,7 @@ try {
   check('占位符标签四个（image / imageBase64 / imageUrlEncoded / apiKey）',
     ocrShape.chipCount === 4, String(ocrShape.chipCount));
 
+  await opt.locator('#ocr-blocks .req-block:first-child [data-request-view][value=advanced]').check();
   check('OCR 主模板默认可见并沿用代码编辑区域',
     await opt.locator('#ocr-blocks .req-block:first-child .code-box .rb-request').isVisible());
   const ocrEditorFold = opt.locator('#ocr-blocks .req-block:first-child .rb-fold');
@@ -2548,6 +2538,8 @@ try {
 
   await opt.evaluate(() => { window.confirm = () => true; });
   await opt.click('#btn-ocr-delete');
+  await opt.locator('#confirm-action [value=confirm]').click();
+  await opt.locator('#confirm-action').waitFor({state: 'hidden'});
   await opt.waitForTimeout(1400);
   const afterDel = await opt.evaluate(async () => {
     const { state } = await chrome.storage.local.get('state');
@@ -2799,6 +2791,8 @@ try {
   //    删除会被原生 confirm 挡掉（playwright 默认 dismiss），供应商删不掉。
   await opt.evaluate(() => { window.confirm = () => true; });
   await opt.click('#btn-ocr-delete');
+  await opt.locator('#confirm-action [value=confirm]').click();
+  await opt.locator('#confirm-action').waitFor({state: 'hidden'});
   await opt.waitForTimeout(1200);
   await opt.evaluate(async (id) => {
     const row = [...document.querySelectorAll('#ocr-list .cfg-row')].find((r) => r.dataset.id === id);
@@ -2901,8 +2895,8 @@ try {
       disabled: document.querySelector('#btn-ocr-test').disabled,
       label: document.querySelector('#o-test-label').textContent,
       ocrHintHidden: document.querySelector('#ocr-test-hint').hidden,
-      imgHintHidden: document.querySelector('#imgcfg-test-hint').hidden,
-      summary: document.querySelector('#o-preview-summary').textContent,
+      unavailableHintHidden: document.querySelector('#image-test-unavailable').hidden,
+      summary: document.querySelector('#ocr-preview-privacy').textContent,
       btnVisible: document.querySelector('#o-test-field').offsetParent !== null,
       // 这块「测试」什么时候都不该被压暗 —— 它一直是个能点的按钮。
       // （踩过：.is-off 那条压暗规则和 .is-imgcfg 是同一个开关 toggle 的，
@@ -2920,10 +2914,9 @@ try {
     testBtnOff.testOpacity === '1', String(testBtnOff.testOpacity));
   check('请求预览也没被压暗（这时摊的是图片配置那一份）',
     testBtnOff.previewOpacity === '1', String(testBtnOff.previewOpacity));
-  check('说明换成图片配置那一套（OCR 那段收起来）',
-    testBtnOff.ocrHintHidden === true && testBtnOff.imgHintHidden === false,
-    `ocr 隐藏=${testBtnOff.ocrHintHidden}｜图片提示露着=${!testBtnOff.imgHintHidden}`);
-  check('预览标题说明这是示例图（真截图是一整段 data URL）',
+  check('图片直传可用时保留剪贴板取图说明',
+    !testBtnOff.ocrHintHidden && testBtnOff.unavailableHintHidden, JSON.stringify(testBtnOff));
+  check('预览说明这是示例图（真截图是一整段 data URL）',
     /示例图/.test(testBtnOff.summary), testBtnOff.summary);
 
   /* 勾上之后左栏还得整栏换成「图片配置」—— 那份列表是配置栏数据的**过滤视图**：
@@ -2950,7 +2943,7 @@ try {
   /* 请求模板那块现在是一整组**请求块**（#ocr-blocks）—— 直传模式下连同「＋ 加一条后备
      请求」一起收掉：隐藏清单是按 #editor 的直接子元素逐个点的，漏一个就是「旧东西还在」。 */
   check('图片直传详情标题明确，并隐藏外置 OCR 请求字段',
-    imgCfgMode.editorImgCfg && imgCfgMode.blocksHidden && imgCfgMode.addFbHidden && imgCfgMode.directTitle === '禁用外置 OCR',
+    imgCfgMode.editorImgCfg && imgCfgMode.blocksHidden && imgCfgMode.addFbHidden && imgCfgMode.directTitle === 'bilibili (free)',
     JSON.stringify(imgCfgMode));
 
   const imgCfgConsistent = await opt.evaluate(async () => {
@@ -3454,7 +3447,10 @@ try {
       })
     );
   await opt.setViewportSize(narrowViewport);
-  if (await opt.locator("#ocr-editor [data-list-back]").isVisible()) await opt.locator("#ocr-editor [data-list-back]").click();
+  await opt.locator('.bottom-nav').waitFor();
+  if (await opt.locator('#ocr-editor [data-list-back]').isVisible()) await opt.locator('#ocr-editor [data-list-back]').click();
+  await opt.locator('#ocr-list .cfg-grip').last().scrollIntoViewIfNeeded();
+  await opt.evaluate(() => window.scrollTo(0, 0));
   let ob = await ocrBoxes();
   let oSrc = ob[ob.length - 1];
   let oDst = ob[0];
@@ -3515,7 +3511,7 @@ try {
       ([s, b]) => {
         const ed = document.querySelector(s);
         const title = ed.querySelector('h1').getBoundingClientRect();
-        const field = ed.querySelector('.name-field').getBoundingClientRect();
+        const field = ed.querySelector('.request-heading').getBoundingClientRect();
         return {
           titleTop: Math.round(title.top - ed.getBoundingClientRect().top),
           fieldGap: Math.round(document.querySelector(b).getBoundingClientRect().top - field.bottom)
@@ -3526,29 +3522,20 @@ try {
   };
   const cfgLayout = await measureEditor('configs', '#editor', '#req-blocks');
   const ocrLayout = await measureEditor('ocr', '#ocr-editor', '#ocr-blocks');
-  check('配置与 OCR 的标题基准及名称行以下的请求间距一致',
+  check('配置与 OCR 的标题基准及请求标题到请求块的间距一致',
     Math.abs(cfgLayout.titleTop - ocrLayout.titleTop) <= 2 && Math.abs(cfgLayout.fieldGap - ocrLayout.fieldGap) <= 2,
     JSON.stringify({cfgLayout, ocrLayout}));
 
-  /* 「两栏同一套」的硬证据：名称那一块（label + input）抹掉 id / 文案之后必须**逐字一样** ——
-     它们本来就是同一个 `editorHeadHtml()` 画出来的，手抄第二份的话这里必然分叉。
-     只比 `.editor-head` 那一块：上面的提示槽条数本来就该不同（OCR 那栏多一句「图片直传」
-     的互斥提示），那是内容差异、不是模板分叉。 */
   const headSame = await opt.evaluate(() => {
-    const norm = (sel) =>
-      document
-        .querySelector(sel)
-        .querySelector('.name-field').innerHTML
-        .replace(/id="[^"]*"/g, 'id="_"')
-        .replace(/for="[^"]*"/g, 'for="_"')
-        .replace(/placeholder="[^"]*"/g, 'placeholder="_"')
-        .replace(/\s+/g, ' ')
-        .trim();
-    return { cfg: norm('#cfg-head'), ocr: norm('#ocr-head') };
+    const settings = selector => {
+      const field = document.querySelector(selector);
+      const styles = getComputedStyle(field);
+      return [field.getAttribute('aria-label'), styles.fontSize, styles.fontWeight, styles.lineHeight, styles.padding];
+    };
+    return {cfg: settings('#f-name'), ocr: settings('#o-name')};
   });
-  check('两栏的头部是同一个模板出来的（名称那块抹掉 id 和文案后逐字相同）',
-    headSame.cfg === headSame.ocr,
-    headSame.cfg === headSame.ocr ? '一致' : `配置 ${headSame.cfg}\n   ≠ OCR ${headSame.ocr}`);
+  check('两栏名称字段使用相同的标签、字体和内边距',
+    JSON.stringify(headSame.cfg) === JSON.stringify(headSame.ocr), JSON.stringify(headSame));
 
   /* 备注时有时无（自建那条是空的）—— 切一条配置就该跳一下，除非给它留了行高 */
   const ocrTopFor = async (id) => {
@@ -3701,7 +3688,7 @@ try {
       check('真剪切板里的截图被认出来了（文字进了原文区）',
         ocrOut.src.includes("Pixeldrain's"), ocrOut.src.slice(0, 60));
       check('接着按正常配置翻译出了结果', ocrOut.out.includes('本地假译文'), `${ocrOut.msg}｜${ocrOut.out}`);
-      check('状态栏标明了这是截图来的', ocrOut.msg.includes('截图 OCR'), ocrOut.msg);
+      check('请求详情标明截图 OCR 来源', ocrOut.diag.includes('截图 OCR'), ocrOut.diag);
       check('翻译成功后顶栏那盏灯是绿的（不是灭灯）',
         /(^|\s)ok(\s|$)/.test(ocrOut.dot), ocrOut.dot);
       check('绿灯悬停时给一句「翻译成功」',
@@ -3881,13 +3868,14 @@ try {
         return {
           out: root.querySelector('.rt-out').textContent,
           src: root.querySelector('.rt-src').textContent,
-          msg: root.querySelector('.rt-msg').textContent
+          msg: root.querySelector('.rt-msg').textContent,
+          diag: root.querySelector('.rt-diag').textContent
         };
       });
       check('直传模式下也照样翻出了结果', directOut.out.includes('本地假译文'), `${directOut.msg}｜${directOut.out}`);
       check('原文区写明「没有先做外置 OCR」（不然用户以为坏了）',
         directOut.src.includes('没有先做外置 OCR'), directOut.src.slice(0, 60));
-      check('状态栏标的是「截图直传」，不是「截图 OCR」', directOut.msg.includes('截图直传'), directOut.msg);
+      check('请求详情标明截图直传', directOut.diag.includes('截图直传'), directOut.diag);
 
       check('有图那一次走的是「图片请求模板」（不是文字那段）', sawImageReq, lastTextRequest.slice(0, 90));
 
@@ -4011,7 +3999,7 @@ try {
             () => {
               const root = document.getElementById('request-translate-host')?.shadowRoot;
               // 重试在译文尾部那排（2026-10-17）。单条和多条现在**都走块渲染**，所以都在 .rt-slot 里
-              const btn = root?.querySelector('.rt-slot .rt-acts .rt-act[data-act="retry-one"]') ||
+              const btn = root?.querySelector('.rt-act[data-act="retry-one"]') ||
                 root?.querySelector('.rt-acts .rt-act[data-act="retry-one"]');
               return !!btn && !btn.disabled;
             },
@@ -4043,7 +4031,7 @@ try {
       setClipboard('image', shotPng2);
       await cpage.waitForTimeout(400);
       const hitsBeforeRetry = textHits;
-      await cpage.click('.rt-slot .rt-acts .rt-act[data-act="retry-one"]', { force: true });
+      await cpage.click('.rt-act[data-act="retry-one"]', { force: true });
       const didRetry = await waitUntil(() => textHits >= hitsBeforeRetry + 1);
       check('点 ↻ 真的重发了一条（没卡在失败态里）', didRetry,
         `textHits ${hitsBeforeRetry} → ${textHits}`);
@@ -4104,7 +4092,7 @@ try {
       setClipboard('image', shotPng2);
       await cpage.waitForTimeout(400);
       const ocrHitsBeforeRetry = ocrHits;
-      await cpage.click('.rt-slot .rt-acts .rt-act[data-act="retry-one"]', { force: true });
+      await cpage.click('.rt-act[data-act="retry-one"]', { force: true });
       const ocrRetried = await waitUntil(() => ocrHits >= ocrHitsBeforeRetry + 1);
       check('OCR 那条路的 ↻ 也重发了一条', ocrRetried,
         `ocrHits ${ocrHitsBeforeRetry} → ${ocrHits}`);
@@ -4605,7 +4593,8 @@ try {
           out: root?.querySelector('.rt-out')?.textContent || '',
           src: root?.querySelector('.rt-src')?.textContent || '',
           msg: root?.querySelector('.rt-msg')?.textContent || '',
-          dot: root?.querySelector('.rt-dot')?.className || ''
+          dot: root?.querySelector('.rt-dot')?.className || '',
+          diag: root?.querySelector('.rt-diag')?.textContent || ''
         };
       });
       check('框完遮罩收掉了（不会一直糊在页面上）', shotOut.overlay === false, String(shotOut.overlay));
@@ -4614,7 +4603,7 @@ try {
       check('识别结果进了原文区并照常翻了出来',
         shotOut.src.includes("Pixeldrain's") && shotOut.out.includes('本地假译文'),
         `${shotOut.msg}｜${shotOut.src.slice(0, 40)}`);
-      check('状态栏标了「截图 OCR」（框选和剪切板同一条链）', shotOut.msg.includes('截图 OCR'), shotOut.msg);
+      check('请求详情标明框选截图 OCR 来源', shotOut.diag.includes('截图 OCR'), shotOut.diag);
 
       /* Esc 取消：遮罩收掉、不发请求 */
       await shotMsg(shotDataUrl);
@@ -4877,7 +4866,7 @@ try {
   check('B 的译文也还留着', p3.out.includes('本地假译文【beta】'), `${p3.msg}｜${p3.out}`);
 
   /* ↻ 的语义：用当前配置**重发同一条请求**（这是唯一该重发的地方） */
-  await page.click('.rt-slot .rt-acts .rt-act[data-act="retry-one"]', { force: true });
+  await page.click('.rt-act[data-act="retry-one"]', { force: true });
   await settlePanel();
   const p4 = await readPanel();
   check('点 ↻：用当前配置（B）重发了一条', textHits === reqB + 1, `textHits ${reqB} → ${textHits}`);
@@ -5088,7 +5077,7 @@ try {
       const st = host && host.shadowRoot && host.shadowRoot.querySelector('style');
       const rules = (st && st.sheet && st.sheet.cssRules) || [];
       for (const r of Array.from(rules)) {
-        if (r.selectorText && r.selectorText.includes('-webkit-scrollbar-thumb')) {
+        if (r.selectorText && r.selectorText.includes('.rt-out::-webkit-scrollbar-thumb')) {
           return r.style.background || r.style.backgroundColor || '';
         }
       }
@@ -5107,6 +5096,7 @@ try {
 
   // 第 12 节结束时把设置页关了，这里另开一个（顺便盯住导入导出过程中没报错）
   const opt2 = await ctx.newPage();
+  await opt2.setViewportSize({width: 1024, height: 820});
   const ioErrors = [];
   opt2.on('console', (m) => {
     if (m.type() === 'error') ioErrors.push(m.text());
@@ -5124,7 +5114,10 @@ try {
   await opt2.locator('#save-status.saved').waitFor({state: 'attached'});
   await opt2.locator('#settings-categories [data-category="backup"]').click();
 
-  const dl = await Promise.all([opt2.waitForEvent('download', { timeout: 15000 }), opt2.click('#btn-export')]).then(
+  await opt2.click('#btn-export');
+  check('导出未加密备份前显示明文密钥风险',
+    (await opt2.locator('#confirm-action[open] #confirm-description').innerText()).includes('明文密钥'));
+  const dl = await Promise.all([opt2.waitForEvent('download', { timeout: 15000 }), opt2.click('#confirm-action [value=confirm]')]).then(
     ([d]) => d
   );
   const dlPath = await dl.path();
@@ -5148,6 +5141,11 @@ try {
   );
   const statusAfterExport = await opt2.evaluate(() => document.getElementById('save-status').textContent);
   check('状态栏说了导出了几条', /已导出\s*\d+\s*条/.test(statusAfterExport), statusAfterExport);
+  await opt2.click('#btn-export-share');
+  check('导出分享版前提示请求模板中的密钥仍会导出',
+    (await opt2.locator('#confirm-action[open] #confirm-description').innerText()).includes('请求模板'));
+  await opt2.keyboard.press('Escape');
+  await opt2.locator('#confirm-action').waitFor({state: 'hidden'});
 
   /* 造一份「别的设备导出的」文件：第一条改个名、字号改 31、只留两条 */
   const incoming = JSON.parse(jsonText);
@@ -5491,8 +5489,8 @@ try {
       return {
         value: sel ? sel.value : null,
         options: sel ? Array.from(sel.options).map((o) => o.value) : [],
-        cfgW: root.querySelector('.rt-cfg').getBoundingClientRect().width,
-        langW: sel ? sel.getBoundingClientRect().width : 0,
+        cfgW: root.querySelector('.rt-select-config .rt-select-button').getBoundingClientRect().width,
+        langW: root.querySelector('.rt-select-language .rt-select-button').getBoundingClientRect().width,
         headOverflow: head.scrollWidth - head.clientWidth,
         out: out.textContent,
         scrollTop: out.scrollTop,
@@ -5564,7 +5562,7 @@ try {
   await page.waitForTimeout(700);
 
   const reqLong = textHits;
-  await page.click('.rt-slot .rt-acts .rt-act[data-act="retry-one"]', { force: true });
+  await page.click('.rt-act[data-act="retry-one"]', { force: true });
   // 等它吐到「已经该出滚动条」的长度，量一次正在流的时候
   await page
     .waitForFunction(
@@ -6021,7 +6019,7 @@ try {
   await opt3.click('#btn-test');
   await opt3
     .waitForFunction(
-      () => /HTTP \d/.test(document.querySelector('#test-result')?.textContent || ''),
+      () => document.querySelectorAll('#test-result .test-item').length === 2,
       null,
       { timeout: 30000 }
     )
@@ -6191,7 +6189,7 @@ try {
 
 
   // 勾一条没在槽位里的 → 顶掉队首（甲出局），新的排在队尾
-  opt4.evaluate(
+  await opt4.evaluate(
     async (url) => {
       const { state } = await chrome.storage.local.get('state');
       const cfg = { id: 'e2e-slot-c', name: '对比丙', note: '', adapter: '', request: `curl ${url}?tag=sc`, path: '', responseMode: 'text' };
@@ -6202,7 +6200,8 @@ try {
     },
     `http://127.0.0.1:${port}/text`
   );
-  await page.waitForTimeout(800);
+  await page.waitForFunction(() => document.getElementById('request-translate-host')?.shadowRoot
+    .querySelector('.rt-cfg option[value=e2e-slot-c]'));
   await page.evaluate(() => {
     const root = document.getElementById('request-translate-host').shadowRoot;
     // 原生 select：拨到新配置 = 切换（顶掉队首）
@@ -6432,8 +6431,8 @@ try {
       () => {
         const root = document.getElementById('request-translate-host').shadowRoot;
         const slots = [...root.querySelectorAll('.rt-slot')];
-        const busy = slots.some((s) => /翻译中/.test(s.textContent));
-        const done = slots.some((s) => /完成/.test(s.textContent));
+        const busy = slots.some((s) => s.dataset.state === 'busy');
+        const done = slots.some((s) => s.dataset.state === 'done');
         return slots.length >= 2 && busy && done;
       },
       null,
@@ -6448,7 +6447,7 @@ try {
     const root = document.getElementById('request-translate-host').shadowRoot;
     // 找那条**已完成**的块（状态写着「完成」），点它那排的重试
     const slot = [...root.querySelectorAll('.rt-slot')]
-      .find((s) => /完成/.test(s.querySelector('.rt-slot-st')?.textContent || ''));
+      .find((s) => s.dataset.state === 'done');
     const btn = slot && slot.querySelector('.rt-acts .rt-act[data-act="retry-one"]');
     if (btn) btn.click();
   });
