@@ -26,3 +26,9 @@ _metadata/
 
 # 测试汇总的临时计数（tools/test-summary.mjs 用）
 .test-counts.json
+
+# Local browser test evidence and design session files
+test-results/
+.design-flow/
+.agents/
+skills-lock.json

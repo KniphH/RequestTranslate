@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
-import {mkdtempSync, writeFileSync} from 'node:fs';
+import {mkdirSync, mkdtempSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {once} from 'node:events';
@@ -13,7 +13,9 @@ writeFileSync(join(profile, 'user.js'), `user_pref("extensions.webextensions.uui
 user_pref("browser.aboutwelcome.enabled", false);
 user_pref("browser.shell.checkDefaultBrowser", false);
 user_pref("remote.experimental.enabled", true);\n`);
-const child = spawn(firefox, ['-no-remote', '-profile', profile, '-headless', '--remote-debugging-port', '0'], {
+const evidence = process.env.RT_STAGE02_EVIDENCE || 'test-results/stage-02-firefox';
+mkdirSync(evidence, {recursive: true});
+const child = spawn(firefox, ['-no-remote', '-profile', profile, '--remote-debugging-port', '0'], {
   windowsHide: true,
   // Scope extension-page navigation to this disposable, loopback-bound browser instance.
   env: {...process.env, MOZ_REMOTE_ALLOW_SYSTEM_ACCESS: '1'}
@@ -78,7 +80,7 @@ try {
   }
   const screenshot = async name => {
     const {data} = await send('browsingContext.captureScreenshot', {context, origin: 'viewport'});
-    writeFileSync(resolve('.design-flow/requesttranslate-ui/stage-02', name), Buffer.from(data, 'base64'));
+    writeFileSync(resolve(evidence, name), Buffer.from(data, 'base64'));
   };
   await viewport(1024, 820);
   await navigate('options.html');
@@ -97,9 +99,9 @@ try {
     document.querySelector('#settings-results button').click();
     return document.querySelector('#s-theme').closest('.search-hit') !== null;
   })()`), true);
-  assert.equal(await evaluate(`getComputedStyle(document.querySelector('#s-theme')).appearance`), 'none');
-  await screenshot('firefox-settings-picker-fallback.png');
-  await evaluate(`document.querySelector('#s-theme').focus()`);
+  assert.equal(await evaluate(`document.querySelector('#s-theme').hidden`), true);
+  await screenshot('firefox-settings-segments.png');
+  await evaluate(`document.querySelector('#s-theme + .segments input:checked').focus()`);
   await send('input.performActions', {context, actions: [{type: 'key', id: 'keyboard', actions: [
     {type: 'keyDown', value: '\uE015'}, {type: 'keyUp', value: '\uE015'}
   ]}]});
@@ -120,14 +122,39 @@ try {
   })()`), 12);
   await screenshot('firefox-V02.png');
 
-  await viewport(400, 300);
-  await navigate('popup.html');
-  assert.equal(await evaluate(`(() => {
-    document.querySelector('#btn-go').click();
-    return !document.querySelector('#empty-input').hidden && document.documentElement.scrollWidth <= innerWidth;
-  })()`), true);
-  await screenshot('firefox-P05.png');
-  console.log(`Firefox ${capabilities.browserVersion}: installed the XPI and verified Options, native Select fallback, mobile variables, and Popup.`);
+  await viewport(1024, 820);
+  await navigate('options.html');
+  const popup = JSON.parse(await evaluate(`(async () => {
+    await browser.action.openPopup();
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const view = browser.extension.getViews({type:'popup'})[0];
+      if (view?.document.querySelector('#sel option')) {
+        const doc = view.document;
+        const rect = id => {
+          const box = doc.querySelector(id).getBoundingClientRect();
+          return {x:box.x, y:box.y, width:box.width, height:box.height, right:box.right};
+        };
+        doc.querySelector('#btn-go').click();
+        return JSON.stringify({
+          width:view.innerWidth, height:view.innerHeight, dpr:view.devicePixelRatio,
+          scrollWidth:doc.documentElement.scrollWidth, empty:!doc.querySelector('#empty-input').hidden,
+          appearance:view.getComputedStyle(doc.querySelector('#sel')).appearance,
+          config:rect('#sel'), language:rect('#lang'), settings:rect('#link-options')
+        });
+      }
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    throw new Error('Native Firefox popup did not become ready');
+  })()`));
+  assert.equal(popup.width, 400);
+  assert.equal(popup.scrollWidth, popup.width);
+  assert.equal(popup.empty, true);
+  assert(popup.config.right < popup.language.x && popup.language.right < popup.settings.x);
+  assert.equal(popup.config.y, popup.settings.y);
+  assert.equal(popup.settings.width, 34);
+  writeFileSync(resolve(evidence, 'toolbar-firefox-regression.json'), JSON.stringify({version: capabilities.browserVersion, ...popup}, null, 2) + '\n');
+  console.log(`Firefox ${capabilities.browserVersion}: installed the XPI and verified keyboard segments, mobile variables and the native 400 CSS px toolbar popup.`);
+
   await send('session.end');
 } finally {
   socket?.close();

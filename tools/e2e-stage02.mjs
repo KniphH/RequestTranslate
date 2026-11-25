@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {existsSync, mkdtempSync, readFileSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
@@ -9,9 +9,10 @@ import {chromium} from 'playwright-core';
 const extension = resolve(process.argv[2] || '.');
 const edge = process.env.RT_STAGE02_EDGE || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 assert(existsSync(edge), 'Set RT_STAGE02_EDGE to the Edge executable');
-const design = resolve('.design-flow/requesttranslate-ui');
-const evidence = join(design, 'stage-02');
-const baseline = JSON.parse(readFileSync(join(evidence, 'baseline.json'), 'utf8'));
+const design = resolve(process.env.RT_DESIGN_DIR || '.design-flow/requesttranslate-ui');
+const evidence = resolve(process.env.RT_STAGE02_EVIDENCE || 'test-results/stage-02');
+mkdirSync(evidence, {recursive: true});
+const baseline = JSON.parse(readFileSync(join(design, 'stage-02', 'baseline.json'), 'utf8'));
 for (const [name, hash] of Object.entries(baseline.sha256).filter(([name]) => name !== 'comments.json')) {
   assert.equal(createHash('sha256').update(readFileSync(join(design, name))).digest('hex'), hash, name);
 }
@@ -237,15 +238,9 @@ try {
   await touch.detach();
 
   await page.locator('#cfg-list .cfg-item.is-active').click();
-  const hint = page.locator('[data-hint=cfg-test]');
-  await hint.screenshot({path: join(evidence, 'component-B02-test-hint-shown-production.png')});
-  await hint.getByRole('button').click();
-  assert(await hint.isHidden());
-  await page.waitForFunction(async () => (await chrome.storage.local.get('state')).state.settings.hiddenHints.includes('cfg-test'));
-  await page.reload();
-  await page.locator('#cfg-list .cfg-item.is-active').click();
-  assert(await hint.isHidden());
-  await page.locator('#editor .tests').screenshot({path: join(evidence, 'component-B02-test-hint-hidden-production.png')});
+  const hint = page.locator('#cfg-test-help');
+  assert(await hint.isVisible());
+  assert.equal(await hint.getByRole('button').count(), 0);
   await page.evaluate(async strings => chrome.storage.local.set({rt_i18n: {lang: 'en', strings}}),
     JSON.parse(readFileSync('i18n/en.json', 'utf8')).strings);
   await page.reload();
