@@ -192,7 +192,7 @@
   }
 
   const TRIGGER_PRESETS = {
-    badge: { round: true, html: '译' },
+    badge: { round: true, html: window.RTPanelCore.BRAND_MARK_SVG },
     globe: {
       round: false,
       html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.6"/><ellipse cx="12" cy="12" rx="3.9" ry="8.6"/><path d="M3.6 9.1h16.8M3.6 14.9h16.8"/></svg>'
@@ -255,6 +255,7 @@
   shadow.appendChild(trigger);
   shadow.appendChild(panel);
 
+  RTPanelCore.mountSelects(shadow);
   const dot = panel.querySelector('.rt-dot');
   const cfgSelect = panel.querySelector('.rt-cfg');
   const langSelect = panel.querySelector('.rt-lang');
@@ -314,6 +315,7 @@
 
   function applyTheme() {
     const light = !resolveDark();
+    window.RTM3Theme.apply(shadow.host, prefs.themeColor, light ? 'light' : 'dark');
     panel.classList.toggle('light', light);
     panel.dataset.rtTheme = light ? 'light' : 'dark';
     // 按钮不在面板里（是 shadow 的另一个子节点），主题得单独同步一次
@@ -651,6 +653,7 @@
     const rendered = text || '';
     msgBox.textContent = rendered;
     msgBox.className = 'rt-msg' + (kind ? ' ' + kind : '');
+    if (msgBox.parentElement) msgBox.parentElement.hidden = !rendered;
     /* 静态 i18n 文案才记元数据；拼出来的动态状态（HTTP · 耗时 · 路径）不记。 */
     lastStatusI18n = (lastTLookup && lastTLookup.out === rendered) ? lastTLookup.meta : null;
     lastStatusRenderedText = rendered;
@@ -874,6 +877,8 @@
       hint: T('panel_shot_ocr_hint', '这段原文是剪切板里那张截图认出来的'),
           });
     }
+    if (r.requestSource) rows.push({ k: T('diag_request_source', '请求来源'), v: r.requestSource });
+    if (r.status) rows.push({ k: 'HTTP', v: String(r.status) });
     rows.push({ k: T('diag_first', '首字'), v: secs(r.firstDeltaMs), hint: T('diag_first_hint', '第一个译文分片出现的时间，你等待的就是它') });
     rows.push({ k: T('diag_total', '总耗时'), v: secs(r.ms) });
     if (r.mode) rows.push({ k: T('diag_mode', '响应格式'), v: String(r.mode).toUpperCase() });
@@ -914,7 +919,9 @@
        免得那边手抄一遍又落后（2026-11-01）。这里只管状态。 */
     RTPanelCore.renderDiag(diagBox, rows);
     const any = rows.length > 0;
-    moreBtn.hidden = !any;
+    moreBtn.disabled = !any;
+    if (slots.length === 1) { const detail = outBox.querySelector('[data-act=detail-one]'); if (detail) detail.disabled = !any; }
+    msgBox.parentElement.hidden = !msgBox.textContent;
     moreBtn.classList.toggle('warn', rows.some((x) => x.warn || x.err));
     diagBox.hidden = !any || !diagOpen;
   }
@@ -923,8 +930,9 @@
     diagOpen = false;
     diagBox.textContent = '';
     diagBox.hidden = true;
-    moreBtn.hidden = true;
+    moreBtn.disabled = true;
     moreBtn.classList.remove('warn');
+    moreBtn.setAttribute('aria-expanded', 'false');
   }
 
   /* 重连收尾：忙碌中的槽统一退回 idle，不谎称完成（第十版）。
@@ -1157,15 +1165,7 @@
           outBox.textContent = r.text;
         }
       }
-      // 状态栏只留「HTTP · 耗时 · 路径」三段，其余都收进「…」
-      const bits = [];
-    if (lastOcr) bits.push(lastOcr.direct ? T('panel_shot_direct', '截图直传') : T('panel_shot_ocr', '截图 OCR'));
-      if (r.status) bits.push('HTTP ' + r.status);
-      if (typeof r.ms === 'number') bits.push((r.ms / 1000).toFixed(1) + 's');
-      if (r.usedPath) bits.push(r.usedPath);
-      const noisy = (r.warnings && r.warnings.length > 0) ||
-        (r.missingVars && r.missingVars.length > 0);
-      setStatus(bits.join(' · '), noisy ? 'warn' : '');
+      setStatus('');
       setDot('ok');
       showDiag(buildDiag(r));
       return;
@@ -1335,6 +1335,7 @@
     if (msg.type === 'done') {
       const r = msg.result || {};
       const sl = slotForMsg(msg);
+      if (sl && sl.statusText) r.requestSource = sl.statusText;
       // 归档按「发出这条请求时那条配置」——请求在飞的时候用户可能已经切走了
       rememberResult(msg.configId || pendingConfigId, r, lastOcr, lastAction, false);
       if (!sl) {
@@ -1359,7 +1360,7 @@
           leaveBusy();
           const okCount = slots.filter((s2) => s2.state === 'done').length;
           setDot(okCount ? 'ok' : 'err');
-          setStatus(settledSummary(), okCount ? '' : 'err');
+          setStatus(okCount ? '' : settledSummary(), okCount ? '' : 'err');
         }
       }
       return;
@@ -1597,6 +1598,19 @@
       }
     }
 
+    const singleActions = panel.querySelector('.rt-single-actions');
+    if (slots.length === 1) {
+      const acts = outBox.firstElementChild?.querySelector('.rt-acts');
+      if (acts) { singleActions.replaceChildren(acts); }
+    } else {
+      singleActions.replaceChildren();
+    }
+    for (let i = 0; i < slots.length; i += 1) {
+      const node = outBox.children[i];
+      node.dataset.singleMatch = String(slots.length === 1 && slots[i].configId === cfgSelect.value);
+      const detail = node.querySelector('[data-act=detail-one]');
+      if (detail) detail.disabled = !(slots[i].result || (slots.length === 1 && diagBox.childElementCount));
+    }
     if (keepTop) outBox.scrollTop = keepTop;
     keepPanelInView();
   }
@@ -1626,7 +1640,7 @@
       if (allSettled()) {
         leaveBusy();
         setDot(slots.some((s2) => s2.state === 'done') ? 'ok' : 'err');
-    setStatus(settledSummary(), settledAllFailed() ? 'err' : '');
+    setStatus(settledAllFailed() ? settledSummary() : '', settledAllFailed() ? 'err' : '');
       }
     }
   }
@@ -1730,7 +1744,7 @@
         renderSlots();
         leaveBusy();
         setDot('ok');
-    setStatus(settledSummary(), settledAllFailed() ? 'err' : '');
+    setStatus(settledAllFailed() ? settledSummary() : '', settledAllFailed() ? 'err' : '');
       }
       keepPanelInView();
       return;
@@ -2458,6 +2472,7 @@
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && panel.classList.contains('show')) {
+      if (shadow.querySelector('.rt-select-menu:not([hidden])')) return;
       hidePanel();
     }
   }, true);
@@ -2511,9 +2526,10 @@
   });
 
   moreBtn.addEventListener('click', () => {
-    if (moreBtn.hidden) return;
+    if (moreBtn.disabled) return;
     diagOpen = !diagOpen;
     diagBox.hidden = !diagOpen || diagBox.childElementCount === 0;
+    moreBtn.setAttribute('aria-expanded', String(diagOpen));
     keepPanelInView();   // 诊断区展开会让面板变高
   });
 
@@ -2582,6 +2598,16 @@
     const slot = cid ? slotBy(cid) : null;
     const text = slot ? slot.text : (outBox.textContent || '');
 
+    if (act === 'detail-one') {
+      if (slot?.result) { RTPanelCore.renderDiag(diagBox, buildDiag(slot.result)); moreBtn.disabled = false; }
+      const same = diagBox.dataset.configId === cid;
+      diagOpen = !diagOpen || !same;
+      diagBox.dataset.configId = cid;
+      diagBox.hidden = !diagOpen || !diagBox.childElementCount;
+      panel.querySelectorAll('[data-act=detail-one]').forEach(b => b.setAttribute('aria-expanded', String(diagOpen && b.dataset.cid === cid)));
+      keepPanelInView();
+      return;
+    }
     if (act === 'copy') {
       await copyText(text);
       return;
@@ -2595,6 +2621,7 @@
     }
   }
   outBox.addEventListener('click', onActClick);
+  panel.querySelector('.rt-single-actions').addEventListener('click', onActClick);
 
   /**
    * 只重试某一条配置。
@@ -2939,7 +2966,7 @@
 
     const head = panel.querySelector('[data-drag]');
     head.addEventListener('mousedown', (e) => {
-      if (e.target.closest('.rt-btn') || e.target.closest('.rt-cfg') ||
+      if (e.target.closest('.rt-btn') || e.target.closest('.rt-select') || e.target.closest('.rt-cfg') ||
           e.target.closest('.rt-lang')) return;
       dragging = true;
       sx = e.clientX;

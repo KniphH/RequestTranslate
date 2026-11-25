@@ -35,3 +35,8 @@ docs/TODO.md
 docs/HISTORY.md
 docs/RELEASE-*.md
 docs/REVIEW-*.md
+# Local browser test evidence and design session files
+test-results/
+.design-flow/
+.agents/
+skills-lock.json
