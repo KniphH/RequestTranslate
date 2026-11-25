@@ -21,7 +21,8 @@
     "test:fixture": "node tools/test-pack-fixture.mjs",
     "test:m3": "node tools/e2e-m3.mjs",
     "test:panel": "node tools/e2e-panel-redesign.mjs",
-    "test:scrollbar": "node tools/e2e-scrollbar-theme.mjs"
+    "test:scrollbar": "node tools/e2e-scrollbar-theme.mjs",
+    "test:security-ui": "node tools/e2e-security-redaction.mjs"
   },
   "devDependencies": {
     "@material/material-color-utilities": "^0.4.0",
