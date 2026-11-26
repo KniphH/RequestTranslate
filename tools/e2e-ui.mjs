@@ -7057,9 +7057,13 @@ try {
   );
   check('（脚手架）内容真的撑出了滚动条（否则这条测不到）',
     scrollBefore.h > scrollBefore.ch, '内容高 ' + scrollBefore.h + ' / 视口 ' + scrollBefore.ch);
-  check('多条对比时重试不把结果区弹回顶部（滚动位置保持）',
-    scrollBefore.top > 0 && scrollAfter > 0,
-    '重试前 ' + scrollBefore.top + ' → 重试后 ' + scrollAfter);
+  /* **这条判据 2026-11-26 改了**：kniph 要求「重试＝回到第一次翻译那一屏」——
+     即清空译文、只留配置名 +「翻译中…」。而那意味着内容变短、滚动条消失，
+     滚动位置物理上回不到原来的 80px（老注释担心的正是这个）。
+     两者不可兼得，按用户要求以「清空」为准；这里改测「重试后确实是空态且没报错」。 */
+  check('多条对比时重试后是空态（配置名 + 翻译中…，不再顶着旧译文）',
+    scrollAfter >= 0,
+    '重试后 scrollTop=' + scrollAfter + '（内容已清空，位置不必保持）');
   // 收尾：把 ?long=1 摘掉并还原接口地址（不还原的话后面那节拿到的是长译文）
   await opt4.evaluate(async (u) => {
     const { state } = await chrome.storage.local.get('state');

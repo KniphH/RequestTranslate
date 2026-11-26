@@ -731,17 +731,12 @@
         outBox.classList.add('empty');
       }
     } else {
-      /* 多槽同样清空：对比模式下重试也要回到「配置名 + 翻译中…」的空态，
-         不能让上一轮的译文顶着。 */
-      for (const s2 of slots) {
-        if (!s2) continue;
-        s2.state = 'busy';
-        s2.text = '';
-        s2.error = '';
-        s2.statusText = '';
-      }
+      /* **这里不碰各槽的 state / text**（kniph 2026-11-26 报的 bug）：
+         顶栏临时加一条配置时，别的槽里已经翻好的结果必须原样留着。
+         而 enterBusy 不知道「本轮要跑哪几条」—— targets 是后面才算出来的。
+         所以清空与标 busy 统一由 translate 的 targets 循环做（那里范围是准的）。
+         这里只把结果区标成非空态，别让占位符顶上来。 */
       outBox.classList.remove('empty');
-      renderSlots();
     }
     if (opts.clearSrc) {
       srcBox.textContent = '';
@@ -1593,7 +1588,6 @@
     if (!slots.length) return;
     outBox.classList.remove('empty');
     const keepTop = outBox.scrollTop;
-
     /* 结构是否可以直接复用：条数一致 + 每条的 data-cid 对得上。
        只要有一条对不上（增删 / 换配置）就整块重建 —— 那种情况本来就是新结构。 */
     const kids = outBox.children;
@@ -1887,16 +1881,26 @@
       : ((!configId && slots.length > 1)
         ? slots.map((s) => s.configId)
         : [picked]);
+    /* **只标本轮要跑的这几条**（targets 已经是准的），并且清空它们的旧译文 ——
+       「重试」和「第一次翻译」要显示同一屏：配置名 +「翻译中…」+ 空白（kniph 2026-11-25）。
+       不在 targets 里的槽**一个字节都不动**：顶栏临时加一条时，
+       其余槽里已经翻好的结果必须原样留着（kniph 2026-11-26 报的 bug）。
+
+       清空会让结果区变短、scrollTop 被夹到 0，所以先记再还原。 */
+    /* retryOne 已经清过一次、那次滚动位置就被夹成 0 了 —— 它把清空前的位置透传进来 */
+    const keepTop = (opts && typeof opts.keepTop === 'number') ? opts.keepTop : outBox.scrollTop;
     for (const id of targets) {
       const sl = slotBy(id);
-      if (sl) {
-        sl.state = 'busy';
-        /* 同上：**不清旧译文** —— 清空会让结果区瞬间变短，滚动位置被夹到 0。
-           新译文一到就替换，中间那段「翻译中…」状态自己会标出来。 */
-        sl.error = '';
-      }
+      if (!sl) continue;
+      sl.state = 'busy';
+      sl.text = '';
+      sl.error = '';
+      sl.statusText = '';
     }
-    if (slots.length > 1) renderSlots();
+    if (slots.length > 1) {
+      renderSlots();
+      if (keepTop) outBox.scrollTop = keepTop;
+    }
 
     const p = ensurePort();
     const sent = postOrFail(p, {
@@ -2630,6 +2634,7 @@
     const sl = slotBy(id);
     // 这一条自己正在翻 → 忽略（防连点）；别的条在翻不影响
     if (sl && sl.state === 'busy') return;
+    let keepScrollRef = outBox.scrollTop;
     if (sl) {
       /* **重试＝回到「第一次翻译」那一屏**（kniph 2026-11-25）：
          以前保留旧译文等新首字来覆盖，结果是「重试的画面」和「第一次翻译的画面」
@@ -2638,21 +2643,18 @@
 
          旧注释担心的「一重试就被弹回顶部」用**保滚动位置**化解：
          清空前后不读 scrollTop（读到的已经被夹成 0），直接先记下来再还原。 */
-      const keepScroll = outBox.scrollTop;
       sl.state = 'busy';
       sl.text = '';        // ← 关键：不保留上一轮译文
       sl.error = '';
       sl.statusText = '';
-      /* 单条 / 多条都要立刻重绘 —— 不然 DOM 还是上一轮的译文，
-         要等新分片到达才会被覆盖，正是用户看到的那种「先顶着旧结果」。 */
-      if (slots.length) {
-        renderSlots();
-        if (keepScroll) outBox.scrollTop = keepScroll;
-      }
+      /* **这里不重绘**：清空后内容瞬间变短，此刻 renderSlots 读到的 scrollTop
+         已经被浏览器夹成 0，再还原也没用（e2e「重试不弹回顶部」当场抓到 80→0）。
+         统一交给下面的 translate —— 它有本轮准确的 targets，
+         并且用 keepScrollRef（清空**之前**记的位置）还原。 */
     }
     // 单条模式（没有槽位）时仍要挡住「整批在跑」的连点
     if (!sl && busy) return;
-    translate(currentText, id, lastOcr || undefined);
+    translate(currentText, id, lastOcr || undefined, { keepTop: keepScrollRef });
   }
 
   /**
@@ -2913,7 +2915,10 @@
       return;
     }
     if (currentText || (lastOcr && lastOcr.image)) {
-      translate(currentText, v, lastOcr || undefined);
+      /* **只跑这一条**（opts.only）：顶栏拨一条时，别的槽里已经翻好的结果必须原样留着。
+         不传的话 enterBusy 会当成「整批都要跑」，把其余槽一并清成「翻译中…」，
+         而那些槽根本不在本批里 —— 于是永远停在翻译中（kniph 2026-11-26 报的）。 */
+      translate(currentText, v, lastOcr || undefined, { only: [v] });
       return;
     }
     showNoCachedResult(v);

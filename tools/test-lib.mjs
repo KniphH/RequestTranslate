@@ -5304,12 +5304,21 @@ section('变异测试补盲（2026-11-16，注入 bug 实测的 9 个漏网）')
     const body = busySeg.slice(0, busySeg.indexOf('\n  }'));
     check('enterBusy 单条分支清空 text',
       /if \(only\) \{[\s\S]{0,300}only\.text = ''/.test(body));
-    check('enterBusy 多槽分支清空 text',
-      /for \(const s2 of slots\)[\s\S]{0,200}s2\.text = ''/.test(body));
+    /* **多槽分支不许在 enterBusy 里清**（kniph 2026-11-26 报的 bug）：
+       enterBusy 不知道「本轮要跑哪几条」—— targets 是后面才算的。
+       在这里清会把已经翻好的其它槽一起抹掉，且它们不在本批里、永远不会被重新填上。 */
+    check('enterBusy 多槽分支不碰各槽的 state / text',
+      !/for \(const s2 of slots\)/.test(body) && !/s2\.text = ''/.test(body));
     const retrySeg = contentSrc2.slice(contentSrc2.indexOf('function retryOne'));
     const rbody = retrySeg.slice(0, retrySeg.indexOf('\n  }'));
     check('retryOne 也清空 text（重试＝回到第一次翻译那一屏）',
       /sl\.text = ''/.test(rbody));
+
+    /* 该清的地方是 translate 的 targets 循环 —— 那里范围准确 */
+    const tgt = contentSrc2.slice(contentSrc2.indexOf('for (const id of targets)'));
+    const tbody = tgt.slice(0, tgt.indexOf('\n    }'));
+    check('translate 的 targets 循环清空本轮要跑的槽',
+      /sl\.text = ''/.test(tbody));
   }
   check('panel-core 的 rt-slot-h 至少有 CSS 定义 + HTML 使用两处',
     (pcSrc2.match(/\brt-slot-h\b/g) || []).length >= 2,
