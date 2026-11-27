@@ -4,8 +4,9 @@
  */
 
 import http from 'node:http';
-import { runRequest, extractModelName } from '../lib/engine.js';
+import { runRequest, extractModelName, maskDiagnosticText } from '../lib/engine.js';
 import { setBingBase, resetBingSession } from '../lib/adapters.js';
+import { runOcr, runImageTranslate } from '../lib/ocr.js';
 
 let passed = 0;
 let failed = 0;
@@ -41,6 +42,22 @@ const server = http.createServer(async (req, res) => {
   if (path === '/echo-key') {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     res.end('{"error":"bad key: sk-test-123"}');
+    return;
+  }
+  if (path === '/echo-secret') {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: { message: 'key=' + 'sk-test-123' } }));
+    return;
+  }
+  if (path === '/echo-secret-stream') {
+    res.writeHead(400, { 'Content-Type': 'text/event-stream' });
+    res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'sk-test-' } }] }) + '\n\n');
+    res.end('data: ' + JSON.stringify({ choices: [{ delta: { content: '123' } }] }) + '\n\n');
+    return;
+  }
+  if (path === '/echo-success-secret') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ choices: [{ message: { content: 'sk-test-123' } }] }));
     return;
   }
 
@@ -100,6 +117,17 @@ const server = http.createServer(async (req, res) => {
   if (path === '/ttranslatev3') {
     const form = new URLSearchParams(body);
     const text = form.get('text') || '';
+
+    if (text === 'SECRET_ERROR') {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'sk-test-123' }));
+      return;
+    }
+    if (text === 'SECRET_BADJSON') {
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('bad sk-test-123');
+      return;
+    }
 
     // 第一次空响应，逼出「token 过期 → 重抓再试」的逻辑
     if (text === 'RETRY_ME' && bingEmptyOnce) {
@@ -419,6 +447,57 @@ console.log('\n14.5 错误回显里的密钥必须打码');
   check('错误文案保留了打码标记', String(r.error || '').includes('已隐藏'), r.error);
   check('错误参数里也没有原文密钥',
     !JSON.stringify(r.errorParams || []).includes('sk-test-123'), r.errorParams);
+}
+
+console.log('\n14.5 敏感变量的错误回显');
+{
+  const r = await runRequest({ requestText: curlFor('/echo-secret'), vars, responseMode: 'json' });
+  check('请求错误文案不回显密钥', !String(r.error || '').includes(vars.apiKey));
+  check('请求原始错误响应不回显密钥', !String(r.raw || '').includes(vars.apiKey));
+  check('请求诊断保留遮蔽标记', String(r.error || '').includes('已隐藏'));
+  check('实际发送的认证头保持不变', received.at(-1).headers.authorization === 'Bearer ' + vars.apiKey);
+  const literal = await runRequest({ requestText: `curl ${base}/echo-secret -H 'Authorization: Bearer sk-test-123'`, vars: { text: 'x' }, responseMode: 'json' });
+  check('写死在认证头的密钥也不会在错误响应中回显', !String(literal.error || '').includes(vars.apiKey) && !String(literal.raw || '').includes(vars.apiKey));
+  check('写死的认证头在请求详情中遮蔽', !JSON.stringify(literal.request).includes(vars.apiKey));
+  const query = await runRequest({ requestText: `curl ${base}/echo-secret?token=sk-test-123`, vars: { text: 'x' }, responseMode: 'json' });
+  check('写死的查询参数在请求详情中遮蔽', !JSON.stringify(query.request).includes(vars.apiKey));
+  const apiHeader = await runRequest({ requestText: `curl ${base}/echo-secret -H 'x-api-key: sk-test-123'`, vars: { text: 'x' }, responseMode: 'json' });
+  check('写死的 API key 请求头在请求详情中遮蔽', !JSON.stringify(apiHeader.request).includes(vars.apiKey));
+  check('查询参数中的令牌不会在错误响应中回显', !String(query.error || '').includes(vars.apiKey) && !String(query.raw || '').includes(vars.apiKey));
+  const token = await runRequest({requestText:`curl ${base}/echo-secret`,vars:{accessToken:vars.apiKey},responseMode:'json'});
+  check('名称含 token 的变量也会遮蔽', !String(token.error || '').includes(vars.apiKey) && !String(token.raw || '').includes(vars.apiKey));
+  const quotedSecret = 'fixture\"secret/encoded';
+  const escaped = JSON.stringify(quotedSecret).slice(1,-1);
+  check('JSON 转义形式的敏感值会遮蔽', !maskDiagnosticText(escaped,{apiKey:quotedSecret}).includes(escaped));
+  const encoded = encodeURIComponent(quotedSecret);
+  check('URL 编码形式的敏感值会遮蔽', !maskDiagnosticText(encoded,{apiKey:quotedSecret}).includes(encoded));
+  const partial=[];
+  const stream=await runRequest({requestText:curlFor('/echo-secret-stream'),vars,onDelta:t=>partial.push(t)});
+  check('HTTP 错误流不向界面逐段暴露敏感值', partial.length===0 && !String(stream.text || '').includes(vars.apiKey) && !String(stream.raw || '').includes(vars.apiKey));
+  const ok = await runRequest({ requestText: curlFor('/echo-success-secret'), vars, responseMode: 'json' });
+  eq('成功译文保持原样', ok.text, vars.apiKey);
+  check('成功请求的原始诊断也隐藏密钥', !String(ok.raw || '').includes(vars.apiKey));
+  const provider = { id: 'secret-fixture', name: 'fixture', request: curlFor('/echo-secret'), responsePath: '' };
+  for (const [name, task] of [
+    ['OCR', () => runOcr({ provider, dataUrl: 'data:image/png;base64,aGVsbG8=', vars })],
+    ['图片直传', () => runImageTranslate({ config: { imageRequest: curlFor('/echo-secret') }, dataUrl: 'data:image/png;base64,aGVsbG8=', vars })]
+  ]) {
+    let err;
+    try { await task(); } catch (e) { err = e; }
+    check(name + ' 错误文案不回显密钥', !!err && !String(err.message).includes(vars.apiKey));
+    check(name + ' 原始错误响应不回显密钥', !!err && !String(err.raw || '').includes(vars.apiKey));
+  }
+}
+
+console.log('\n14.6 内置适配器错误回显');
+{
+  setBingBase(base);
+  for (const text of ['SECRET_ERROR', 'SECRET_BADJSON']) {
+    resetBingSession();
+    const r = await runRequest({ adapter: 'bing', vars: { text, apiKey: vars.apiKey } });
+    check('适配器 ' + text + ' 的错误和参数不回显密钥', !JSON.stringify({error:r.error,params:r.errorParams,raw:r.raw}).includes(vars.apiKey));
+  }
+  resetBingSession();
 }
 
 console.log('\n15. 内置适配器（Bing 免费通道）');

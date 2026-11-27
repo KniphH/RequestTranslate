@@ -6,7 +6,7 @@
     "message": "划词翻译，但配置是你自己的 HTTP 请求。直接写 curl 或原始请求报文，可保存多个命名配置。"
   },
   "adapter_bing_hint": {
-    "message": "走 bing.com 网页版接口，首次多花约 0.5 秒。",
+    "message": "通过 Bing 网页接口翻译，首次请求会先获取鉴权参数。",
     "description": "内置适配器的显示名/说明"
   },
   "adapter_bing_label": {
@@ -244,15 +244,15 @@
     "description": "右键菜单：翻译选中文字"
   },
   "ocr_note_baidu": {
-    "message": "个人认证每月 1000 次；token 30 天过期，重换后粘进 URL。",
+    "message": "用 API Key 和 Secret Key 获取 access_token。令牌过期后更新请求 URL。",
     "description": "OCR 内置供应商的备注"
   },
   "ocr_note_openai_vl": {
-    "message": "任何 OpenAI 格式收图的接口；Key 填 apiKey。",
+    "message": "填写兼容 OpenAI 图片格式的地址和模型名。在“变量”页填写 apiKey。",
     "description": "OCR 内置供应商的备注"
   },
   "ocr_note_siliconflow": {
-    "message": "硅基流动免费；Key 填「变量」里的 apiKey。",
+    "message": "在“变量”页填写 apiKey。OCR 与翻译配置共用这个变量。",
     "description": "OCR 内置供应商的备注"
   },
   "ocr_preview_summary_img": {
@@ -262,18 +262,6 @@
   "ocr_test_label_img": {
     "message": "测试图片配置",
     "description": "OCR 栏：图片直传模式下的测试"
-  },
-  "ocr_test_title_img": {
-    "message": "用的是左边选中那条「图片配置」的图片请求模板",
-    "description": "OCR 栏：图片直传模式下的测试"
-  },
-  "ocr_test_title_none": {
-    "message": "还没有配置填过「图片请求模板」，去「配置」栏给能看图的那条填上",
-    "description": "OCR 栏：图片直传模式下的测试"
-  },
-  "opt_adapter_note": {
-    "message": "这条请求不走请求模板，翻译流程由扩展内置的代码完成。",
-    "description": "内置适配器条目的补充说明"
   },
   "opt_adapter_prefix": {
     "message": "内置适配器：",
@@ -347,7 +335,7 @@
     "description": "占位符/响应格式标签的说明"
   },
   "opt_chip_image_extra_desc": {
-    "message": "图片那段（含逗号），放 content 最后；没图时是空串。",
+    "message": "图片那一段（含前导逗号），写在 content 数组最后；没图时是空串。用它就能让一段模板同时翻文字和翻图",
     "description": "设置页"
   },
   "opt_chip_imageb64": {
@@ -367,7 +355,7 @@
     "description": "占位符/响应格式标签的说明"
   },
   "opt_chip_target_code_desc": {
-    "message": "接口要的语言代码，内置是 DeepL 的；换服务写 #@lang。",
+    "message": "映射成接口要的代码，内置是 DeepL 的 language code。换服务就在请求文本里写 #@lang 表，键写语言代码",
     "description": "设置页"
   },
   "opt_chip_targetcode": {
@@ -434,7 +422,7 @@
     }
   },
   "opt_confirm_restore_defaults": {
-    "message": "会删掉你所有自定义配置，恢复成内置的那几条。确定？",
+    "message": "清除自定义配置、变量、OCR、设置和翻译记录。",
     "description": "设置页"
   },
   "opt_copied": {
@@ -458,11 +446,7 @@
     "description": "设置页"
   },
   "opt_custom_icon_empty": {
-    "message": "「自定义」还没填图标 —— 上面的卡片先空着，页面上的按钮用一个示例图标占位；",
-    "description": "设置页"
-  },
-  "opt_custom_icon_hint": {
-    "message": "粘一段自己的 SVG 进来，两边都会换成它。",
+    "message": "填写 SVG 前，网页上的翻译按钮使用示例图标。",
     "description": "设置页"
   },
   "opt_default_lang_name": {
@@ -510,7 +494,7 @@
     "description": "设置页 JS 动态文案"
   },
   "opt_export_password_note": {
-    "message": "口令不保存在任何地方 —— 丢了它，这份文件就解不开了。",
+    "message": "请保管口令。恢复这份备份时需要它。",
     "description": "设置页"
   },
   "opt_export_password_title": {
@@ -594,66 +578,43 @@
     "description": "设置页 JS 动态文案"
   },
   "opt_hint_imgcfg_foot": {
-    "message": "只列<b>填了图片请求模板</b>的配置 —— 增删改回「配置」栏。",
-    "description": "设置页：整段说明（含内联标签，走 data-i18n-html）",
-    "html": true
-  },
-  "opt_hint_imgcfg_test": {
-    "message": "不选文件就用剪切板第一张图；发的是左边选中的图片模板。",
+    "message": "在“配置”页编辑图片请求模板。",
     "description": "设置页：整段说明（含内联标签，走 data-i18n-html）",
     "html": true
   },
   "opt_hint_maxh": {
-    "message": "自适应时的上限，单位 vh，默认 46；0 = 不限。",
+    "message": "面板高度设为 0 时生效。1 vh 等于视口高度的 1%。超出上限的结果可滚动查看，设为 0 则不限高。",
     "description": "设置页：各项说明"
   },
   "opt_hint_ocr_direct": {
-    "message": "多模态模型可跳过 OCR：截图直接交给左边选中的图片配置。",
+    "message": "截图交给选中的图片配置。图片配置列表为空时，截图翻译使用当前翻译配置。",
     "description": "设置页：整段说明（含内联标签，走 data-i18n-html）",
     "html": true
   },
   "opt_hint_ocr_test": {
-    "message": "不选文件就用剪切板第一张图；发的是上面那段模板。",
+    "message": "未选文件时读取剪贴板中的第一张图片。",
     "description": "设置页：整段说明（含内联标签，走 data-i18n-html）",
     "html": true
   },
   "opt_hint_panelcss": {
-    "message": "只对面板生效：面板在 shadow root 里，贴到 Stylus 无效。<br>主要钩子 <code>#rt-panel</code> <code>.rt-head</code> <code>.rt-src</code> <code>.rt-out</code> <code>.rt-slot</code> <code>.rt-acts</code> <code>.rt-foot</code> <code>.rt-diag</code> <code>.rt-btn</code>，名字不会改。",
+    "message": "这里的 CSS 写入面板的 Shadow DOM。用 <code>#rt-panel</code> 设定面板样式，用 <code>[data-rt-theme=\"dark\"]</code> 或 <code>[data-rt-theme=\"light\"]</code> 区分主题。也可以为单个控件设置样式。<br><code>.rt-head</code> <code>.rt-cfg</code> <code>.rt-lang</code> <code>.rt-out</code> <code>.rt-src</code> <code>.rt-slot</code> <code>.rt-slot-h</code> <code>.rt-slot-name</code> <code>.rt-slot-b</code> <code>.rt-acts</code> <code>.rt-act</code> <code>.rt-foot</code> <code>.rt-msg</code> <code>.rt-more</code> <code>.rt-diag</code> <code>.d-k</code> <code>.d-v</code> <code>.rt-btn</code> <code>.rt-dot</code>。",
     "description": "设置页：整段说明（含内联标签，走 data-i18n-html）"
   },
   "opt_hint_trigidle": {
-    "message": "鼠标不动这么久就消失；0 = 不消失。",
+    "message": "鼠标停止移动后开始计时，停在按钮上时暂停。设为 0 关闭此计时。",
     "description": "设置页：各项说明"
   },
   "opt_hint_trigleave": {
-    "message": "鼠标从按钮上移开、又没点，过这么多秒就消失；移回去就不消失。填 0 = 这项不生效。",
+    "message": "鼠标移开按钮后开始计时，移回按钮会取消倒计时。设为 0 关闭此计时。",
     "description": "设置页：各项说明"
-  },
-  "opt_hint_trigstyle": {
-    "message": "小按钮的样子；地球跟主题配色，自定义不给底座。",
-    "description": "设置页：整段说明（含内联标签，走 data-i18n-html）",
-    "html": true
   },
   "opt_hint_trigsvg": {
-    "message": "粘 <code>&lt;svg&gt;…&lt;/svg&gt;</code> 替换图标；底座仍用上面选的预设。",
+    "message": "粘贴完整的 <code>&lt;svg&gt;…&lt;/svg&gt;</code>。选预设时替换图标，选“自定义”时绘制整个按钮。<code>currentColor</code> 跟随主题。SVG 须使用本地形状，脚本、事件属性和外部链接会被拒绝。",
     "description": "设置页：整段说明（含内联标签，走 data-i18n-html）",
     "html": true
-  },
-  "opt_hint_uilang": {
-    "message": "只改界面文字；语言包约 10~40 KB，从 GitHub 现取。",
-    "description": "设置页：各项说明"
-  },
-  "opt_hint_vars": {
-    "message": "这里定义的值可在模板里用 <code>{{名字}}</code> 引用；同名时以下面的为准。",
-    "description": "设置页：整段说明（含内联标签，走 data-i18n-html）",
-    "html": true
-  },
-  "opt_hints_restored": {
-    "message": "已放回全部说明",
-    "description": "设置页"
   },
   "opt_hist_empty": {
-    "message": "还没有记录（或上面把条数设成了 0）。",
+    "message": "暂无翻译记录。",
     "description": "设置页：翻译记录空态"
   },
   "opt_hist_nomatch_a": {
@@ -697,7 +658,7 @@
     "description": "设置页"
   },
   "opt_imgtpl_hint": {
-    "message": "填了才会出现在 OCR 栏的「图片配置」里；管翻图，留空则回退到上面那段。",
+    "message": "<b>填了这段（主请求或哪条后备都行），这条配置才会出现在 OCR 栏的「图片配置」列表里。</b>它管翻图，上面那段继续管划词翻译；留空就回退到上面那段。<br>写成多模态的样子，比如：<code>{\"role\":\"user\",\"content\":[{\"type\":\"image_url\",\"image_url\":{\"url\":\"{{image}}\"}},{\"type\":\"text\",\"text\":\"把图里的文字翻成{{target}}，只输出译文\"}]}</code><br>这段里 <code>{{text}}</code> 是空串 —— 直传时图片本身就是原文。",
     "description": "图片请求模板下方的说明"
   },
   "opt_imgtpl_ph": {
@@ -790,15 +751,8 @@
     "message": "这个代码已经在表里了。",
     "description": "语言代码表"
   },
-  "opt_export_share_hardcoded": {
-    "message": "请求模板正文里像是写死了密钥。分享版只能清空变量里的值，无法安全改模板；仍要导出吗？"
-  },
-  "opt_lang_map_bad_code": {
-    "message": "语言代码只能用字母开头，由字母、数字、- 或 _ 组成。",
-    "description": "语言代码表"
-  },
   "opt_lang_map_hint": {
-    "message": "左=接口要的代码（内置是 DeepL 的），右=显示名，也是 <code>{{target}}</code> 的值。",
+    "message": "显示名称填入 {{target}}，接口代码填入 {{targetCode}}。内置代码采用 DeepL 的语言代码。",
     "description": "语言代码表"
   },
   "opt_lang_map_label": {
@@ -824,10 +778,6 @@
   "opt_lang_other": {
     "message": "其他（自己填）",
     "description": "目标语言：显示名编辑"
-  },
-  "opt_lang_samehint": {
-    "message": "划词面板顶栏也有一个，两边是同一个值，想临时换一门语言不用特意回这儿。",
-    "description": "设置页：目标语言下方的说明"
   },
   "opt_lang_title_prefixed": {
     "message": "目标语言：$1$",
@@ -863,10 +813,6 @@
   "opt_main_request": {
     "message": "主请求",
     "description": "设置页"
-  },
-  "opt_misc_001": {
-    "message": "RequestTranslate · 设置",
-    "description": "设置页：misc 区域"
   },
   "opt_misc_002": {
     "message": "译",
@@ -979,7 +925,7 @@
     "description": "设置页"
   },
   "opt_note_fake_image": {
-    "message": "预览里的示例图，实际会换成真截图。",
+    "message": "上面 {{image}} 的位置是一张假的示例图，真截图是一整段 data URL；「测试」跑完后的「实际请求」里是那一份真的",
     "description": "设置页"
   },
   "opt_ocr_configs": {
@@ -1003,11 +949,11 @@
     "description": "设置页"
   },
   "opt_path_hint_ocr": {
-    "message": "点号 + 下标，如百度的 <code>words_result</code>；留空自动探测。",
+    "message": "点号 + 下标，例如百度的 <code>words_result</code>（一行一个对象，会按行拼成一段）。留空时依次尝试各家常见的返回结构。",
     "description": "响应提取路径下方说明（OCR）"
   },
   "opt_path_hint_text": {
-    "message": "点号 + 下标，如 <code>data.translations[0].translatedText</code>；留空自动探测。",
+    "message": "点号 + 下标，例如 <code>data.translations[0].translatedText</code>。留空时会依次尝试各家常见的返回结构。",
     "description": "响应提取路径下方说明（文本）"
   },
   "opt_ph_209": {
@@ -1160,7 +1106,7 @@
     "description": "设置页：set 区域"
   },
   "opt_set_014": {
-    "message": "按顺序跑勾上的那些请求，哪条先拿到译文就停（和面板上真翻译时一个顺序）。",
+    "message": "按顺序测试已启用的请求，拿到译文后停止。",
     "description": "设置页：set 区域"
   },
   "opt_set_015": {
@@ -1208,7 +1154,7 @@
     "description": "设置页：set 区域"
   },
   "opt_set_041": {
-    "message": "在选区旁边显示一个小圆点，点它才翻译",
+    "message": "显示翻译按钮",
     "description": "设置页：set 区域"
   },
   "opt_set_042": {
@@ -1216,15 +1162,15 @@
     "description": "设置页：set 区域"
   },
   "opt_set_043": {
-    "message": "什么都不做（只用右键菜单）",
+    "message": "只用右键菜单",
     "description": "设置页：set 区域"
   },
   "opt_set_044": {
-    "message": "翻译选中内容的快捷键",
+    "message": "快捷键",
     "description": "设置页：set 区域"
   },
   "opt_set_045": {
-    "message": "打开浏览器的快捷键设置页",
+    "message": "打开浏览器快捷键设置",
     "description": "设置页：set 区域"
   },
   "opt_set_046": {
@@ -1244,25 +1190,20 @@
     "description": "设置页：set 区域"
   },
   "opt_set_050": {
-    "message": "加一项「用 RequestTranslate 翻译选中内容」（只在选中了文字时出现）",
+    "message": "翻译选中内容",
     "description": "设置页：set 区域"
   },
   "opt_set_051": {
-    "message": "加一项「翻译剪切板中的截图」（要先用系统截图把图截进剪切板，见「OCR」那一栏）",
+    "message": "翻译剪切板中的截图",
     "description": "设置页：set 区域"
   },
   "opt_set_052": {
-    "message": "加一项「框选截图翻译」（当场拖框截一块屏幕区域去翻译，不用先按系统截图）",
+    "message": "框选截图翻译",
     "description": "设置页：set 区域"
   },
   "opt_set_053": {
     "message": "翻译",
     "description": "设置页：set 区域"
-  },
-  "opt_set_054": {
-    "message": "目标语言（<code>{{target}}</code> 的值）",
-    "description": "设置页：set 区域",
-    "html": true
   },
   "opt_set_055": {
     "message": "单次最多发送字数",
@@ -1289,24 +1230,24 @@
     "description": "设置页：set 区域"
   },
   "opt_set_061": {
-    "message": "大于 1 时面板同时显示多条结果，看哪条翻得更好。<strong>在下面的配置列表里左键点亮要对比的那几条</strong>（可以亮多条），右键取消；不点亮任何一条时就用当前选中的那条。",
+    "message": "在“配置”列表中点击添加，右键移除。结果按配置列表顺序显示。名额已满时，加入新配置会移除对比首项。名单为空时使用当前配置。",
     "description": "设置页：set 区域",
     "html": true
   },
   "opt_set_062": {
-    "message": "在面板里新选一条配置时",
+    "message": "面板内新选配置的位置",
     "description": "设置页：set 区域"
   },
   "opt_set_063": {
-    "message": "放在最下面（顶掉最上面那条）",
+    "message": "最下面",
     "description": "设置页：set 区域"
   },
   "opt_set_064": {
-    "message": "放在最上面（顶掉最下面那条）",
+    "message": "最上面",
     "description": "设置页：set 区域"
   },
   "opt_set_065": {
-    "message": "显示 1 条时两种放法都是直接切换，所以这条只在「面板显示条数」大于 1 时出现。它只影响面板里临时点出来的组合，不动设置页那份默认名单。",
+    "message": "这个位置用于面板里的临时对比组合。默认名单在“配置”页管理。",
     "description": "设置页：set 区域"
   },
   "opt_set_066": {
@@ -1314,7 +1255,7 @@
     "description": "设置页：set 区域"
   },
   "opt_set_067": {
-    "message": "成功的翻译会在本地留一条记录（原文 / 译文 / 用的哪条配置），只存这台浏览器里，不上传、不进导出文件。填 0 = 不记录。",
+    "message": "成功翻译的原文、译文和配置名只保存在当前浏览器。记录不上传，也不随配置导出。设为 0 停止保留记录。",
     "description": "设置页：set 区域"
   },
   "opt_set_068": {
@@ -1362,11 +1303,7 @@
     "description": "设置页：set 区域"
   },
   "opt_set_084": {
-    "message": "显示面板",
-    "description": "设置页：set 区域"
-  },
-  "opt_set_085": {
-    "message": "浮出来的就是**网页上那个真面板**：样式、顶栏、拖动、✕ 关闭全都一样，跟着上面的宽度 / 字号 / 高度 / 主题实时变。里面的文字是示例内容。",
+    "message": "预览面板",
     "description": "设置页：set 区域"
   },
   "opt_set_086": {
@@ -1374,11 +1311,11 @@
     "description": "设置页：set 区域"
   },
   "opt_set_087": {
-    "message": "结果面板高度（px， 0 = 自适应）",
+    "message": "结果面板高度（px）",
     "description": "设置页：set 区域"
   },
   "opt_set_088": {
-    "message": "结果区最大高度（vh，0 = 不限）",
+    "message": "结果区最大高度（vh）",
     "description": "设置页：set 区域"
   },
   "opt_set_089": {
@@ -1402,7 +1339,7 @@
     "description": "设置页：set 区域"
   },
   "opt_set_094": {
-    "message": "在面板里显示原文",
+    "message": "显示原文",
     "description": "设置页：set 区域"
   },
   "opt_set_095": {
@@ -1410,37 +1347,33 @@
     "description": "设置页：set 区域"
   },
   "opt_set_096": {
-    "message": "填入示例：护眼暖色",
+    "message": "插入暖色示例",
     "description": "设置页：set 区域"
   },
   "opt_set_103": {
-    "message": "导入 / 导出",
+    "message": "备份与恢复",
     "description": "设置页：set 区域"
   },
   "opt_set_104": {
-    "message": "导出备份",
+    "message": "备份配置",
     "description": "设置页：set 区域"
   },
   "opt_set_106": {
-    "message": "备份版里有<strong>明文 API Key</strong>，只发给你自己。勾上「加密导出」则用口令加密（AES-GCM）—— 口令不恢复，丢了文件就解不开。",
+    "message": "未加密的备份含明文密钥。加密备份需要原口令才能恢复。",
     "description": "设置页：set 区域",
     "html": true
   },
   "opt_set_107": {
-    "message": "导出分享版",
-    "description": "设置页：set 区域"
-  },
-  "opt_set_108": {
-    "message": "导出分享版（不含 Key）",
+    "message": "分享配置",
     "description": "设置页：set 区域"
   },
   "opt_set_109": {
-    "message": "自动清空名字里含 key 的变量值，发给别人填他自己的 Key。<strong>请求模板正文里手写的 Key 不会被自动发现</strong>，分享前自己检查一遍。",
+    "message": "分享版会清空名称含 key 的变量值。直接写在请求模板里的密钥和其他敏感信息仍会导出，分享前请检查文件。",
     "description": "设置页：set 区域",
     "html": true
   },
   "opt_set_110": {
-    "message": "导入",
+    "message": "导入配置",
     "description": "设置页：set 区域"
   },
   "opt_set_111": {
@@ -1448,7 +1381,7 @@
     "description": "设置页：set 区域"
   },
   "opt_set_112": {
-    "message": "整体替换当前的配置、变量、设置和 OCR。加密的文件会先问口令。",
+    "message": "替换导入会覆盖现有配置、变量、OCR 和设置。当前的面板自定义 CSS 保留。",
     "description": "设置页：set 区域"
   },
   "opt_set_113": {
@@ -1461,10 +1394,6 @@
   },
   "opt_set_115": {
     "message": "清空翻译记录",
-    "description": "设置页：set 区域"
-  },
-  "opt_set_116": {
-    "message": "把藏起来的说明文字都放回来",
     "description": "设置页：set 区域"
   },
   "opt_set_117": {
@@ -1480,7 +1409,7 @@
     "description": "设置页：set 区域"
   },
   "opt_set_120": {
-    "message": "保留现有配置（勾上的追加进来，同名的覆盖）；不勾 = 整体替换",
+    "message": "合并所选配置",
     "description": "设置页：set 区域"
   },
   "opt_set_121": {
@@ -1603,42 +1532,6 @@
   "opt_title_201": {
     "message": "按住左侧的手柄上下拖动，或者点右侧的 ↑ ↓",
     "description": "设置页 title 区域"
-  },
-  "opt_title_202": {
-    "message": "把一个和网页上一模一样的面板浮到页面上（能拖动、点 ✕ 关闭）",
-    "description": "设置页 title 区域"
-  },
-  "opt_title_203": {
-    "message": "填入一套护眼暖色配色（可以再改）",
-    "description": "设置页 title 区域"
-  },
-  "opt_title_204": {
-    "message": "把全部配置 / 变量 / 设置 / OCR 导出成一个 JSON 文件（里面有明文 API Key，只发给你自己）",
-    "description": "设置页 title 区域"
-  },
-  "opt_title_205": {
-    "message": "勾上后导出的文件会用口令加密（AES-GCM），发给别人、存网盘都不怕泄露。口令不恢复 —— 丢了文件就解不开。",
-    "description": "设置页 title 区域"
-  },
-  "opt_title_206": {
-    "message": "生成一份去掉密钥的配置文件，发给别人填他自己的 Key",
-    "description": "设置页 title 区域"
-  },
-  "opt_title_207": {
-    "message": "从导出的 JSON 文件恢复配置（会替换当前的全部配置）",
-    "description": "设置页 title 区域"
-  },
-  "opt_title_208": {
-    "message": "清空全部翻译记录，不可恢复",
-    "description": "设置页 title 区域"
-  },
-  "opt_tpl_hint_ocr": {
-    "message": "除占位符外原样发出；提示词直接写在文本里，不是占位符。",
-    "description": "请求模板下方的说明（OCR）"
-  },
-  "opt_tpl_hint_text": {
-    "message": "curl 或原始报文都行，除占位符外原样发出；JSON 里换行写 <code>\\n</code>。",
-    "description": "请求模板下方的说明（文本翻译）"
   },
   "opt_tpl_not_filled": {
     "message": "(还没填请求模板)",
@@ -2149,7 +2042,7 @@
     "description": "popup"
   },
   "popup_failed": {
-    "message": "失败",
+    "message": "翻译失败",
     "description": "popup"
   },
   "popup_init_failed": {
@@ -2157,7 +2050,7 @@
     "description": "popup"
   },
   "popup_input_ph": {
-    "message": "输入或粘贴要翻译的内容（会自动带上当前页面选中的文字）",
+    "message": "输入或粘贴原文",
     "description": "popup"
   },
   "popup_lang_title": {
@@ -2165,7 +2058,7 @@
     "description": "popup"
   },
   "popup_need_text": {
-    "message": "先输入点内容",
+    "message": "请先输入要翻译的内容。",
     "description": "popup"
   },
   "popup_no_config": {
@@ -2232,10 +2125,6 @@
     "message": "正在翻译…",
     "description": "小圆点提示：翻译中"
   },
-  "trigger_hint_badge": {
-    "message": "紫色渐变圆角方块，中间一个「译」字。默认样式",
-    "description": "触发按钮预设的说明"
-  },
   "trigger_hint_custom": {
     "message": "没有底座，粘进来的 SVG 就是按钮本身",
     "description": "触发按钮预设的说明"
@@ -2243,10 +2132,6 @@
   "trigger_hint_globe": {
     "message": "正圆底 + 线描地球（带经纬线）",
     "description": "触发按钮预设的说明"
-  },
-  "trigger_style_badge": {
-    "message": "译字方块",
-    "description": "触发按钮的三个预设名"
   },
   "trigger_style_custom": {
     "message": "自定义",
@@ -2364,36 +2249,6 @@
       }
     }
   },
-  "bing_http_error": {
-    "message": "Bing 返回 HTTP $1$ $2$ —— $3$",
-    "placeholders": {
-      "1": {
-        "content": "$1"
-      },
-      "2": {
-        "content": "$2"
-      },
-      "3": {
-        "content": "$3"
-      }
-    }
-  },
-  "bing_no_translation": {
-    "message": "Bing 没返回译文，响应结构：$1$",
-    "placeholders": {
-      "1": {
-        "content": "$1"
-      }
-    }
-  },
-  "bing_failed": {
-    "message": "Bing 翻译失败：$1$",
-    "placeholders": {
-      "1": {
-        "content": "$1"
-      }
-    }
-  },
   "parse_no_url": {
     "message": "没有解析出 URL：请确认请求里包含完整的 https:// 地址"
   },
@@ -2449,5 +2304,440 @@
   },
   "panel_tts_no_voice": {
     "message": "听不到声音：系统里没装这个语言的语音包（Windows 设置 → 时间和语言 → 语音 → 添加语音）"
+  },
+  "popup_config": {
+    "message": "翻译配置"
+  },
+  "popup_source": {
+    "message": "原文"
+  },
+  "popup_result": {
+    "message": "译文"
+  },
+  "popup_retry": {
+    "message": "重试"
+  },
+  "popup_diagnostic": {
+    "message": "查看诊断"
+  },
+  "popup_loading_status": {
+    "message": "正在翻译…"
+  },
+  "popup_clear_source": {
+    "message": "清空原文"
+  },
+  "popup_copy_failed": {
+    "message": "无法复制到剪贴板，请重试。"
+  },
+  "popup_check_config": {
+    "message": "检查当前配置或 API 密钥。"
+  },
+  "opt_ui_modules": {
+    "message": "模块"
+  },
+  "opt_ui_github": {
+    "message": "在 GitHub 打开项目（新标签页）"
+  },
+  "opt_ui_theme": {
+    "message": "切换深浅主题"
+  },
+  "opt_ui_new_config": {
+    "message": "新建配置"
+  },
+  "opt_ui_back_list": {
+    "message": "返回列表"
+  },
+  "opt_ui_test_text": {
+    "message": "测试原文"
+  },
+  "opt_ui_add_fallback": {
+    "message": "添加后备请求"
+  },
+  "opt_ui_config_name": {
+    "message": "配置名称"
+  },
+  "opt_ui_invalid_var": {
+    "message": "变量名仅支持字母、数字、下划线、点与连字符。"
+  },
+  "opt_ui_var_name": {
+    "message": "变量名"
+  },
+  "opt_ui_var_value": {
+    "message": "变量值"
+  },
+  "opt_ui_value_lines": {
+    "message": "共 $1$ 行",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_ui_empty_vars": {
+    "message": "还没有自定义变量"
+  },
+  "opt_ui_delete_var": {
+    "message": "确定删除「$1$」？",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_ui_copy_variable": {
+    "message": "复制 $1$",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_ui_saved": {
+    "message": "已保存"
+  },
+  "opt_ui_order": {
+    "message": "拖动或点按排序"
+  },
+  "opt_ui_ocr_list": {
+    "message": "OCR 列表"
+  },
+  "opt_ui_ocr_direct": {
+    "message": "禁用外置 OCR"
+  },
+  "opt_ui_ocr_test": {
+    "message": "OCR 测试"
+  },
+  "opt_ui_ocr_template": {
+    "message": "OCR 请求模板"
+  },
+  "opt_ui_image_test": {
+    "message": "图片翻译测试"
+  },
+  "opt_ui_pick_image": {
+    "message": "选择图片"
+  },
+  "opt_ui_clear_file": {
+    "message": "清除文件"
+  },
+  "opt_ui_search": {
+    "message": "搜索设置"
+  },
+  "opt_ui_search_clear": {
+    "message": "清空设置搜索"
+  },
+  "opt_ui_search_empty": {
+    "message": "未找到匹配的设置。"
+  },
+  "opt_ui_summary_selection": {
+    "message": "触发方式、快捷键"
+  },
+  "opt_ui_summary_translation": {
+    "message": "目标语言、字数限制"
+  },
+  "opt_ui_summary_trigger": {
+    "message": "按钮样式、消失时间"
+  },
+  "opt_ui_summary_panel": {
+    "message": "面板尺寸、主题、原文"
+  },
+  "opt_ui_summary_backup": {
+    "message": "导入、导出、恢复"
+  },
+  "opt_ui_summary_history": {
+    "message": "检索、清空"
+  },
+  "opt_ui_summary_language": {
+    "message": "界面语言"
+  },
+  "opt_ui_alias_selection": {
+    "message": "触发方式 自动翻译 划词"
+  },
+  "opt_ui_alias_shortcuts": {
+    "message": "热键 键盘 快捷键"
+  },
+  "opt_ui_alias_theme": {
+    "message": "深色 暗色 浅色 亮色 外观"
+  },
+  "opt_ui_alias_language": {
+    "message": "译文语言 翻译语言"
+  },
+  "opt_ui_alias_css": {
+    "message": "外观 样式表"
+  },
+  "opt_ui_alias_import": {
+    "message": "恢复 配置备份 JSON"
+  },
+  "opt_ui_alias_history": {
+    "message": "删除 历史 清理"
+  },
+  "opt_ui_response_path": {
+    "message": "响应提取路径"
+  },
+  "opt_ui_auto_path": {
+    "message": "留空自动识别"
+  },
+  "opt_ui_enable_request": {
+    "message": "启用请求"
+  },
+  "opt_ui_fallback_index": {
+    "message": "后备 $1$",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_ui_image_template": {
+    "message": "图片请求模板"
+  },
+  "opt_ui_slot_help": {
+    "message": "显示两条或更多结果时可用。名额已满时，放在最上面会移除最下面那条，放在最下面会移除最上面那条。"
+  },
+  "opt_ui_import_file": {
+    "message": "选择要导入的备份"
+  },
+  "opt_ui_pick_json": {
+    "message": "选择 JSON 文件"
+  },
+  "opt_ui_continue": {
+    "message": "继续"
+  },
+  "opt_image_help": {
+    "message": "图片直传说明"
+  },
+  "opt_image_list_empty": {
+    "message": "在“配置”页给主请求或后备请求填写图片模板后，配置会显示在这里。"
+  },
+  "opt_image_test_unavailable": {
+    "message": "填写图片请求模板后可测试。"
+  },
+  "opt_svg_help": {
+    "message": "SVG 用法"
+  },
+  "opt_css_help": {
+    "message": "CSS 选择器参考"
+  },
+  "opt_share_export": {
+    "message": "导出分享版"
+  },
+  "opt_restore_image_hint": {
+    "message": "图片配置提示"
+  },
+  "opt_request_management": {
+    "message": "请求管理"
+  },
+  "opt_request_mode": {
+    "message": "请求编辑方式"
+  },
+  "opt_request_basic": {
+    "message": "基础配置"
+  },
+  "opt_request_advanced": {
+    "message": "高级配置"
+  },
+  "opt_request_url": {
+    "message": "API 地址"
+  },
+  "opt_request_key": {
+    "message": "API Key"
+  },
+  "opt_request_token": {
+    "message": "Access Token"
+  },
+  "opt_request_model": {
+    "message": "模型"
+  },
+  "opt_request_language": {
+    "message": "识别语言"
+  },
+  "opt_request_prompt": {
+    "message": "提示词"
+  },
+  "opt_request_variable": {
+    "message": "引用变量 $1$",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_request_public": {
+    "message": "免费公共接口，支持文字和图片翻译。"
+  },
+  "opt_request_field_invalid": {
+    "message": "这个值无法写入当前模板。"
+  },
+  "opt_request_auto": {
+    "message": "自动检测"
+  },
+  "opt_request_zh_en": {
+    "message": "中英混合"
+  },
+  "lang_en": {
+    "message": "英语"
+  },
+  "lang_ja": {
+    "message": "日语"
+  },
+  "lang_ko": {
+    "message": "韩语"
+  },
+  "opt_ocr_disable_short": {
+    "message": "禁用外置 OCR"
+  },
+  "opt_restore_hint_action": {
+    "message": "恢复提示"
+  },
+  "opt_reset_action": {
+    "message": "恢复默认"
+  },
+  "opt_height_detail": {
+    "message": "设为 0 时，面板高度随内容调整。"
+  },
+  "opt_delete_request": {
+    "message": "删除后备请求"
+  },
+  "opt_ui_delete_config": {
+    "message": "删除配置"
+  },
+  "opt_delete_variable": {
+    "message": "删除变量"
+  },
+  "opt_delete_ocr": {
+    "message": "删除 OCR 配置"
+  },
+  "opt_delete_action": {
+    "message": "删除"
+  },
+  "opt_clear_history_action": {
+    "message": "清空翻译记录"
+  },
+  "popup_request_details": {
+    "message": "请求详情"
+  },
+  "popup_http_status": {
+    "message": "HTTP 状态"
+  },
+  "popup_request_time": {
+    "message": "耗时"
+  },
+  "popup_response_path": {
+    "message": "提取路径"
+  },
+  "popup_request_warning": {
+    "message": "警告"
+  },
+  "popup_auth_failed": {
+    "message": "鉴权失败，请检查 API Key。"
+  },
+  "opt_translate_test_heading": {
+    "message": "翻译测试"
+  },
+  "opt_test_text_ph": {
+    "message": "默认为 Hello, world!"
+  },
+  "opt_view_request_preview": {
+    "message": "查看请求预览"
+  },
+  "opt_preview_masked": {
+    "message": "凭据已遮蔽。"
+  },
+  "opt_ui_bing_adapter": {
+    "message": "Bing 翻译"
+  },
+  "opt_preview_masked_image": {
+    "message": "预览使用示例图，凭据已遮蔽。"
+  },
+  "opt_source_image_template": {
+    "message": "$1$ · 图片模板。",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_setting_info_label": {
+    "message": "查看「$1$」的说明",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_setting_close": {
+    "message": "关闭"
+  },
+  "opt_target_language_help": {
+    "message": "请求模板中的 {{target}} 会替换为所选语言的显示名称。"
+  },
+  "opt_max_chars_help": {
+    "message": "原文超出上限时，从开头截取指定字数发送。"
+  },
+  "opt_export_plain_action": {
+    "message": "导出未加密备份"
+  },
+  "opt_import_merge_info": {
+    "message": "合并只导入所选配置。同名配置会覆盖，其他所选配置会追加。"
+  },
+  "opt_ui_palette": {
+    "message": "配色"
+  },
+  "opt_palette_purple": {
+    "message": "紫色"
+  },
+  "opt_palette_blue": {
+    "message": "蓝色"
+  },
+  "opt_palette_green": {
+    "message": "绿色"
+  },
+  "opt_palette_warm": {
+    "message": "暖色"
+  },
+  "opt_palette_rose": {
+    "message": "玫红色"
+  },
+  "opt_palette_gray": {
+    "message": "中性灰"
+  },
+  "diag_request_source": {
+    "message": "请求来源"
+  },
+  "bing_http_error": {
+    "message": "Bing 返回 HTTP $1$ $2$ —— $3$",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      },
+      "3": {
+        "content": "$3"
+      }
+    }
+  },
+  "bing_no_translation": {
+    "message": "Bing 没返回译文，响应结构：$1$",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bing_failed": {
+    "message": "Bing 翻译失败：$1$",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "opt_export_share_hardcoded": {
+    "message": "请求模板正文里像是写死了密钥。分享版只能清空变量里的值，无法安全改模板；仍要导出吗？"
+  },
+  "opt_lang_map_bad_code": {
+    "message": "语言代码只能用字母开头，由字母、数字、- 或 _ 组成。",
+    "description": "语言代码表"
   }
 }

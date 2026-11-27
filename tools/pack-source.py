@@ -23,7 +23,7 @@ RUNTIME = [
 ]
 DIRS = ["lib", "_locales", "icons"]
 # AMO 要求提供「能执行所有必要技术步骤的构建脚本」
-TOOLS = ["pack.py", "pack-source.py", "minify-sources.mjs", "esbuild-minify.mjs", "strip-comments.mjs", "verify-pack.py"]
+TOOLS = ["pack.py", "pack-source.py", "minify-sources.mjs", "esbuild-minify.mjs", "strip-comments.mjs", "verify-pack.py", "generate-m3-palettes.mjs"]
 
 BUILD_MD = "\n".join([
     "# 如何重建本扩展的 .xpi",
@@ -85,6 +85,9 @@ BUILD_MD = "\n".join([
     "",
     "**复现提交的 .xpi 请用上面第二条命令**，产出的是裁剪过的火狐形态。",
     "如果你直接拿仓库根目录的 manifest.json 打包，得到的是 Chromium 形态 ——",
+    "Stage 02 附加：`lib/m3-palettes.json` 与 `lib/m3-palettes.js` 是预生成的运行时色板；",
+    "改了种子色或算法后运行 `npm run colors` 重新生成，再执行测试。扩展运行时不依赖 npm 或远程 CDN。",
+
     "火狐需要的是 scripts 字段；差别只在这一处后台声明。"
     "其余每个文件的正文与行号都和提交的包**逐字一致**。",
     "",

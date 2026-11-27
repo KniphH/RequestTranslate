@@ -1,0 +1,34 @@
+/* The browser sizes the toolbar popup from its contents. */
+body { width: 400px; }
+html,body{background:var(--surface)}
+.popup{padding:20px 21px;display:grid;grid-template-columns:minmax(0,1fr);gap:7px}
+.popup .selects{display:grid;grid-template-columns:minmax(0,1fr) minmax(90px,.54fr) 34px;align-items:end;gap:7px}
+.rt .popup .selects select,.popup .selects .icon-btn{height:34px;min-height:34px}
+@supports (appearance:base-select) and selector(::picker(select)) {
+  .popup select > button{display:contents}
+  .popup selectedcontent{display:block;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+}
+.popup .primary{min-height:33px}
+.popup-source-head{display:flex;justify-content:space-between;align-items:center;color:var(--text);font-size:12px;font-weight:620}
+.popup-source-head .icon-btn{height:28px;width:28px;min-height:28px}
+.popup-source textarea{min-height:91px;height:91px;max-height:170px}
+.popup-action button{width:100%}
+.popup-result{padding:8px 0 2px}
+.popup-result:not(#translation){border-top:1px solid var(--line)}
+.popup-result p{margin-top:4px}
+.popup-result .row-flex{min-height:27px;display:flex;align-items:center;gap:8px;justify-content:space-between}
+.popup-result-body{white-space:pre-wrap;overflow-wrap:anywhere;max-height:150px;overflow-y:auto;overscroll-behavior:contain;line-height:1.6}
+.popup-result.error{color:var(--bad)}
+.popup-result .copy-result{width:28px;height:28px;min-height:28px;padding:0}
+.popup-result .status{display:flex;align-items:center;gap:6px;font-size:12px}
+.popup-result .inline-retry{margin-top:4px;font-weight:650}
+.popup-error-heading{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:14px;font-weight:650;min-height:28px}
+.popup-error-heading .inline-retry{min-height:28px;padding:0 2px;margin:0;font:inherit}
+.popup-action .icon path{fill:currentColor;paint-order:stroke;stroke-width:1.5}
+
+.popup #status{color:var(--muted);font-size:11px;overflow-wrap:anywhere}
+.popup #status:empty{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.popup #status.error-text{color:var(--bad)}
+.popup-diagnostic-fields{display:grid;grid-template-columns:auto minmax(0,1fr);gap:3px 8px;margin:0 0 4px;font-size:11px;color:var(--muted)}
+.popup-diagnostic-fields dd{margin:0;overflow-wrap:anywhere}
+.popup pre.preview { white-space: pre; overflow: auto; color: var(--text); background: var(--code); padding: 8px; font-size: 11px; border-radius: 6px; }

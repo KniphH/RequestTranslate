@@ -3,9 +3,13 @@
  */
 
 import { loadState, saveState, buildVars, getConfig } from './lib/store.js';
-import { TARGET_PRESETS, orderedLangCodes, langDisplayName } from './lib/template.js';
-import { runRequest } from './lib/engine.js';
+import { orderedLangCodes, langDisplayName } from './lib/template.js';
+import { maskRequest, runRequest } from './lib/engine.js';
+import { requestFields } from './lib/request-fields.js';
 
+import { fillUiIcons } from './lib/ui-icons.js';
+
+fillUiIcons();
 const $ = (s) => document.querySelector(s);
 
 const sel = $('#sel');
@@ -30,7 +34,7 @@ async function loadPopupPack() {
   }
 }
 
-function uiText(key, params) {
+function uiText(key, params, fallback = key) {
   let out = null;
   if (packStrings && typeof packStrings[key] === 'string') out = packStrings[key];
   if (out == null) {
@@ -39,7 +43,7 @@ function uiText(key, params) {
       if (got) out = got;
     } catch { /* 忽略 */ }
   }
-  if (out == null) out = key;
+  if (out == null) out = fallback;
   if (params && params.length) {
     out = String(out).replace(/\$(\d+)\$?/g, (m, n) => {
       const v = params[Number(n) - 1];
@@ -60,6 +64,7 @@ function applyPopupI18n(root) {
   }
   for (const el of scope.querySelectorAll('[data-i18n-title]')) {
     el.title = uiText(el.dataset.i18nTitle);
+    if (el.hasAttribute('aria-label')) el.setAttribute('aria-label', el.title);
   }
   for (const el of scope.querySelectorAll('[data-i18n-ph]')) {
     el.placeholder = uiText(el.dataset.i18nPh);
@@ -72,22 +77,74 @@ function langNameOf(code) {
 }
 const txt = $('#txt');
 const out = $('#out');
+const outText = $('#out-text');
 const statusEl = $('#status');
 const goBtn = $('#btn-go');
+const goLabel = $('#go-label');
+const clearBtn = $('#btn-clear');
+const copyBtn = $('#btn-copy');
+const resultPanels = ['loading', 'translation', 'failure', 'empty-input'];
+
+function showResult(panel) {
+  for (const key of resultPanels) $(`#${key}`).hidden = key !== panel;
+}
+
+function showFailure(message, details = '') {
+  $('#error-message').textContent = message;
+  const diagnostic = $('#diagnostic');
+  diagnostic.hidden = !details || details === message;
+  diagnostic.open = false;
+  $('#diagnostic-text').textContent = details;
+  showResult('failure');
+}
+
+function showRequestDetails(result, vars) {
+  const details = $('#success-diagnostic');
+  const fields = [
+    [uiText('popup_http_status'), result.status],
+    [uiText('popup_request_time'), Number.isFinite(result.ms) ? (result.ms / 1000).toFixed(1) + ' s' : ''],
+    [uiText('popup_response_path'), result.usedPath],
+    [uiText('popup_reasoning'), result.reasoningChars],
+    ...((result.warnings || []).map(warning => [uiText('popup_request_warning'), warning?.code
+      ? uiText(warning.code, warning.params, warning.text || '') + (warning.shape || '') : warning?.text || warning]))
+  ].flatMap(([label, value]) => {
+    if (!value) return [];
+    const term = document.createElement('dt');
+    const data = document.createElement('dd');
+    term.textContent = label;
+    data.textContent = maskRequest({body: String(value)}, vars).body;
+    return [term, data];
+  });
+  $('#request-details').replaceChildren(...fields);
+  details.open = false;
+  details.hidden = !fields.length;
+}
+
+function setBusy(busy) {
+  goBtn.disabled = busy;
+  goLabel.textContent = uiText(busy ? 'popup_translating' : 'popup_translate');
+}
+
 
 let state = null;
 let controller = null;
+let statusTimer = 0;
 /** run 序号：连点两次时，旧那轮恢复后不许再写界面 */
 let runSeq = 0;
 
 function setStatus(text, isErr = false) {
+  clearTimeout(statusTimer);
   statusEl.textContent = text || '';
-  statusEl.className = isErr ? 'err' : '';
+  statusEl.classList.toggle('error-text', isErr);
 }
 
-function setOut(text, empty = false) {
-  out.textContent = text;
-  out.classList.toggle('empty', empty);
+function updateClearButton() {
+  clearBtn.disabled = !txt.value && !out.textContent && !controller;
+}
+
+function setOut(text) {
+  outText.textContent = text;
+  updateClearButton();
 }
 
 /* ---- 流式渲染节流（同 content.js） ---- */
@@ -113,9 +170,12 @@ function applyOut() {
   const text = pendingOut === null ? '' : pendingOut;
   pendingOut = null;
 
-  out.classList.remove('empty');
+  if (text) {
+    showResult('translation');
+    copyBtn.disabled = false;
+  }
   const atBottom = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
-  out.textContent = text;
+  setOut(text);
   if (atBottom) out.scrollTop = out.scrollHeight;
 }
 
@@ -137,6 +197,7 @@ function applyTheme() {
     dark = q ? !q.matches : true;
   }
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  window.RTM3Theme.apply(document.documentElement, state?.settings?.themeColor, dark ? 'dark' : 'light');
 }
 
 async function init() {
@@ -147,8 +208,32 @@ async function init() {
 
   state = await loadState();
   applyTheme();
+  renderSelectors();
 
-  sel.innerHTML = '';
+  // 带上页面里选中的文字
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab && tab.id != null) {
+      const res = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => String(window.getSelection() || '').trim()
+      });
+      const selected = res && res[0] && res[0].result;
+      if (selected && !txt.value) {
+        const limit = Math.max(1, Number(state.settings.maxChars) || 8000);
+        txt.value = selected.slice(0, limit);
+      }
+    }
+  } catch {
+    /* Certain pages do not allow the selection script. */
+  }
+
+  updateClearButton();
+  if (txt.value.trim()) txt.focus();
+}
+
+function renderSelectors() {
+  sel.replaceChildren(...sel.querySelectorAll(':scope > button'));
   for (const c of state.configs) {
     const o = document.createElement('option');
     o.value = c.id;
@@ -166,7 +251,7 @@ async function init() {
     const codes = orderedLangCodes(state.settings && state.settings.langOrder);
     const curLang = String(state.settings.targetLang || '');
     if (curLang && !codes.includes(curLang)) codes.unshift(curLang);
-    langSel.innerHTML = '';
+    langSel.replaceChildren(...langSel.querySelectorAll(':scope > button'));
     for (const code of codes) {
       const o = document.createElement('option');
       o.value = code;
@@ -175,42 +260,34 @@ async function init() {
     }
     langSel.value = curLang || codes[0];
   }
-
-  // 带上页面里选中的文字
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab && tab.id != null) {
-      const res = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: () => String(window.getSelection() || '').trim()
-      });
-      const selected = res && res[0] && res[0].result;
-      if (selected) {
-        // 和 content.js / background.js 同一条守卫：清空设置项后会存成 0，
-        // slice(0, 0) 会把选中的文字整个吞掉、弹窗里一片空白
-        const limit = Math.max(1, Number(state.settings.maxChars) || 8000);
-        txt.value = selected.slice(0, limit);
-      }
-    }
-  } catch {
-    /* 某些页面取不到选区，忽略 */
-  }
-
-  if (txt.value.trim()) txt.focus();
 }
 
-sel.addEventListener('change', async () => {
-  state.activeConfigId = sel.value;
-  await saveState(state);
+let preferenceWrites = Promise.resolve();
+function updatePreference(apply) {
+  preferenceWrites = preferenceWrites.then(async () => {
+    const latest = await loadState();
+    apply(latest);
+    await saveState(latest);
+    state = latest;
+  }).catch(error => showFailure(uiText('popup_check_config'), String(error.message || error)));
+}
+
+sel.addEventListener('change', () => {
+  const value = sel.value;
+  updatePreference(latest => { latest.activeConfigId = value; });
 });
-
-/* 目标语言：写回存档。后台每次发请求都重读设置，所以改完立刻生效。 */
-if (langSel) {
-  langSel.addEventListener('change', async () => {
-    state.settings.targetLang = langSel.value;
-    await saveState(state);
-  });
-}
+langSel.addEventListener('change', () => {
+  const value = langSel.value;
+  updatePreference(latest => { latest.settings.targetLang = value; });
+});
+chrome.storage.onChanged.addListener(async (changes, area) => {
+  if (area !== 'local' || !changes.state || !state) return;
+  await preferenceWrites;
+  state = await loadState();
+  renderSelectors();
+  applyTheme();
+});
+matchMedia('(prefers-color-scheme: light)').addEventListener('change', applyTheme);
 
 goBtn.addEventListener('click', run);
 
@@ -221,95 +298,108 @@ txt.addEventListener('keydown', (e) => {
   }
 });
 
-$('#btn-copy').addEventListener('click', async () => {
-  const text = out.classList.contains('empty') ? '' : out.textContent;
-  if (!text) return;
-  await navigator.clipboard.writeText(text);
-  setStatus(uiText('popup_copied'));
-  setTimeout(() => setStatus(''), 1500);
+copyBtn.addEventListener('click', async () => {
+  if (!out.textContent) return;
+  try {
+    await navigator.clipboard.writeText(out.textContent);
+    setStatus(uiText('popup_copied'));
+    statusTimer = setTimeout(() => setStatus(''), 1500);
+  } catch {
+    setStatus(uiText('popup_copy_failed'), true);
+  }
 });
 
-$('#btn-clear').addEventListener('click', () => {
-  if (controller) controller.abort();
+txt.addEventListener('input', () => {
+  updateClearButton();
+  if (!$('#empty-input').hidden) showResult();
+});
+
+clearBtn.addEventListener('click', () => {
+  ++runSeq;
+  controller?.abort();
+  controller = null;
+  cancelStreamRender();
   txt.value = '';
-  setOut(uiText('popup_waiting_input'), true);
+  setBusy(false);
+  setOut('');
   setStatus('');
+  showResult();
   txt.focus();
 });
 
-/* 设置入口只保留底部那一个（顶部齿轮与底部链接重复，kniph 2026-11-15 要求去掉齿轮）。 */
+$('#btn-retry').addEventListener('click', run);
 $('#link-options').addEventListener('click', () => chrome.runtime.openOptionsPage());
 
 async function run() {
   const text = txt.value.trim();
   if (!text) {
-    setStatus(uiText('popup_need_text'), true);
+    showResult('empty-input');
+    txt.focus();
     return;
   }
-
-  const cfg = getConfig(state, sel.value);
+  const cfg = state && getConfig(state, sel.value);
   if (!cfg) {
-    setStatus(uiText('popup_no_config'), true);
+    showFailure(uiText('popup_no_config'));
     return;
   }
 
-  /* 连点两次时，先发起那轮恢复后**不许**再写界面 —— 否则旧结果盖掉新一轮。 */
   const myRun = ++runSeq;
-  if (controller) controller.abort();
+  controller?.abort();
   controller = new AbortController();
   cancelStreamRender();
+  setBusy(true);
+  setStatus('');
+  setOut('');
+  copyBtn.disabled = true;
+  $('#success-diagnostic').hidden = true;
+  $('#success-diagnostic').open = false;
+  $('#request-details').replaceChildren();
+  showResult('loading');
+  const vars = buildVars({...state, settings: {...state.settings, targetLang: langSel.value}}, text, { url: 'popup', title: document.title });
+  const key = requestFields(cfg.request)?.fields.find(field => field.secret)?.value;
+  const diagnosticVars = key ? {...vars, requestApiKey: key} : vars;
 
   try {
-  goBtn.disabled = true;
-  goBtn.textContent = uiText('popup_translating');
-  setStatus('');
-  setOut('', true);
-  out.dataset.placeholder = '';
-
-  const vars = buildVars(state, text, { url: 'popup', title: document.title });
-
-  const result = await runRequest({
-    requestText: cfg.request,
-    adapter: cfg.adapter,
-    vars,
-    path: cfg.path,
-    responseMode: cfg.responseMode,
-    signal: controller.signal,
-    onDelta: (current) => {
-      /* 旧那轮的 delta 不许再写界面（连点时旧请求可能还在推流） */
-      if (myRun === runSeq) queueOut(current);
+    const result = await runRequest({
+      requestText: cfg.request,
+      adapter: cfg.adapter,
+      vars,
+      path: cfg.path,
+      responseMode: cfg.responseMode,
+      signal: controller.signal,
+      onDelta: (translation, _piece, status) => {
+        if (myRun === runSeq && !(status >= 400)) queueOut(translation);
+      }
+    });
+    if (myRun !== runSeq) return;
+    cancelStreamRender();
+    if (!result.text || result.status >= 400) {
+      const diagnostic = result.errorCode ? uiText(result.errorCode, result.errorParams, result.error)
+        : result.error || [result.status && 'HTTP ' + result.status, result.statusText].filter(Boolean).join(' · ');
+      const details = maskRequest({body: diagnostic || ''}, diagnosticVars).body.slice(0, 1200);
+      const reason = result.status === 401 || result.status === 403
+        ? uiText('popup_auth_failed')
+        : result.status >= 400 ? 'HTTP ' + result.status + (result.statusText ? ' · ' + result.statusText : '')
+          : uiText('popup_check_config');
+      showFailure(maskRequest({body: reason}, diagnosticVars).body, details);
+      return;
     }
-  });
 
-    if (myRun !== runSeq) return;   // 期间又点了一次，这轮作废
-
-  // done 与最后一个 delta 几乎同时到，挂起的那一帧必须先撤掉，
-  // 否则它会用更旧的文本覆盖下面的最终结果
-  cancelStreamRender();
-
-
-  if (result.text) {
     setOut(result.text);
-    const bits = [];
-    if (result.status) bits.push('HTTP ' + result.status);
-    bits.push((result.ms / 1000).toFixed(1) + 's');
-    if (result.usedPath) bits.push(result.usedPath);
-    if (result.reasoningChars) bits.push(uiText('popup_reasoning') + ' ' + result.reasoningChars);
-    else if (result.warnings && result.warnings.length) bits.push(result.warnings[0]);
-    setStatus(bits.join(' · '));
-  } else {
-    setOut(result.error || uiText('popup_no_result'), true);
-    setStatus(uiText('popup_failed'), true);
-  }
+    copyBtn.disabled = false;
+    showRequestDetails(result, diagnosticVars);
+    showResult('translation');
+  } catch (error) {
+    if (myRun !== runSeq) return;
+    cancelStreamRender();
+    showFailure(uiText('popup_check_config'), maskRequest({body: String(error.message || error)}, diagnosticVars).body);
   } finally {
-    /* runRequest 抛异常时按钮会永久禁用 —— 必须兜住 */
     if (myRun === runSeq) {
-      goBtn.disabled = false;
-    goBtn.textContent = uiText('popup_translate');
+      controller = null;
+      setBusy(false);
+      updateClearButton();
     }
   }
 }
 
-init().catch((err) => {
-  setStatus(uiText('popup_init_failed') + (err && err.message), true);
-});
+init().catch((error) => showFailure(uiText('popup_init_failed'), String(error.message || error)));

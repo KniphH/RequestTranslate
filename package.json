@@ -14,12 +14,19 @@
     "test:ui": "node tools/e2e-ui.mjs",
     "perf": "node tools/perf-probe.mjs",
     "icons": "python tools/make-icons.py",
+    "colors": "node tools/generate-m3-palettes.mjs",
     "pack": "python tools/pack.py && python tools/verify-pack.py",
     "verify:pack": "python tools/verify-pack.py",
     "pack:crx": "python tools/pack.py --crx",
-    "test:fixture": "node tools/test-pack-fixture.mjs"
+    "test:fixture": "node tools/test-pack-fixture.mjs",
+    "test:m3": "node tools/e2e-m3.mjs",
+    "test:panel": "node tools/e2e-panel-redesign.mjs",
+    "test:scrollbar": "node tools/e2e-scrollbar-theme.mjs",
+    "test:security-ui": "node tools/e2e-security-redaction.mjs"
   },
   "devDependencies": {
-    "esbuild": "^0.28.2"
+    "@material/material-color-utilities": "^0.4.0",
+    "esbuild": "^0.28.2",
+    "playwright-core": "1.65.1"
   }
 }
