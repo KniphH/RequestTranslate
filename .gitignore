@@ -35,3 +35,8 @@ docs/TODO.md
 docs/HISTORY.md
 docs/RELEASE-*.md
 docs/REVIEW-*.md
+
+# ---- 上架过程产物 / 内部报告：本地留着，不进公开仓库 ----
+firefox/
+tools/AMO-*.txt
+tools/RELEASE-NOTES-*.md
